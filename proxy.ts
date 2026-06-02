@@ -1,11 +1,29 @@
 import { auth } from "@/auth"
-import { authConfig } from "@/auth.config"
 
-export const proxy = auth(authConfig)
+export default auth(async (req) => {
+  const session = req.auth
+  const pathname = req.nextUrl.pathname
+
+  const isLoggedIn = !!session?.user
+  const isOnLogin = pathname === "/login"
+  const isOnRoot = pathname === "/"
+
+  // Already logged in — redirect away from login/root to dashboard
+  if ((isOnLogin || isOnRoot) && isLoggedIn) {
+    return Response.redirect(new URL("/dashboard", req.nextUrl))
+  }
+
+  // Public login route
+  if (isOnLogin) return
+
+  // Protected routes — must be logged in
+  if (!isLoggedIn) {
+    return Response.redirect(new URL("/login", req.nextUrl))
+  }
+})
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|public).*)",
-    "/api/:path*",
+    "/((?!_next/static|_next/image|favicon\\.ico|public|api/auth).*)",
   ],
 }
