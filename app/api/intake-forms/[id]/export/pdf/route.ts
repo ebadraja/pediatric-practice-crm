@@ -147,7 +147,10 @@ export async function GET(
     const pdfContent = generatePdfContent(
       form.hippatizFormTitle,
       form.submittedAt,
-      form.fieldValues
+      form.fieldValues.map(field => ({
+        fieldLabel: field.fieldLabel ?? undefined,
+        value: field.value ?? undefined,
+      }))
     );
 
     // Audit log: PDF export
