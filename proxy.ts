@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/auth"
+import { authConfig } from "@/auth.config"
 
-export async function proxy(_request: NextRequest) {
-  return NextResponse.next()
-}
+export const proxy = auth(authConfig)
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|api/auth).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|public).*)",
+    "/api/:path*",
   ],
 }
