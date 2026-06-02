@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +24,12 @@ import {
   Eye,
   Download,
   ToggleRight,
+  FileText,
+  Eye as EyeIcon,
+  EyeOff,
+  Zap,
 } from 'lucide-react';
+import { WebhookTestingComponent } from '@/components/webhook-testing';
 
 interface SettingsState {
   practiceInfo: {
@@ -63,6 +69,13 @@ interface SettingsState {
     twoFactorRequired: boolean;
     sessionTimeout: number;
   };
+  hippatizer: {
+    enabled: boolean;
+    apiKey: string;
+    autoMatch: boolean;
+    createDrafts: boolean;
+    emailNotifications: boolean;
+  };
 }
 
 const INTEGRATION_DATA = [
@@ -87,8 +100,108 @@ const textareaCls = "w-full px-3 py-2 border border-slate-300 dark:border-slate-
 const labelCls = "block text-sm font-medium text-slate-900 dark:text-slate-100 mb-2";
 
 export default function SettingsPage() {
+  const { data: session } = useSession();
   const [hasChanges, setHasChanges] = useState(false);
   const [activeTab, setActiveTab] = useState('practice');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [changingApiKey, setChangingApiKey] = useState(false);
+  const [testingApiKey, setTestingApiKey] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 350);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    // Load staff members for access control
+    loadStaffMembers();
+    // Load Hippatizer settings
+    loadHippatizSettings();
+  }, []);
+
+  const loadStaffMembers = async () => {
+    try {
+      const res = await fetch('/api/settings/access-control');
+      if (res.ok) {
+        const data = await res.json();
+        setStaffMembers(data.staff);
+      }
+    } catch (error) {
+      console.error('Failed to load staff members:', error);
+    }
+  };
+
+  const loadHippatizSettings = async () => {
+    try {
+      const res = await fetch('/api/settings/hippatizer');
+      if (res.ok) {
+        const data = await res.json();
+        setHasApiKey(data.hasApiKey ?? false);
+        setSettings((prev) => ({
+          ...prev,
+          hippatizer: {
+            ...prev.hippatizer,
+            enabled: data.enabled ?? false,
+            emailNotifications: data.emailNotifications ?? true,
+          },
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load Hippatizer settings:', error);
+    }
+  };
+
+  const handleClearApiKey = async () => {
+    try {
+      const res = await fetch('/api/settings/hippatizer', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clearApiKey: true,
+          enabled: false,
+          emailNotifications: settings.hippatizer.emailNotifications,
+        }),
+      });
+      if (res.ok) {
+        setHasApiKey(false);
+        setChangingApiKey(false);
+        setSettings((prev) => ({
+          ...prev,
+          hippatizer: { ...prev.hippatizer, apiKey: '', enabled: false },
+        }));
+        setSaveMessage({ type: 'success', text: 'API key cleared successfully' });
+        setTimeout(() => setSaveMessage(null), 3000);
+      }
+    } catch (error) {
+      setSaveMessage({ type: 'error', text: 'Failed to clear API key' });
+    }
+  };
+
+  const handleTestApiKey = async () => {
+    setTestingApiKey(true);
+    setSaveMessage(null);
+    try {
+      const res = await fetch('/api/settings/hippatizer/test-notification', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSaveMessage({ type: 'success', text: 'Test notification sent! Check your notifications bell.' });
+      } else {
+        setSaveMessage({ type: 'error', text: data.error || 'Test failed. Check server logs.' });
+      }
+    } catch (error) {
+      setSaveMessage({ type: 'error', text: 'Failed to send test notification' });
+    } finally {
+      setTestingApiKey(false);
+      setTimeout(() => setSaveMessage(null), 5000);
+    }
+  };
   const [settings, setSettings] = useState<SettingsState>({
     practiceInfo: {
       practiceName: 'Kids 0-18 Integrated Pediatrics',
@@ -127,6 +240,13 @@ export default function SettingsPage() {
       twoFactorRequired: true,
       sessionTimeout: 30,
     },
+    hippatizer: {
+      enabled: false,
+      apiKey: '',
+      autoMatch: true,
+      createDrafts: true,
+      emailNotifications: true,
+    },
   });
 
   const handleSettingChange = (section: keyof SettingsState, field: string, value: any) => {
@@ -134,9 +254,88 @@ export default function SettingsPage() {
     setHasChanges(true);
   };
 
-  const handleSave = () => {
-    setHasChanges(false);
-    alert('Settings saved successfully!');
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveMessage(null);
+
+    try {
+      // Save Hippatizer settings if in Hippatizer tab
+      if (activeTab === 'hippatizer') {
+        // Auto-enable if API key is provided
+        const isEnabled = settings.hippatizer.apiKey?.trim().length > 0 ? true : settings.hippatizer.enabled;
+
+        const res = await fetch('/api/settings/hippatizer', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey: settings.hippatizer.apiKey,
+            enabled: isEnabled,
+            autoMatch: settings.hippatizer.autoMatch,
+            createDrafts: settings.hippatizer.createDrafts,
+            emailNotifications: settings.hippatizer.emailNotifications,
+          }),
+        });
+
+        if (!res.ok) {
+          const error = await res.json();
+          setSaveMessage({ type: 'error', text: error.error || 'Failed to save settings' });
+          setSaving(false);
+          return;
+        }
+
+        // If a new key was entered, mark it as saved and clear the input field
+        if (settings.hippatizer.apiKey?.trim()) {
+          setHasApiKey(true);
+          setChangingApiKey(false);
+        }
+        setSettings((prev) => ({
+          ...prev,
+          hippatizer: {
+            ...prev.hippatizer,
+            enabled: isEnabled,
+            apiKey: '', // Always clear after save — key is stored securely server-side
+          },
+        }));
+
+        setSaveMessage({ type: 'success', text: 'Hippatizer settings saved successfully!' });
+      } else {
+        // Generic save for other tabs
+        setSaveMessage({ type: 'success', text: 'Settings saved successfully!' });
+      }
+
+      setHasChanges(false);
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (error) {
+      console.error('Save error:', error);
+      setSaveMessage({ type: 'error', text: 'An error occurred while saving settings' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStaffAccessChange = async (userId: string, permission: string, value: boolean) => {
+    try {
+      const staff = staffMembers.find((s) => s.id === userId);
+      const res = await fetch('/api/settings/access-control', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          canView: permission === 'view' ? value : staff?.access.canView,
+          canMatch: permission === 'match' ? value : staff?.access.canMatch,
+          canPublish: permission === 'publish' ? value : staff?.access.canPublish,
+        }),
+      });
+
+      if (res.ok) {
+        await loadStaffMembers();
+        setSaveMessage({ type: 'success', text: `Access updated for ${staff?.name}` });
+        setTimeout(() => setSaveMessage(null), 2000);
+      }
+    } catch (error) {
+      console.error('Access control error:', error);
+      setSaveMessage({ type: 'error', text: 'Failed to update access control' });
+    }
   };
 
   const NAV_TABS = [
@@ -146,6 +345,8 @@ export default function SettingsPage() {
     { id: 'appointments', label: 'Appointment Types', icon: Calendar },
     { id: 'knowledge', label: 'Knowledge Base', icon: BookOpen },
     { id: 'integrations', label: 'Integrations', icon: Puzzle },
+    { id: 'hippatizer', label: 'Intake Forms (Hippatizer)', icon: FileText },
+    { id: 'webhook-test', label: 'Test Webhook', icon: Zap },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security & Compliance', icon: Lock },
     { id: 'billing', label: 'Billing & Subscription', icon: CreditCard },
@@ -196,6 +397,14 @@ export default function SettingsPage() {
         {/* Main Content */}
         <div className="lg:col-span-3 space-y-6">
 
+          {loading ? (
+            <div className="space-y-6">
+              <div className="h-40 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+              <div className="h-32 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+              <div className="h-56 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+            </div>
+          ) : (
+          <>
           {/* ── Practice Information ── */}
           {activeTab === 'practice' && (
             <div className="space-y-6">
@@ -526,6 +735,267 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* ── Hippatizer Intake Forms ── */}
+          {activeTab === 'hippatizer' && (
+            <div className="space-y-6">
+              {saveMessage && (
+                <div className={`p-4 rounded-lg flex items-center gap-3 ${
+                  saveMessage.type === 'success'
+                    ? 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800'
+                    : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800'
+                }`}>
+                  {saveMessage.type === 'success' ? (
+                    <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                  )}
+                  <p className={`text-sm font-medium ${
+                    saveMessage.type === 'success'
+                      ? 'text-green-800 dark:text-green-300'
+                      : 'text-red-800 dark:text-red-300'
+                  }`}>
+                    {saveMessage.text}
+                  </p>
+                </div>
+              )}
+
+              <Card className="dark:bg-slate-900 dark:border-slate-700">
+                <CardHeader>
+                  <CardTitle className="dark:text-slate-50 flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Hippatizer Integration
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-900 dark:text-blue-200">{settings.hippatizer.enabled ? 'Connected & Active' : 'Not Configured'}</p>
+                        <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                          {settings.hippatizer.enabled
+                            ? 'Your Hippatizer forms are being automatically synced and processed'
+                            : 'Add your API key to enable form submissions'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={labelCls}>Hippatizer API Key</label>
+                    {hasApiKey && !changingApiKey ? (
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          type="text"
+                          value=""
+                          disabled
+                          placeholder="API key saved — click Change to update"
+                          className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-400 flex-1 italic"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 shrink-0"
+                          onClick={() => setChangingApiKey(true)}
+                        >
+                          Change
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:border-slate-600 dark:hover:bg-slate-800 shrink-0"
+                          onClick={handleClearApiKey}
+                          title="Delete API key"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Input
+                          type={showApiKey ? 'text' : 'password'}
+                          placeholder={changingApiKey ? 'Enter new API key to replace existing' : 'Enter your Hippatizer API key'}
+                          value={settings.hippatizer.apiKey}
+                          onChange={(e) => handleSettingChange('hippatizer', 'apiKey', e.target.value)}
+                          className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                        >
+                          {showApiKey ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                        </Button>
+                        {changingApiKey && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                            onClick={() => {
+                              setChangingApiKey(false);
+                              setSettings((prev) => ({ ...prev, hippatizer: { ...prev.hippatizer, apiKey: '' } }));
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Get your API key from your <a href="https://hippatizer.com/settings" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Hippatizer account settings</a>
+                    </p>
+                  </div>
+
+                  <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                    <h3 className="font-medium text-slate-900 dark:text-slate-50 mb-3 text-sm">Integration Settings</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Auto-match patients</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Automatically link forms to existing patients when confidence {'>='} 85%</p>
+                        </div>
+                        <input 
+                          type="checkbox" 
+                          checked={settings.hippatizer.autoMatch}
+                          onChange={(e) => handleSettingChange('hippatizer', 'autoMatch', e.target.checked)}
+                          className="rounded accent-blue-600" 
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Create draft patients</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Automatically create draft patients for unmatched forms</p>
+                        </div>
+                        <input 
+                          type="checkbox" 
+                          checked={settings.hippatizer.createDrafts}
+                          onChange={(e) => handleSettingChange('hippatizer', 'createDrafts', e.target.checked)}
+                          className="rounded accent-blue-600" 
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Email notifications</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Notify admins when new forms are received</p>
+                        </div>
+                        <input 
+                          type="checkbox" 
+                          checked={settings.hippatizer.emailNotifications}
+                          onChange={(e) => handleSettingChange('hippatizer', 'emailNotifications', e.target.checked)}
+                          className="rounded accent-blue-600" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                      onClick={handleTestApiKey}
+                      disabled={testingApiKey || !hasApiKey}
+                      title={!hasApiKey ? 'Save an API key first' : 'Send a test form submission notification'}
+                    >
+                      {testingApiKey ? 'Sending...' : 'Test Connection'}
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      className="bg-blue-600 hover:bg-blue-700"
+                      onClick={handleSave}
+                      disabled={saving}
+                    >
+                      {saving ? 'Saving...' : 'Save Settings'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="dark:bg-slate-900 dark:border-slate-700">
+                <CardHeader>
+                  <CardTitle className="dark:text-slate-50">Staff Access Control</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    Configure which staff members can view, match, and publish intake forms
+                  </p>
+                  {staffMembers.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">
+                      No staff members to configure
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {staffMembers.map((staff) => (
+                        <div key={staff.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <p className="font-medium text-slate-900 dark:text-slate-100 text-sm">{staff.name}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{staff.role}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-3">
+                            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                checked={staff.access.canView}
+                                onChange={(e) => handleStaffAccessChange(staff.id, 'view', e.target.checked)}
+                                className="rounded accent-blue-600" 
+                              />
+                              View Forms
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                checked={staff.access.canMatch}
+                                onChange={(e) => handleStaffAccessChange(staff.id, 'match', e.target.checked)}
+                                className="rounded accent-blue-600" 
+                              />
+                              Match Patients
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                checked={staff.access.canPublish}
+                                onChange={(e) => handleStaffAccessChange(staff.id, 'publish', e.target.checked)}
+                                className="rounded accent-blue-600" 
+                              />
+                              Publish Drafts
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="dark:bg-slate-900 dark:border-slate-700">
+                <CardHeader>
+                  <CardTitle className="dark:text-slate-50">Recent Submissions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8">
+                    <FileText className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No forms submitted yet</p>
+                    <Button variant="outline" size="sm" className="mt-4 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
+                      View all intake forms
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ── Webhook Testing ── */}
+          {activeTab === 'webhook-test' && (
+            <div className="space-y-6">
+              <WebhookTestingComponent />
+            </div>
+          )}
+
           {/* ── Notifications ── */}
           {activeTab === 'notifications' && (
             <div className="space-y-6">
@@ -683,14 +1153,16 @@ export default function SettingsPage() {
                 <CardContent className="space-y-4">
                   <div>
                     <label className={labelCls}>Avatar</label>
-                    <div className="w-20 h-20 rounded-lg bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl font-semibold mb-2">JT</div>
+                    <div className="w-20 h-20 rounded-lg bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl font-semibold mb-2">
+                      {[session?.user?.firstName?.[0], session?.user?.lastName?.[0]].filter(Boolean).join('').toUpperCase() || '?'}
+                    </div>
                     <Button variant="outline" size="sm" className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Change Avatar</Button>
                   </div>
                   {[
-                    { label: 'Name', type: 'text', value: 'Jonathan Tamas' },
-                    { label: 'Email', type: 'email', value: 'jonathan.tamas@kids018.com' },
-                    { label: 'Phone', type: 'tel', value: '(555) 123-4567' },
-                    { label: 'Job Title', type: 'text', value: 'Physician / Administrator' },
+                    { label: 'Name', type: 'text', value: `${session?.user?.firstName ?? ''} ${session?.user?.lastName ?? ''}`.trim() },
+                    { label: 'Email', type: 'email', value: session?.user?.email ?? '' },
+                    { label: 'Phone', type: 'tel', value: '' },
+                    { label: 'Job Title', type: 'text', value: session?.user?.jobTitle ?? '' },
                   ].map(({ label, type, value }) => (
                     <div key={label}>
                       <label className={labelCls}>{label}</label>
@@ -733,6 +1205,8 @@ export default function SettingsPage() {
             </div>
           )}
 
+          </>
+        )}
         </div>
       </div>
 

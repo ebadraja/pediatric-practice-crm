@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -155,6 +155,12 @@ export default function PatientDetailPage() {
   const [addAppointmentOpen, setAddAppointmentOpen] = useState(false);
   const [addNotesOpen, setAddNotesOpen] = useState(false);
   const [uploadDocsOpen, setUploadDocsOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 400);
+    return () => clearTimeout(t);
+  }, []);
 
   const handleSave = () => { setIsEditing(false); console.log("Patient updated:", form); };
   const handleCancel = () => { setForm({ ...patientData }); setIsEditing(false); };
@@ -236,7 +242,18 @@ export default function PatientDetailPage() {
         <div className="lg:col-span-2 space-y-6">
 
           {/* Patient Header Card */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-5 shadow-sm">
+          {loading ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-5 shadow-sm animate-pulse">
+              <div className="flex items-start gap-4">
+                <div className="h-16 w-16 rounded-xl bg-slate-200 dark:bg-slate-800" />
+                <div className="flex-1 min-w-0">
+                  <div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded mb-2" />
+                  <div className="h-3 w-32 bg-slate-200 dark:bg-slate-800 rounded" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-5 shadow-sm">
             <div className="flex items-start gap-4">
               <div className={`${patientData.color} h-16 w-16 rounded-xl flex items-center justify-center text-white text-2xl font-bold flex-shrink-0`}>
                 {patientData.initials}
@@ -269,9 +286,16 @@ export default function PatientDetailPage() {
               </div>
             )}
           </div>
+          )}
 
           {/* Patient Information — Editable */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm">
+          {loading ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm p-6 animate-pulse">
+              <div className="h-4 w-40 bg-slate-200 dark:bg-slate-800 rounded mb-4" />
+              <div className="h-40 bg-slate-200 dark:bg-slate-800 rounded" />
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm">
             <div className="border-b border-slate-100 dark:border-slate-800 px-5 py-4 flex items-center justify-between">
               <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">Patient Information</h2>
               {!isEditing && (
@@ -321,13 +345,20 @@ export default function PatientDetailPage() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Tabs */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm overflow-hidden">
+          {loading ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm overflow-hidden animate-pulse p-6">
+              <div className="h-4 w-64 bg-slate-200 dark:bg-slate-800 rounded mb-4" />
+              <div className="h-48 bg-slate-200 dark:bg-slate-800 rounded" />
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm overflow-hidden">
             <Tabs defaultValue="appointments" className="w-full">
               <div className="border-b border-slate-100 dark:border-slate-800 px-2 pt-2 overflow-x-auto">
                 <TabsList className="h-auto gap-0.5 bg-transparent p-0 flex flex-nowrap">
-                  {["appointments", "calls", "chats", "notes", "consent", "documents"].map((tab) => (
+                  {["appointments", "intake-forms", "calls", "chats", "notes", "consent", "documents"].map((tab) => (
                     <TabsTrigger
                       key={tab}
                       value={tab}
@@ -341,6 +372,7 @@ export default function PatientDetailPage() {
                         whitespace-nowrap capitalize transition-all"
                     >
                       {tab === "appointments" ? "Appointments" :
+                       tab === "intake-forms" ? "Intake Forms" :
                        tab === "calls" ? "Calls" :
                        tab === "chats" ? "Chats" :
                        tab === "notes" ? "Medical Notes" :
@@ -382,6 +414,18 @@ export default function PatientDetailPage() {
                         ))}
                       </TableBody>
                     </Table>
+                  </div>
+                </TabsContent>
+
+                {/* Intake Forms */}
+                <TabsContent value="intake-forms" className="mt-0">
+                  <div className="text-center py-8">
+                    <FileText className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">No intake forms submitted yet</p>
+                    <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">Forms submitted through Hippatizer will appear here</p>
+                    <Link href="/intake-forms" className="inline-block mt-4 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">
+                      View all intake forms →
+                    </Link>
                   </div>
                 </TabsContent>
 
@@ -508,6 +552,7 @@ export default function PatientDetailPage() {
               </div>
             </Tabs>
           </div>
+          )}
 
         </div>
 

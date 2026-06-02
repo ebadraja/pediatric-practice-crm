@@ -11,16 +11,19 @@ import {
   MessageSquare,
   UserCog,
   FileBarChart,
+  FileText,
   Settings,
   Stethoscope,
   Menu,
   Moon,
   Sun,
   Bell,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "@/components/theme-provider";
+import { useSession, signOut } from "next-auth/react";
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -28,13 +31,24 @@ const navItems = [
   { name: "Appointments", href: "/appointments", icon: Calendar },
   { name: "Call Logs", href: "/call-logs", icon: Phone },
   { name: "Chat Logs", href: "/chat-logs", icon: MessageSquare },
+  { name: "Intake Forms", href: "/intake-forms", icon: FileText },
   { name: "Staff", href: "/staff", icon: UserCog },
   { name: "Reports", href: "/reports", icon: FileBarChart },
+  { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
 function SidebarContent({ isMobile = false }) {
   const pathname = usePathname();
+  const { data: session } = useSession();
+
+  const firstName = session?.user?.firstName ?? ""
+  const lastName = session?.user?.lastName ?? ""
+  const displayName = firstName || lastName ? `${firstName} ${lastName}`.trim() : "—"
+  const initials = [firstName[0], lastName[0]].filter(Boolean).join("").toUpperCase() || "?"
+  const roleLabel = session?.user?.role
+    ? session.user.role.charAt(0) + session.user.role.slice(1).toLowerCase()
+    : ""
 
   return (
     <>
@@ -85,20 +99,29 @@ function SidebarContent({ isMobile = false }) {
       </nav>
 
       {/* User Section */}
-      <div className={cn(
-        "border-t border-slate-800/50",
-        isMobile ? "p-3" : "p-4"
-      )}>
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-900 cursor-pointer transition-colors">
-          <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0">
-            JT
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">Dr. Jonathan Tamas</p>
-            <p className="text-xs text-slate-400 truncate">Admin</p>
+      {session?.user && (
+        <div className={cn(
+          "border-t border-slate-800/50",
+          isMobile ? "p-3" : "p-4"
+        )}>
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-900 transition-colors group">
+            <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 text-white">
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white truncate">{displayName}</p>
+              <p className="text-xs text-slate-400 truncate">{roleLabel}</p>
+            </div>
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              title="Sign out"
+              className="p-1.5 rounded-md text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors opacity-0 group-hover:opacity-100"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 }

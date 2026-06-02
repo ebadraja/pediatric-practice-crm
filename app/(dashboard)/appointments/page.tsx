@@ -1,313 +1,681 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  format,
+  startOfWeek,
+  endOfWeek,
+  addWeeks,
+  subWeeks,
+  addDays,
+  isToday,
+  isSameDay,
+  parseISO,
+} from "date-fns";
+import Link from "next/link";
+import {
+  Plus, ChevronLeft, ChevronRight, Calendar, Clock,
+  User, ExternalLink, Edit2, Ban, RefreshCw, Loader2,
+} from "lucide-react";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Plus,
-  ChevronLeft,
-  ChevronRight,
-  Calendar,
-} from "lucide-react";
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import AddAppointmentModal from "@/components/add-appointment-modal";
+import { AddAppointmentDialog } from "@/components/add-appointment-dialog";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Patient {
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+}
 
 interface Appointment {
   id: string;
-  time: string; // "09:00", "14:30", etc.
-  duration: number; // minutes
-  patientName: string;
-  type: "well-child" | "sick" | "vaccination" | "follow-up";
-  provider: string;
-  status: "completed" | "upcoming" | "cancelled";
-  day: number; // 0-6 for Mon-Sun
+  patientId: string;
+  patient: Patient;
+  startTime: string;
+  endTime: string;
+  duration: number;
+  type: string;
+  status: string;
+  provider: string | null;
+  reason: string | null;
+  notes: string | null;
 }
 
-const appointments: Appointment[] = [
-  { id: "1", time: "09:00", duration: 30, patientName: "Emma Wilson", type: "well-child", provider: "Dr. Tamas", status: "completed", day: 0 },
-  { id: "2", time: "09:45", duration: 30, patientName: "Lucas Brown", type: "sick", provider: "Dr. Tamas", status: "completed", day: 0 },
-  { id: "3", time: "10:30", duration: 30, patientName: "Olivia Davis", type: "vaccination", provider: "Nurse Jennifer", status: "completed", day: 0 },
-  { id: "4", time: "02:00", duration: 45, patientName: "Noah Martinez", type: "follow-up", provider: "Dr. Richards", status: "upcoming", day: 0 },
-  { id: "5", time: "03:00", duration: 30, patientName: "Ava Thompson", type: "sick", provider: "Dr. Tamas", status: "cancelled", day: 0 },
-  
-  { id: "6", time: "08:30", duration: 30, patientName: "Ethan Garcia", type: "well-child", provider: "Dr. Richards", status: "upcoming", day: 1 },
-  { id: "7", time: "09:30", duration: 30, patientName: "Mia Rodriguez", type: "vaccination", provider: "Nurse Jennifer", status: "upcoming", day: 1 },
-  { id: "8", time: "11:00", duration: 45, patientName: "Liam Johnson", type: "sick", provider: "Dr. Tamas", status: "upcoming", day: 1 },
-  { id: "9", time: "02:30", duration: 30, patientName: "Sophia Lee", type: "follow-up", provider: "Dr. Richards", status: "upcoming", day: 1 },
-  
-  { id: "10", time: "10:00", duration: 30, patientName: "Mason Chen", type: "well-child", provider: "Dr. Tamas", status: "upcoming", day: 2 },
-  { id: "11", time: "11:00", duration: 30, patientName: "Isabella Moore", type: "sick", provider: "Dr. Richards", status: "upcoming", day: 2 },
-  { id: "12", time: "03:00", duration: 30, patientName: "Jacob Taylor", type: "vaccination", provider: "Nurse Jennifer", status: "upcoming", day: 2 },
-  
-  { id: "13", time: "09:00", duration: 45, patientName: "Charlotte Anderson", type: "follow-up", provider: "Dr. Tamas", status: "upcoming", day: 3 },
-  { id: "14", time: "10:30", duration: 30, patientName: "Amelia Thomas", type: "sick", provider: "Dr. Richards", status: "upcoming", day: 3 },
-  { id: "15", time: "02:00", duration: 30, patientName: "Benjamin White", type: "well-child", provider: "Dr. Tamas", status: "upcoming", day: 3 },
-  { id: "16", time: "03:30", duration: 30, patientName: "Harper Martinez", type: "vaccination", provider: "Nurse Jennifer", status: "upcoming", day: 3 },
-  
-  { id: "17", time: "08:30", duration: 30, patientName: "Elijah Jackson", type: "well-child", provider: "Dr. Richards", status: "upcoming", day: 4 },
-  { id: "18", time: "02:00", duration: 45, patientName: "Abigail Martinez", type: "sick", provider: "Dr. Tamas", status: "upcoming", day: 4 },
-  { id: "19", time: "04:00", duration: 30, patientName: "Michael Garcia", type: "follow-up", provider: "Dr. Richards", status: "upcoming", day: 4 },
-];
+// ─── Grid constants ───────────────────────────────────────────────────────────
 
-const getDayName = (index: number) => {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  return days[index];
+const SLOT_HEIGHT  = 40;   // px per 30-min slot
+const DAY_START    = 8;    // 08:00
+const DAY_END      = 17;   // 17:00
+const PX_PER_MIN   = SLOT_HEIGHT / 30;
+const TOTAL_HEIGHT = (DAY_END - DAY_START) * 2 * SLOT_HEIGHT; // 720 px
+
+const TIME_SLOTS: string[] = [];
+for (let h = DAY_START; h < DAY_END; h++) {
+  TIME_SLOTS.push(`${String(h).padStart(2, "0")}:00`);
+  TIME_SLOTS.push(`${String(h).padStart(2, "0")}:30`);
+}
+
+function slotTop(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h * 60 + m - DAY_START * 60) * PX_PER_MIN;
+}
+
+const LUNCH_TOP    = slotTop("12:00");
+const LUNCH_HEIGHT = slotTop("13:00") - LUNCH_TOP;
+
+// ─── Styling maps ─────────────────────────────────────────────────────────────
+
+const TYPE_CONFIG: Record<string, { block: string; text: string; dot: string; label: string }> = {
+  WELL_CHILD_VISIT: {
+    block: "bg-blue-100 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700",
+    text:  "text-blue-800 dark:text-blue-200",
+    dot:   "bg-blue-500",
+    label: "Well-child Visit",
+  },
+  SICK_VISIT: {
+    block: "bg-green-100 dark:bg-green-950/60 border-green-300 dark:border-green-700",
+    text:  "text-green-800 dark:text-green-200",
+    dot:   "bg-green-500",
+    label: "Sick Visit",
+  },
+  VACCINATION: {
+    block: "bg-purple-100 dark:bg-purple-950/60 border-purple-300 dark:border-purple-700",
+    text:  "text-purple-800 dark:text-purple-200",
+    dot:   "bg-purple-500",
+    label: "Vaccination",
+  },
+  FOLLOW_UP: {
+    block: "bg-orange-100 dark:bg-orange-950/60 border-orange-300 dark:border-orange-700",
+    text:  "text-orange-800 dark:text-orange-200",
+    dot:   "bg-orange-500",
+    label: "Follow-up",
+  },
+  CONSULTATION: {
+    block: "bg-teal-100 dark:bg-teal-950/60 border-teal-300 dark:border-teal-700",
+    text:  "text-teal-800 dark:text-teal-200",
+    dot:   "bg-teal-500",
+    label: "Consultation",
+  },
+  PROCEDURE: {
+    block: "bg-rose-100 dark:bg-rose-950/60 border-rose-300 dark:border-rose-700",
+    text:  "text-rose-800 dark:text-rose-200",
+    dot:   "bg-rose-500",
+    label: "Procedure",
+  },
+  OTHER: {
+    block: "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600",
+    text:  "text-slate-700 dark:text-slate-300",
+    dot:   "bg-slate-400",
+    label: "Other",
+  },
 };
 
-const getDayDate = (index: number) => {
-  // January 13-19, 2026
-  return 13 + index;
+const STATUS_BADGE: Record<string, string> = {
+  SCHEDULED:   "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
+  CONFIRMED:   "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  COMPLETED:   "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  CANCELLED:   "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+  NO_SHOW:     "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
+  RESCHEDULED: "bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300",
 };
 
-const getAppointmentColor = (type: string) => {
-  switch (type) {
-    case "well-child":
-      return "bg-blue-500";
-    case "sick":
-      return "bg-green-500";
-    case "vaccination":
-      return "bg-purple-500";
-    case "follow-up":
-      return "bg-orange-500";
-    default:
-      return "bg-slate-500";
-  }
+const TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  Object.entries(TYPE_CONFIG).map(([k, v]) => [k, v.label])
+);
+
+const STATUS_LABEL: Record<string, string> = {
+  SCHEDULED: "Scheduled", CONFIRMED: "Confirmed", COMPLETED: "Completed",
+  CANCELLED: "Cancelled", NO_SHOW: "No-show", RESCHEDULED: "Rescheduled",
 };
 
-const getAppointmentTypeLabel = (type: string) => {
-  switch (type) {
-    case "well-child":
-      return "Well-child";
-    case "sick":
-      return "Sick visit";
-    case "vaccination":
-      return "Vaccination";
-    case "follow-up":
-      return "Follow-up";
-    default:
-      return type;
-  }
-};
+// ─── AppointmentBlock ─────────────────────────────────────────────────────────
 
-const generateTimeSlots = () => {
-  const slots = [];
-  for (let hour = 8; hour < 17; hour++) {
-    for (let minute = 0; minute < 60; minute += 30) {
-      const timeStr = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
-      slots.push(timeStr);
+function AppointmentBlock({
+  appt,
+  onClick,
+}: {
+  appt: Appointment;
+  onClick: () => void;
+}) {
+  const start      = parseISO(appt.startTime);
+  const topMin     = start.getHours() * 60 + start.getMinutes() - DAY_START * 60;
+  const top        = topMin * PX_PER_MIN;
+  const height     = Math.max(appt.duration * PX_PER_MIN, 22);
+  const cfg        = TYPE_CONFIG[appt.type] ?? TYPE_CONFIG.OTHER;
+  const isCancelled = appt.status === "CANCELLED" || appt.status === "NO_SHOW";
+  const isCompleted = appt.status === "COMPLETED";
+
+  if (top < 0 || top >= TOTAL_HEIGHT) return null;
+
+  return (
+    <div
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      style={{ top, height, position: "absolute", left: 3, right: 3, zIndex: 10 }}
+      className={`rounded-md px-2 py-0.5 cursor-pointer border transition-all hover:brightness-95 hover:shadow-sm select-none overflow-hidden
+        ${isCancelled
+          ? "bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-50"
+          : isCompleted
+          ? `${cfg.block} opacity-70`
+          : cfg.block}`}
+    >
+      <p className={`text-[11px] font-semibold leading-tight truncate
+        ${isCancelled ? "line-through text-slate-400 dark:text-slate-500" : cfg.text}`}
+      >
+        {appt.patient.firstName} {appt.patient.lastName}
+      </p>
+      {height > 32 && (
+        <p className={`text-[10px] leading-tight mt-0.5 truncate
+          ${isCancelled ? "text-slate-400 dark:text-slate-500" : `${cfg.text} opacity-80`}`}
+        >
+          {format(start, "h:mm a")}
+          {appt.provider && ` · ${appt.provider}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── AppointmentDetailDialog ──────────────────────────────────────────────────
+
+function AppointmentDetailDialog({
+  appt,
+  onClose,
+  onCancelled,
+  onEdit,
+}: {
+  appt: Appointment | null;
+  onClose: () => void;
+  onCancelled: () => void;
+  onEdit: (appt: Appointment) => void;
+}) {
+  const [cancelling, setCancelling] = useState(false);
+
+  if (!appt) return null;
+
+  const start = parseISO(appt.startTime);
+  const end   = parseISO(appt.endTime);
+  const cfg   = TYPE_CONFIG[appt.type] ?? TYPE_CONFIG.OTHER;
+  const statusClass = STATUS_BADGE[appt.status] ?? "";
+  const isCancellable = !["CANCELLED", "NO_SHOW", "COMPLETED"].includes(appt.status);
+
+  const handleCancel = async () => {
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/appointments/${appt.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "CANCELLED" }),
+      });
+      if (res.ok) {
+        onCancelled();
+        onClose();
+      }
+    } finally {
+      setCancelling(false);
     }
-  }
-  return slots;
-};
-
-const timeSlots = generateTimeSlots();
-
-const timeToPixels = (timeStr: string): number => {
-  const [hours, minutes] = timeStr.split(":").map(Number);
-  const totalMinutes = hours * 60 + minutes - 8 * 60; // 8 AM is the start
-  return totalMinutes * 1.5; // 1.5px per minute
-};
-
-const getTodayAppointments = () => {
-  return appointments
-    .filter((apt) => apt.day === 1) // Tuesday is "today" for this week
-    .sort((a, b) => a.time.localeCompare(b.time));
-};
-
-export default function AppointmentsPage() {
-  const [viewType, setViewType] = useState<"day" | "week" | "month">("week");
-  const [provider, setProvider] = useState("all");
-  const [appointmentType, setAppointmentType] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [newAppointmentOpen, setNewAppointmentOpen] = useState(false);
-
-  // Filter appointments based on selected filters
-  const filteredAppointments = appointments.filter((apt) => {
-    const matchesProvider = provider === "all" || 
-      (provider === "tamas" && apt.provider === "Dr. Tamas") ||
-      (provider === "richards" && apt.provider === "Dr. Richards") ||
-      (provider === "jennifer" && apt.provider === "Nurse Jennifer");
-    
-    const matchesType = appointmentType === "all" || apt.type === appointmentType;
-    
-    const matchesStatus = status === "all" || apt.status === status;
-    
-    return matchesProvider && matchesType && matchesStatus;
-  });
-
-  const getTodayFilteredAppointments = () => {
-    return filteredAppointments
-      .filter((apt) => apt.day === 1) // Tuesday is "today"
-      .sort((a, b) => a.time.localeCompare(b.time));
-  };
-
-  const todayAppointments = getTodayFilteredAppointments();
-  const weekStats = {
-    today: filteredAppointments.filter((apt) => apt.day === 1).length,
-    week: filteredAppointments.length,
-    noShows: filteredAppointments.filter((apt) => apt.status === "cancelled").length,
   };
 
   return (
+    <Dialog open={!!appt} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="w-full max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <span className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+            {appt.patient.firstName} {appt.patient.lastName}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          {/* Patient link */}
+          <Link
+            href={`/patients/${appt.patientId}`}
+            className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            onClick={onClose}
+          >
+            <User className="h-3.5 w-3.5" />
+            View Patient Record
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+
+          {/* Meta grid */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Date & Time</p>
+              <p className="font-medium text-slate-900 dark:text-slate-100">
+                {format(start, "EEE, MMM d")}
+              </p>
+              <p className="text-slate-600 dark:text-slate-400">
+                {format(start, "h:mm a")} – {format(end, "h:mm a")}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Status</p>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${statusClass}`}>
+                {STATUS_LABEL[appt.status] ?? appt.status}
+              </span>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Type</p>
+              <p className="font-medium text-slate-900 dark:text-slate-100">
+                {TYPE_LABEL[appt.type] ?? appt.type}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Duration</p>
+              <p className="font-medium text-slate-900 dark:text-slate-100">
+                {appt.duration} min
+              </p>
+            </div>
+
+            {appt.provider && (
+              <div className="col-span-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Provider</p>
+                <p className="font-medium text-slate-900 dark:text-slate-100">{appt.provider}</p>
+              </div>
+            )}
+          </div>
+
+          {appt.reason && (
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Reason for visit</p>
+              <p className="text-sm text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/50 rounded-lg px-3 py-2">
+                {appt.reason}
+              </p>
+            </div>
+          )}
+
+          {appt.notes && (
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Notes</p>
+              <p className="text-sm text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/50 rounded-lg px-3 py-2">
+                {appt.notes}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="flex gap-2 pt-2">
+          {isCancellable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/30 gap-1.5"
+              onClick={handleCancel}
+              disabled={cancelling}
+            >
+              {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+              Cancel
+            </Button>
+          )}
+          {isCancellable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => { onEdit(appt); onClose(); }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Reschedule
+            </Button>
+          )}
+          <Button
+            size="sm"
+            className="gap-1.5 ml-auto"
+            onClick={() => { onEdit(appt); onClose(); }}
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+            Edit
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Filter pill helper ───────────────────────────────────────────────────────
+
+function FilterPills({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex gap-0.5 border border-slate-200 dark:border-slate-700 rounded-lg p-1 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
+      {options.map(({ value: v, label }) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
+            value === v
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+const PROVIDER_FILTERS = [
+  { value: "all",             label: "All" },
+  { value: "Dr. Tamas",       label: "Dr. Tamas" },
+  { value: "Dr. Richards",    label: "Dr. Richards" },
+  { value: "Nurse Jennifer",  label: "Nurse" },
+];
+
+const TYPE_FILTERS = [
+  { value: "all",              label: "All Types" },
+  { value: "WELL_CHILD_VISIT", label: "Well-child" },
+  { value: "SICK_VISIT",       label: "Sick Visit" },
+  { value: "VACCINATION",      label: "Vaccination" },
+  { value: "FOLLOW_UP",        label: "Follow-up" },
+];
+
+const STATUS_FILTERS = [
+  { value: "all",        label: "All" },
+  { value: "SCHEDULED",  label: "Scheduled" },
+  { value: "CONFIRMED",  label: "Confirmed" },
+  { value: "COMPLETED",  label: "Completed" },
+  { value: "CANCELLED",  label: "Cancelled" },
+];
+
+const LEGEND = [
+  { type: "WELL_CHILD_VISIT", label: "Well-child" },
+  { type: "SICK_VISIT",       label: "Sick Visit" },
+  { type: "VACCINATION",      label: "Vaccination" },
+  { type: "FOLLOW_UP",        label: "Follow-up" },
+  { type: "CONSULTATION",     label: "Consultation" },
+  { type: "PROCEDURE",        label: "Procedure" },
+];
+
+export default function AppointmentsPage() {
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [currentWeek, setCurrentWeek]   = useState<Date>(() => new Date());
+  const [viewMode, setViewMode]         = useState<"day" | "week" | "month">("week");
+  const [filters, setFilters]           = useState({ provider: "all", type: "all", status: "all" });
+  const [selected, setSelected]         = useState<Appointment | null>(null);
+  const [newApptOpen, setNewApptOpen]   = useState(false);
+  const [prefill, setPrefill]           = useState<{ date: string; time: string } | null>(null);
+  const [editTarget, setEditTarget]     = useState<Appointment | null>(null);
+  const [nowTop, setNowTop]             = useState<number | null>(null);
+
+  const weekStart = useMemo(() => startOfWeek(currentWeek, { weekStartsOn: 1 }), [currentWeek]);
+  const weekEnd   = useMemo(() => endOfWeek(currentWeek, { weekStartsOn: 1 }), [currentWeek]);
+  const weekDays  = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+
+  // ── Fetch ───────────────────────────────────────────────────────────────────
+
+  const fetchAppointments = useCallback(async () => {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({
+        startDate: weekStart.toISOString(),
+        endDate:   weekEnd.toISOString(),
+        limit:     "200",
+        page:      "1",
+      });
+      if (filters.provider !== "all") p.set("provider", filters.provider);
+      if (filters.type     !== "all") p.set("type",     filters.type);
+      if (filters.status   !== "all") p.set("status",   filters.status);
+
+      const res = await fetch(`/api/appointments?${p}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setAppointments(json.data ?? []);
+    } catch (err) {
+      console.error("[appointments/page] fetch failed", err);
+      setAppointments([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [weekStart, weekEnd, filters.provider, filters.type, filters.status]);
+
+  useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
+
+  // ── Current-time indicator ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const h   = now.getHours();
+      const m   = now.getMinutes();
+      setNowTop(h >= DAY_START && h < DAY_END
+        ? (h * 60 + m - DAY_START * 60) * PX_PER_MIN
+        : null);
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Stats ───────────────────────────────────────────────────────────────────
+
+  const today = useMemo(() => new Date(), []);
+  const todayCount = useMemo(
+    () => appointments.filter((a) => isSameDay(parseISO(a.startTime), today)).length,
+    [appointments, today],
+  );
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleSlotClick = (day: Date, slot: string) => {
+    const [h, m] = slot.split(":").map(Number);
+    if (h * 60 + m >= 12 * 60 && h * 60 + m < 13 * 60) return; // lunch
+    setPrefill({ date: format(day, "yyyy-MM-dd"), time: slot });
+    setEditTarget(null);
+    setNewApptOpen(true);
+  };
+
+  const handleEdit = (appt: Appointment) => {
+    setEditTarget(appt);
+    setPrefill(null);
+    setNewApptOpen(true);
+  };
+
+  const handleSaved = () => {
+    setNewApptOpen(false);
+    setEditTarget(null);
+    setPrefill(null);
+    fetchAppointments();
+  };
+
+  const editModalData = editTarget
+    ? {
+        id:               editTarget.id,
+        patientName:      `${editTarget.patient.firstName} ${editTarget.patient.lastName}`,
+        patientPhone:     editTarget.patient.phone ?? "",
+        appointmentDate:  format(parseISO(editTarget.startTime), "yyyy-MM-dd"),
+        appointmentTime:  format(parseISO(editTarget.startTime), "HH:mm"),
+        appointmentType:  editTarget.type.toLowerCase().replace(/_/g, "-"),
+        provider:         editTarget.provider ?? "",
+        reason:           editTarget.reason ?? "",
+        notes:            editTarget.notes ?? "",
+        status:           editTarget.status.toLowerCase() as "scheduled" | "confirmed" | "cancelled" | "completed",
+      }
+    : prefill
+    ? {
+        ...{ patientName: "", patientPhone: "", appointmentType: "checkup", provider: "Dr. Tamas", reason: "", notes: "", status: "scheduled" as const },
+        appointmentDate: prefill.date,
+        appointmentTime: prefill.time,
+      }
+    : undefined;
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  const rangeLabel = `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`;
+
+  return (
     <div className="pt-4 pb-8 space-y-5 md:space-y-8">
-      {/* Page Header */}
+
+      {/* ── Page Header ────────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl lg:text-4xl font-semibold text-slate-900 dark:text-slate-50 tracking-tight">Appointments</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1 text-sm">Manage all patient appointments and schedules</p>
+          <h1 className="text-2xl md:text-3xl lg:text-4xl font-semibold text-slate-900 dark:text-slate-50 tracking-tight">
+            Appointments
+          </h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1 text-sm">
+            Manage all patient appointments and schedules
+          </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* View Toggle - hidden on mobile */}
+          {/* View toggle */}
           <div className="hidden sm:flex border border-slate-200 dark:border-slate-700 rounded-lg p-1 bg-slate-50 dark:bg-slate-800">
-            {["day", "week", "month"].map((type) => (
+            {(["day", "week", "month"] as const).map((v) => (
               <button
-                key={type}
-                onClick={() => setViewType(type as "day" | "week" | "month")}
+                key={v}
+                onClick={() => setViewMode(v)}
                 className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                  viewType === type
+                  viewMode === v
                     ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
                 }`}
               >
-                {type.charAt(0).toUpperCase() + type.slice(1)}
+                {v.charAt(0).toUpperCase() + v.slice(1)}
               </button>
             ))}
           </div>
-          <Button onClick={() => setNewAppointmentOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white gap-2 h-9 md:h-10 text-sm">
+          <Button
+            onClick={() => { setPrefill(null); setEditTarget(null); setNewApptOpen(true); }}
+            className="bg-blue-600 hover:bg-blue-700 text-white gap-2 h-9 md:h-10 text-sm"
+          >
             <Plus className="h-4 w-4" />
             <span className="hidden xs:inline">New </span>Appointment
           </Button>
         </div>
       </div>
 
-      {/* Sub-header: Date Navigation & Filters */}
+      {/* ── Sub-header: Navigation & Filters ──────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-        {/* Date Navigation */}
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="px-2 h-8">
+          <Button variant="outline" size="sm" className="px-2 h-8"
+            onClick={() => setCurrentWeek((w) => subWeeks(w, 1))}
+          >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm font-medium text-slate-900 dark:text-slate-50 whitespace-nowrap">
-            Jan 13 – 19, 2026
+          <span className="text-sm font-medium text-slate-900 dark:text-slate-50 whitespace-nowrap min-w-[160px] text-center">
+            {rangeLabel}
           </span>
-          <Button variant="outline" size="sm" className="px-2 h-8">
+          <Button variant="outline" size="sm" className="px-2 h-8"
+            onClick={() => setCurrentWeek((w) => addWeeks(w, 1))}
+          >
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 h-8">
+          <Button variant="outline" size="sm" className="gap-1.5 h-8"
+            onClick={() => setCurrentWeek(new Date())}
+          >
             <Calendar className="h-3.5 w-3.5" />
             Today
           </Button>
+          {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
         </div>
 
-        {/* Filters - horizontally scrollable on small screens */}
         <div className="flex gap-2 overflow-x-auto pb-1 -mb-1 scrollbar-hide">
-          {/* Provider Filter */}
-          <div className="flex gap-0.5 border border-slate-200 dark:border-slate-700 rounded-lg p-1 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
-            {["all", "tamas", "richards", "jennifer"].map((prov) => (
-              <button
-                key={prov}
-                onClick={() => setProvider(prov)}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
-                  provider === prov
-                    ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
-                }`}
-              >
-                {prov === "all" ? "All" : prov === "tamas" ? "Dr. Tamas" : prov === "richards" ? "Dr. Richards" : "Nurse"}
-              </button>
-            ))}
-          </div>
-
-          {/* Type Filter */}
-          <div className="flex gap-0.5 border border-slate-200 dark:border-slate-700 rounded-lg p-1 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
-            {["all", "well-child", "sick", "vaccination", "follow-up"].map((type) => (
-              <button
-                key={type}
-                onClick={() => setAppointmentType(type)}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
-                  appointmentType === type
-                    ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
-                }`}
-              >
-                {type === "all" ? "All Types" : type.charAt(0).toUpperCase() + type.slice(1).replace("-", " ")}
-              </button>
-            ))}
-          </div>
-
-          {/* Status Filter */}
-          <div className="flex gap-0.5 border border-slate-200 dark:border-slate-700 rounded-lg p-1 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
-            {["all", "completed", "upcoming", "cancelled"].map((stat) => (
-              <button
-                key={stat}
-                onClick={() => setStatus(stat)}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
-                  status === stat
-                    ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
-                }`}
-              >
-                {stat === "all" ? "All" : stat.charAt(0).toUpperCase() + stat.slice(1)}
-              </button>
-            ))}
-          </div>
+          <FilterPills options={PROVIDER_FILTERS} value={filters.provider}
+            onChange={(v) => setFilters((f) => ({ ...f, provider: v }))} />
+          <FilterPills options={TYPE_FILTERS}     value={filters.type}
+            onChange={(v) => setFilters((f) => ({ ...f, type: v }))} />
+          <FilterPills options={STATUS_FILTERS}   value={filters.status}
+            onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
         </div>
       </div>
 
-      {/* Mobile/Tablet List View — shown below lg */}
+      {/* ── Mobile / Tablet list ───────────────────────────────────────────────── */}
       <div className="lg:hidden space-y-4">
         <Card>
           <CardHeader className="pb-3 px-4 py-4">
             <CardTitle className="text-base">This Week's Appointments</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            {filteredAppointments.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-6">No appointments match the current filters</p>
+            {loading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-16 rounded-lg bg-slate-100 dark:bg-slate-800 animate-pulse" />
+                ))}
+              </div>
+            ) : appointments.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-6">
+                No appointments match the current filters
+              </p>
             ) : (
               <div className="space-y-5">
-                {Array.from({ length: 7 }).map((_, dayIndex) => {
-                  const dayAppts = filteredAppointments
-                    .filter((apt) => apt.day === dayIndex)
-                    .sort((a, b) => a.time.localeCompare(b.time));
+                {weekDays.map((day) => {
+                  const dayAppts = appointments
+                    .filter((a) => isSameDay(parseISO(a.startTime), day))
+                    .sort((a, b) => a.startTime.localeCompare(b.startTime));
                   if (dayAppts.length === 0) return null;
                   return (
-                    <div key={dayIndex}>
-                      <div className={`flex items-center gap-2 mb-2.5 pb-1.5 border-b ${dayIndex === 1 ? "border-blue-200 dark:border-blue-800" : "border-slate-100 dark:border-slate-800"}`}>
-                        <span className={`text-xs font-semibold uppercase tracking-wider ${dayIndex === 1 ? "text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400"}`}>
-                          {getDayName(dayIndex)}, Jan {getDayDate(dayIndex)}
+                    <div key={day.toISOString()}>
+                      <div className={`flex items-center gap-2 mb-2.5 pb-1.5 border-b ${
+                        isToday(day) ? "border-blue-200 dark:border-blue-800" : "border-slate-100 dark:border-slate-800"
+                      }`}>
+                        <span className={`text-xs font-semibold uppercase tracking-wider ${
+                          isToday(day) ? "text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400"
+                        }`}>
+                          {format(day, "EEE, MMM d")}
                         </span>
-                        {dayIndex === 1 && (
-                          <span className="text-xs bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-medium">Today</span>
+                        {isToday(day) && (
+                          <span className="text-xs bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-medium">
+                            Today
+                          </span>
                         )}
                       </div>
                       <div className="space-y-2">
-                        {dayAppts.map((apt) => (
-                          <div
-                            key={apt.id}
-                            className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                              apt.status === "cancelled"
-                                ? "border-red-100 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 opacity-60"
-                                : apt.status === "completed"
-                                ? "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40"
-                                : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800"
-                            }`}
-                          >
-                            <div className={`w-1.5 h-10 rounded-full flex-shrink-0 ${getAppointmentColor(apt.type)}`} />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className={`text-sm font-medium truncate ${apt.status === "cancelled" ? "line-through text-slate-400 dark:text-slate-600" : "text-slate-900 dark:text-slate-100"}`}>
-                                  {apt.patientName}
+                        {dayAppts.map((appt) => {
+                          const start = parseISO(appt.startTime);
+                          const cfg   = TYPE_CONFIG[appt.type] ?? TYPE_CONFIG.OTHER;
+                          const isCancelled = appt.status === "CANCELLED" || appt.status === "NO_SHOW";
+                          return (
+                            <div
+                              key={appt.id}
+                              onClick={() => setSelected(appt)}
+                              className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                isCancelled
+                                  ? "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-60"
+                                  : appt.status === "COMPLETED"
+                                  ? "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40"
+                                  : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800"
+                              }`}
+                            >
+                              <div className={`w-1.5 h-10 rounded-full flex-shrink-0 ${cfg.dot}`} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className={`text-sm font-medium truncate ${
+                                    isCancelled
+                                      ? "line-through text-slate-400 dark:text-slate-600"
+                                      : "text-slate-900 dark:text-slate-100"
+                                  }`}>
+                                    {appt.patient.firstName} {appt.patient.lastName}
+                                  </p>
+                                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded whitespace-nowrap flex-shrink-0">
+                                    {format(start, "h:mm a")}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                                  {cfg.label} · {appt.provider ?? "—"} · {appt.duration} min
                                 </p>
-                                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded whitespace-nowrap flex-shrink-0">
-                                  {apt.time}
-                                </span>
                               </div>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                                {getAppointmentTypeLabel(apt.type)} · {apt.provider} · {apt.duration} min
-                              </p>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -317,12 +685,10 @@ export default function AppointmentsPage() {
           </CardContent>
         </Card>
 
-        {/* Mini stats for mobile */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {[
-            { label: "Today", value: weekStats.today, color: "text-slate-900 dark:text-slate-50" },
-            { label: "This Week", value: weekStats.week, color: "text-slate-900 dark:text-slate-50" },
-            { label: "Cancelled", value: weekStats.noShows, color: "text-red-600 dark:text-red-400" },
+            { label: "Today",     value: todayCount,           color: "text-slate-900 dark:text-slate-50" },
+            { label: "This Week", value: appointments.length,  color: "text-slate-900 dark:text-slate-50" },
           ].map((s) => (
             <Card key={s.label}>
               <CardContent className="pt-4 pb-4 px-3 text-center">
@@ -334,187 +700,283 @@ export default function AppointmentsPage() {
         </div>
       </div>
 
-      {/* Desktop Week View — hidden on mobile/tablet */}
+      {/* ── Desktop: Week Grid + Sidebar ───────────────────────────────────────── */}
       <div className="hidden lg:grid grid-cols-4 gap-6">
-        {/* Calendar */}
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Week View</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="border rounded-lg overflow-x-auto">
-              <div className="min-w-[1200px]">
-                {/* Day Headers */}
-                <div className="grid grid-cols-7 gap-0 border-b border-slate-200 dark:border-slate-700">
-                  {Array.from({ length: 7 }).map((_, dayIndex) => (
-                    <div key={dayIndex} className="border-r border-slate-200 dark:border-slate-700 last:border-r-0 p-4 text-center">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{getDayName(dayIndex)}</p>
-                      <p className={`text-lg font-bold ${dayIndex === 1 ? "text-blue-600 dark:text-blue-400" : "text-slate-600 dark:text-slate-400"}`}>
-                        {getDayDate(dayIndex)}
-                      </p>
-                      {dayIndex === 1 && (
-                        <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">Today</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
 
-                {/* Time Slots Grid */}
-                <div className="relative">
-                  {/* Time column header and all slots */}
-                  <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-0">
-                    {/* Time column */}
-                    <div className="border-r border-slate-200 dark:border-slate-700">
-                      {timeSlots.map((time) => (
-                        <div
-                          key={time}
-                          className="h-12 border-b border-slate-100 dark:border-slate-800 p-2 text-xs text-slate-400 dark:text-slate-600 flex items-start justify-center font-medium"
-                        >
-                          {time}
-                        </div>
-                      ))}
-                    </div>
+        {/* Calendar — 3 cols */}
+        <div className="lg:col-span-3">
+          {loading && appointments.length === 0 ? (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 h-96 bg-slate-50 dark:bg-slate-800/30 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+            </div>
+          ) : (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
 
-                    {/* Day columns */}
-                    {Array.from({ length: 7 }).map((_, dayIndex) => (
-                      <div key={dayIndex} className="border-r border-slate-200 dark:border-slate-700 last:border-r-0 relative">
-                        {timeSlots.map((time, slotIndex) => {
-                          const isLunchBreak = time >= "12:30" && time <= "13:00";
+              {/* Day-header row */}
+              <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                <div className="w-16 flex-shrink-0" />
+                {weekDays.map((day) => (
+                  <div
+                    key={day.toISOString()}
+                    className="flex-1 min-w-[100px] text-center py-2.5 border-l border-slate-200 dark:border-slate-700"
+                  >
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {format(day, "EEE")}
+                    </p>
+                    <p className={`text-base font-semibold mt-0.5 ${
+                      isToday(day)
+                        ? "text-blue-600 dark:text-blue-400"
+                        : "text-slate-800 dark:text-slate-100"
+                    }`}>
+                      {format(day, "d")}
+                    </p>
+                    {isToday(day) && (
+                      <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full mx-auto mt-0.5" />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Scrollable body */}
+              <div className="overflow-y-auto" style={{ maxHeight: "620px" }}>
+                <div className="flex">
+
+                  {/* Time labels */}
+                  <div className="w-16 flex-shrink-0 relative" style={{ height: TOTAL_HEIGHT }}>
+                    {TIME_SLOTS.map((slot, i) => (
+                      <div
+                        key={slot}
+                        style={{ position: "absolute", top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
+                        className="w-full flex items-start justify-end pr-2.5"
+                      >
+                        {i % 2 === 0 && (
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 -mt-2 font-medium">
+                            {format(new Date(0, 0, 0, ...slot.split(":").map(Number)), "h a")}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Day columns */}
+                  {weekDays.map((day) => {
+                    const dayAppts = appointments.filter((a) =>
+                      isSameDay(parseISO(a.startTime), day)
+                    );
+
+                    return (
+                      <div
+                        key={day.toISOString()}
+                        className="flex-1 min-w-[100px] border-l border-slate-200 dark:border-slate-700 relative"
+                        style={{ height: TOTAL_HEIGHT }}
+                      >
+                        {/* Clickable slot rows */}
+                        {TIME_SLOTS.map((slot, i) => {
+                          const [h, m] = slot.split(":").map(Number);
+                          const isLunch = h * 60 + m >= 12 * 60 && h * 60 + m < 13 * 60;
                           return (
                             <div
-                              key={`${dayIndex}-${time}`}
-                              className={`h-12 border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors ${
-                                isLunchBreak ? "bg-slate-50 dark:bg-slate-800/60" : ""
+                              key={slot}
+                              onClick={() => !isLunch && handleSlotClick(day, slot)}
+                              style={{
+                                position: "absolute",
+                                top:      i * SLOT_HEIGHT,
+                                height:   SLOT_HEIGHT,
+                                left: 0, right: 0,
+                              }}
+                              className={`border-b border-slate-100 dark:border-slate-800 transition-colors ${
+                                isLunch
+                                  ? "cursor-default"
+                                  : "cursor-pointer hover:bg-blue-50/30 dark:hover:bg-blue-900/10"
                               }`}
                             />
                           );
                         })}
 
-                        {/* Appointment blocks for this day */}
-                        <div className="absolute inset-0">
-                          {filteredAppointments
-                            .filter((apt) => apt.day === dayIndex)
-                            .map((apt) => {
-                              const startPixels = timeToPixels(apt.time);
-                              const heightPixels = apt.duration * 1.5;
-                              const isCompleted = apt.status === "completed";
-                              const isCancelled = apt.status === "cancelled";
-
-                              return (
-                                <div
-                                  key={apt.id}
-                                  className={`absolute left-0 right-0 mx-1 rounded-md p-2 text-white text-xs font-medium overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer ${getAppointmentColor(
-                                    apt.type
-                                  )} ${isCompleted ? "opacity-60" : ""} ${
-                                    isCancelled ? "line-through opacity-50" : ""
-                                  }`}
-                                  style={{
-                                    top: `${startPixels}px`,
-                                    height: `${heightPixels}px`,
-                                    minHeight: "40px",
-                                  }}
-                                  title={`${apt.patientName} - ${apt.type}`}
-                                >
-                                  <div className="whitespace-nowrap truncate">{apt.patientName}</div>
-                                  <div className="whitespace-nowrap truncate text-xs opacity-90">
-                                    {getAppointmentTypeLabel(apt.type)}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                        {/* Lunch break overlay */}
+                        <div
+                          style={{
+                            position: "absolute",
+                            top:    LUNCH_TOP,
+                            height: LUNCH_HEIGHT,
+                            left: 0, right: 0,
+                            zIndex: 5,
+                          }}
+                          className="bg-slate-50/90 dark:bg-slate-800/80 border-y border-slate-200 dark:border-slate-700 pointer-events-none flex items-center justify-center"
+                        >
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide">
+                            Lunch
+                          </span>
                         </div>
+
+                        {/* Current-time indicator */}
+                        {isToday(day) && nowTop !== null && (
+                          <div
+                            style={{ position: "absolute", top: nowTop, left: 0, right: 0, zIndex: 20 }}
+                            className="flex items-center pointer-events-none"
+                          >
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-500 -ml-1 flex-shrink-0 shadow-sm" />
+                            <div className="flex-1 h-px bg-red-500" />
+                          </div>
+                        )}
+
+                        {/* Appointment blocks */}
+                        {dayAppts.map((appt) => (
+                          <AppointmentBlock
+                            key={appt.id}
+                            appt={appt}
+                            onClick={() => setSelected(appt)}
+                          />
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
 
-        {/* Right Sidebar */}
+        {/* Sidebar — 1 col */}
         <div className="space-y-4">
-          {/* Upcoming Today */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Upcoming Today</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {todayAppointments.length > 0 ? (
-                todayAppointments.map((apt) => (
-                  <div
-                    key={apt.id}
-                    className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 hover:bg-slate-50 dark:hover:bg-slate-800 bg-white dark:bg-slate-800/40 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <p className="font-medium text-slate-900 dark:text-slate-100 text-sm">{apt.patientName}</p>
-                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded flex-shrink-0">
-                        {apt.time}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-0.5">
-                      {getAppointmentTypeLabel(apt.type)}
-                    </p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">{apt.provider}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">No appointments today</p>
-              )}
-            </CardContent>
-          </Card>
 
-          {/* Quick Stats */}
+          {/* Stats */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">This Week</CardTitle>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                This Week
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">Today's Appointments</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{weekStats.today}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">This Week</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{weekStats.week}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">Cancelled</p>
-                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{weekStats.noShows}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Color Legend */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Appointment Types</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="px-4 pb-4 space-y-3">
               {[
-                { type: "well-child", label: "Well-child Visit" },
-                { type: "sick", label: "Sick Visit" },
-                { type: "vaccination", label: "Vaccination" },
-                { type: "follow-up", label: "Follow-up" },
-              ].map((item) => (
-                <div key={item.type} className="flex items-center gap-3">
-                  <div className={`w-3 h-3 rounded-full ${getAppointmentColor(item.type)}`} />
-                  <p className="text-sm text-slate-700 dark:text-slate-300">{item.label}</p>
+                { label: "Today",         value: todayCount,          icon: Clock },
+                { label: "Total",         value: appointments.length, icon: Calendar },
+                { label: "Completed",
+                  value: appointments.filter((a) => a.status === "COMPLETED").length,
+                  icon: User },
+                { label: "Cancelled",
+                  value: appointments.filter((a) => a.status === "CANCELLED" || a.status === "NO_SHOW").length,
+                  icon: Ban },
+              ].map(({ label, value, icon: Icon }) => (
+                <div key={label} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </div>
+                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {loading ? "…" : value}
+                  </span>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          {/* Color legend */}
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Appointment Types
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 space-y-2">
+              {LEGEND.map(({ type, label }) => (
+                <div key={type} className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${TYPE_CONFIG[type].dot}`} />
+                  <span className="text-xs text-slate-600 dark:text-slate-400">{label}</span>
+                </div>
+              ))}
+              <div className="pt-1 border-t border-slate-100 dark:border-slate-800 mt-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-slate-300 dark:bg-slate-600" />
+                  <span className="text-xs text-slate-500 dark:text-slate-500">Cancelled / No-show</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Today's upcoming list */}
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Today's Upcoming
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              {loading ? (
+                <div className="space-y-2">
+                  {[1, 2].map((i) => <div key={i} className="h-12 rounded-lg bg-slate-100 dark:bg-slate-800 animate-pulse" />)}
+                </div>
+              ) : (() => {
+                const upcoming = appointments
+                  .filter((a) =>
+                    isSameDay(parseISO(a.startTime), today) &&
+                    !["CANCELLED", "NO_SHOW", "COMPLETED"].includes(a.status)
+                  )
+                  .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                  .slice(0, 4);
+                return upcoming.length === 0 ? (
+                  <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-2">
+                    No upcoming appointments
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {upcoming.map((appt) => {
+                      const cfg = TYPE_CONFIG[appt.type] ?? TYPE_CONFIG.OTHER;
+                      return (
+                        <button
+                          key={appt.id}
+                          onClick={() => setSelected(appt)}
+                          className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
+                        >
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-slate-800 dark:text-slate-100 truncate">
+                              {appt.patient.firstName} {appt.patient.lastName}
+                            </p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                              {format(parseISO(appt.startTime), "h:mm a")} · {cfg.label}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Add Appointment Modal */}
-      <AddAppointmentModal
-        open={newAppointmentOpen}
-        onOpenChange={setNewAppointmentOpen}
-        onAppointmentSaved={(appointment) => {
-          console.log("Appointment created:", appointment);
-        }}
+      {/* ── Appointment detail dialog ──────────────────────────────────────────── */}
+      <AppointmentDetailDialog
+        appt={selected}
+        onClose={() => setSelected(null)}
+        onCancelled={fetchAppointments}
+        onEdit={handleEdit}
       />
+
+      {/* ── New appointment dialog ────────────────────────────────────────────── */}
+      {!editTarget && (
+        <AddAppointmentDialog
+          isOpen={newApptOpen && !editTarget}
+          onClose={() => { setNewApptOpen(false); setPrefill(null); }}
+          onSuccess={fetchAppointments}
+          defaultDate={prefill ? new Date(prefill.date + "T00:00:00") : undefined}
+        />
+      )}
+
+      {/* ── Edit / Reschedule modal (existing) ────────────────────────────────── */}
+      {editTarget && (
+        <AddAppointmentModal
+          open={newApptOpen && !!editTarget}
+          onOpenChange={(o) => {
+            if (!o) { setNewApptOpen(false); setEditTarget(null); setPrefill(null); }
+          }}
+          appointment={editModalData}
+          onAppointmentSaved={handleSaved}
+        />
+      )}
     </div>
   );
 }

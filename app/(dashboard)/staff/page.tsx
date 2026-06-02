@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -375,10 +375,58 @@ const getStatusColor = (status: 'online' | 'away' | 'inactive') => {
   }
 };
 
+function StaffRow({ staff }: { staff: StaffMember }) {
+  return (
+    <tr className="border-b border-slate-100 dark:border-slate-700/60 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+      <td className="py-3 px-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-semibold">
+            {getInitials(staff.name)}
+          </div>
+          <div>
+            <div className="text-slate-900 dark:text-slate-50 font-medium">{staff.name}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{staff.email}</div>
+          </div>
+        </div>
+      </td>
+      <td className="py-3 px-4">
+        <Badge className={getRoleColor(staff.role)}>{staff.role}</Badge>
+      </td>
+      <td className="py-3 px-4">
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${getStatusColor(staff.status)}`} />
+          <span className="text-slate-700 dark:text-slate-300 capitalize">{staff.status}</span>
+        </div>
+      </td>
+      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{staff.lastActive}</td>
+      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{staff.joinedDate}</td>
+      <td className="py-3 px-4">
+        <div className="flex gap-2">
+          {staff.permissions.patients && <User className="w-4 h-4 text-blue-600" aria-label="Patients" />}
+          {staff.permissions.appointments && <Calendar className="w-4 h-4 text-green-600" aria-label="Appointments" />}
+          {staff.permissions.calls && <Phone className="w-4 h-4 text-purple-600" aria-label="Calls" />}
+          {staff.permissions.reports && <BarChart3 className="w-4 h-4 text-orange-600" aria-label="Reports" />}
+        </div>
+      </td>
+      <td className="py-3 px-4 text-right">
+        <button className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <MoreVertical className="w-4 h-4" />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
 export default function StaffManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 350);
+    return () => clearTimeout(t);
+  }, []);
 
   const filteredStaff = STAFF_MEMBERS.filter((staff) => {
     const matchesSearch =
@@ -511,35 +559,65 @@ export default function StaffManagementPage() {
 
               {/* Mobile Card View */}
               <div className="md:hidden space-y-3">
-                {filteredStaff.map((staff) => (
-                  <div key={staff.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800">
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-semibold flex-shrink-0">
-                          {getInitials(staff.name)}
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800 animate-pulse">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800" />
+                          <div className="min-w-0">
+                            <div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded mb-2" />
+                            <div className="h-3 w-24 bg-slate-200 dark:bg-slate-800 rounded" />
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{staff.name}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{staff.subtitle}</p>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-800" />
+                          <div className="h-6 w-16 bg-slate-200 dark:bg-slate-800 rounded" />
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <div className={`w-2 h-2 rounded-full ${getStatusColor(staff.status)}`} />
-                        <Badge className={getRoleColor(staff.role)}>{staff.role}</Badge>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <div className="h-3 w-20 bg-slate-200 dark:bg-slate-800 rounded" />
+                          <div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded mt-1" />
+                        </div>
+                        <div>
+                          <div className="h-3 w-16 bg-slate-200 dark:bg-slate-800 rounded" />
+                          <div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded mt-1" />
+                        </div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <p className="text-slate-500 dark:text-slate-400">Last active</p>
-                        <p className="text-slate-700 dark:text-slate-300 font-medium mt-0.5">{staff.lastActive}</p>
+                  ))
+                ) : (
+                  filteredStaff.map((staff) => (
+                    <div key={staff.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-semibold flex-shrink-0">
+                            {getInitials(staff.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{staff.name}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{staff.subtitle}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className={`w-2 h-2 rounded-full ${getStatusColor(staff.status)}`} />
+                          <Badge className={getRoleColor(staff.role)}>{staff.role}</Badge>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-slate-500 dark:text-slate-400">Joined</p>
-                        <p className="text-slate-700 dark:text-slate-300 font-medium mt-0.5">{staff.joinedDate}</p>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Last active</p>
+                          <p className="text-slate-700 dark:text-slate-300 font-medium mt-0.5">{staff.lastActive}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Joined</p>
+                          <p className="text-slate-700 dark:text-slate-300 font-medium mt-0.5">{staff.joinedDate}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
 
               {/* Desktop Table View */}
@@ -557,45 +635,23 @@ export default function StaffManagementPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredStaff.map((staff) => (
-                      <tr key={staff.id} className="border-b border-slate-100 dark:border-slate-700/60 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-semibold">
-                              {getInitials(staff.name)}
-                            </div>
-                            <div>
-                              <div className="text-slate-900 dark:text-slate-50 font-medium">{staff.name}</div>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">{staff.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge className={getRoleColor(staff.role)}>{staff.role}</Badge>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${getStatusColor(staff.status)}`} />
-                            <span className="text-slate-700 dark:text-slate-300 capitalize">{staff.status}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{staff.lastActive}</td>
-                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{staff.joinedDate}</td>
-                        <td className="py-3 px-4">
-                          <div className="flex gap-2">
-                            {staff.permissions.patients && <User className="w-4 h-4 text-blue-600" aria-label="Patients" />}
-                            {staff.permissions.appointments && <Calendar className="w-4 h-4 text-green-600" aria-label="Appointments" />}
-                            {staff.permissions.calls && <Phone className="w-4 h-4 text-purple-600" aria-label="Calls" />}
-                            {staff.permissions.reports && <BarChart3 className="w-4 h-4 text-orange-600" aria-label="Reports" />}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {loading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={i} className="border-b border-slate-100 dark:border-slate-700/60">
+                          <td className="py-3 px-4"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800" /><div className="h-4 w-40 bg-slate-200 dark:bg-slate-800 rounded" /></div></td>
+                          <td className="py-3 px-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded" /></td>
+                          <td className="py-3 px-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded" /></td>
+                          <td className="py-3 px-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded" /></td>
+                          <td className="py-3 px-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded" /></td>
+                          <td className="py-3 px-4"><div className="h-4 w-28 bg-slate-200 dark:bg-slate-800 rounded" /></td>
+                          <td className="py-3 px-4 text-right"><div className="h-6 w-12 bg-slate-200 dark:bg-slate-800 rounded ml-auto" /></td>
+                        </tr>
+                      ))
+                    ) : (
+                      filteredStaff.map((staff) => (
+                        <StaffRow key={staff.id} staff={staff} />
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

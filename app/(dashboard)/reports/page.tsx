@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   BarChart,
@@ -29,6 +29,7 @@ import {
   AlertCircle,
   Target,
   DollarSign,
+  Loader2,
 } from 'lucide-react';
 
 const CALLS_OVER_TIME = [
@@ -120,9 +121,84 @@ const tableHeaderRow = "border-b border-slate-200 dark:border-slate-700 bg-slate
 const tableHeaderCell = "text-left py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider";
 const tableRow = "border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors";
 
+interface MetricsData {
+  summary: {
+    totalForms: number;
+    totalReceived: number;
+    statusBreakdown: Record<string, number>;
+    averageMatchConfidence: number;
+    matchRateOver85: number;
+    averageProcessingTimeMinutes: number;
+  };
+  trends: {
+    submissionTrend: Array<{ date: string; count: number }>;
+    formTypeBreakdown: Array<{ title: string; count: number }>;
+    confidenceDistribution: Record<string, number>;
+  };
+  reference: {
+    uniqueFormTypes: string[];
+  };
+}
+
+function KPICard({ kpi }: { kpi: (typeof KPI_DATA)[number] }) {
+  const Icon = kpi.icon;
+  return (
+    <div key={kpi.label} className={`${card} p-4 md:p-6`}>
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{kpi.label}</p>
+          <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1.5">{kpi.value}</p>
+        </div>
+        <div className={`p-2.5 rounded-lg flex-shrink-0 ${kpi.iconBg}`}>
+          <Icon className={`w-5 h-5 ${kpi.iconColor}`} />
+        </div>
+      </div>
+      <div className="flex items-center gap-1 pt-3 border-t border-slate-100 dark:border-slate-800">
+        {kpi.trend === 'up'
+          ? <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          : <TrendingDown className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />
+        }
+        <span className={`text-xs font-medium ${kpi.trend === 'up' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+          {kpi.change}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportsAnalyticsPage() {
   const [timePeriod, setTimePeriod] = useState('30days');
   const [dateRange, setDateRange] = useState('Last 30 days');
+  const [loading, setLoading] = useState(true);
+  const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [metricsError, setMetricsError] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 450);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        setMetricsLoading(true);
+        const response = await fetch("/api/metrics/intake-forms");
+        if (!response.ok) {
+          throw new Error("Failed to fetch metrics");
+        }
+        const data = await response.json();
+        setMetrics(data);
+      } catch (error) {
+        console.error("Error fetching metrics:", error);
+        setMetricsError("Failed to load metrics");
+      } finally {
+        setMetricsLoading(false);
+      }
+    };
+
+    fetchMetrics();
+  }, []);
 
   return (
     <div className="pt-4 pb-8 space-y-6 md:space-y-8">
@@ -163,134 +239,124 @@ export default function ReportsAnalyticsPage() {
           { label: 'Last 30 Days', value: '30days' },
           { label: 'This Quarter', value: 'quarter' },
           { label: 'This Year', value: 'year' },
-          { label: 'Custom', value: 'custom' },
-        ].map((period) => (
+        ].map((tab) => (
           <button
-            key={period.value}
-            onClick={() => setTimePeriod(period.value)}
-            className={`px-4 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition-colors ${
-              timePeriod === period.value
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+            key={tab.value}
+            onClick={() => setTimePeriod(tab.value)}
+            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
+              timePeriod === tab.value
+                ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-400'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            {period.label}
+            {tab.label}
           </button>
         ))}
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-        {KPI_DATA.map((kpi) => {
-          const Icon = kpi.icon;
-          return (
-            <div key={kpi.label} className={`${card} p-4 md:p-6`}>
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{kpi.label}</p>
-                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1.5">{kpi.value}</p>
-                </div>
-                <div className={`p-2.5 rounded-lg flex-shrink-0 ${kpi.iconBg}`}>
-                  <Icon className={`w-5 h-5 ${kpi.iconColor}`} />
-                </div>
-              </div>
-              <div className="flex items-center gap-1 pt-3 border-t border-slate-100 dark:border-slate-800">
-                {kpi.trend === 'up'
-                  ? <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  : <TrendingDown className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />
-                }
-                <span className={`text-xs font-medium ${kpi.trend === 'up' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                  {kpi.change}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {KPI_DATA.map((kpi) => (
+          <KPICard key={kpi.label} kpi={kpi} />
+        ))}
       </div>
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Calls Over Time */}
-        <div className={card}>
-          <div className={cardHeader}><h2 className={cardTitle}>Calls Over Time</h2></div>
-          <div className="p-4 md:p-6">
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={CALLS_OVER_TIME}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="aiHandled" stroke="#3b82f6" name="AI Handled" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="escalated" stroke="#f97316" name="Escalated" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+        {loading ? (
+          <div className={`${card} animate-pulse`}>
+            <div className={cardHeader}><div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
+            <div className="p-4 md:p-6"><div className="h-64 bg-slate-200 dark:bg-slate-800 rounded" /></div>
           </div>
-        </div>
-
-        {/* Call Outcomes */}
-        <div className={card}>
-          <div className={cardHeader}><h2 className={cardTitle}>Call Outcomes Breakdown</h2></div>
-          <div className="p-4 md:p-6">
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={CALL_OUTCOMES} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2} dataKey="value">
-                  {CALL_OUTCOMES.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `${value} calls`} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="mt-4 space-y-2">
-              {CALL_OUTCOMES.map((outcome) => {
-                const total = CALL_OUTCOMES.reduce((sum, o) => sum + o.value, 0);
-                const pct = ((outcome.value / total) * 100).toFixed(0);
-                return (
-                  <div key={outcome.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: outcome.color }} />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">{outcome.name}</span>
-                    </div>
-                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{outcome.value} ({pct}%)</span>
-                  </div>
-                );
-              })}
+        ) : (
+          <div className={card}>
+            <div className={cardHeader}><h2 className={cardTitle}>Calls Over Time</h2></div>
+            <div className="p-4 md:p-6">
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={CALLS_OVER_TIME}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="aiHandled" stroke="#3b82f6" strokeWidth={2} dot={false} name="AI Handled" />
+                  <Line type="monotone" dataKey="escalated" stroke="#f97316" strokeWidth={2} dot={false} name="Escalated" />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Call Outcomes */}
+        {loading ? (
+          <div className={`${card} animate-pulse`}>
+            <div className={cardHeader}><div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
+            <div className="p-4 md:p-6"><div className="h-64 bg-slate-200 dark:bg-slate-800 rounded" /></div>
+          </div>
+        ) : (
+          <div className={card}>
+            <div className={cardHeader}><h2 className={cardTitle}>Call Outcomes</h2></div>
+            <div className="p-4 md:p-6">
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={CALL_OUTCOMES} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }: { name?: string; percent?: number }) => `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`}>
+                    {CALL_OUTCOMES.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
         {/* Appointment Types */}
-        <div className={card}>
-          <div className={cardHeader}><h2 className={cardTitle}>Appointment Types</h2></div>
-          <div className="p-4 md:p-6">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={APPOINTMENT_TYPES} layout="vertical" margin={{ top: 5, right: 30, left: 120 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <Tooltip />
-                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        {loading ? (
+          <div className={`${card} animate-pulse`}>
+            <div className={cardHeader}><div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
+            <div className="p-4 md:p-6"><div className="h-64 bg-slate-200 dark:bg-slate-800 rounded" /></div>
           </div>
-        </div>
+        ) : (
+          <div className={card}>
+            <div className={cardHeader}><h2 className={cardTitle}>Appointment Types</h2></div>
+            <div className="p-4 md:p-6">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={APPOINTMENT_TYPES} layout="vertical" margin={{ top: 5, right: 30, left: 120 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
         {/* Peak Call Hours */}
-        <div className={card}>
-          <div className={cardHeader}><h2 className={cardTitle}>Peak Call Hours</h2></div>
-          <div className="p-4 md:p-6">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={PEAK_HOURS}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="hour" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <Tooltip />
-                <Bar dataKey="calls" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        {loading ? (
+          <div className={`${card} animate-pulse`}>
+            <div className={cardHeader}><div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
+            <div className="p-4 md:p-6"><div className="h-64 bg-slate-200 dark:bg-slate-800 rounded" /></div>
           </div>
-        </div>
+        ) : (
+          <div className={card}>
+            <div className={cardHeader}><h2 className={cardTitle}>Peak Call Hours</h2></div>
+            <div className="p-4 md:p-6">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={PEAK_HOURS}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="hour" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <Tooltip />
+                  <Bar dataKey="calls" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Top Insights */}
@@ -400,6 +466,107 @@ export default function ReportsAnalyticsPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Intake Form Metrics Section */}
+      <div className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
+        <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-50 mb-6">Intake Form Metrics</h2>
+        
+        {metricsLoading ? (
+          <div className="text-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-2" />
+            <p className="text-slate-600 dark:text-slate-400">Loading intake form metrics...</p>
+          </div>
+        ) : metricsError || !metrics ? (
+          <div className={`${card} border-red-200 dark:border-red-800`}>
+            <div className="p-4 flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+              <p className="text-red-800 dark:text-red-300">{metricsError || "Failed to load metrics"}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Metrics Summary Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+              <div className={card + " p-4"}>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Total Forms</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{metrics.summary.totalForms.toLocaleString()}</p>
+              </div>
+              <div className={card + " p-4"}>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Received (30d)</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{metrics.summary.totalReceived}</p>
+              </div>
+              <div className={card + " p-4"}>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Avg Match Conf.</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{metrics.summary.averageMatchConfidence.toFixed(1)}%</p>
+              </div>
+              <div className={card + " p-4"}>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Match Rate 85%+</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{metrics.summary.matchRateOver85}</p>
+              </div>
+              <div className={card + " p-4"}>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Processing Time</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{metrics.summary.averageProcessingTimeMinutes.toFixed(1)}m</p>
+              </div>
+              <div className={card + " p-4"}>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Form Types</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{metrics.reference.uniqueFormTypes.length}</p>
+              </div>
+            </div>
+
+            {/* Status Breakdown */}
+            <div className={card}>
+              <div className={cardHeader}><h3 className={cardTitle}>Status Breakdown</h3></div>
+              <div className="p-6">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  {Object.entries(metrics.summary.statusBreakdown).map(([status, count]) => {
+                    const colors: Record<string, string> = {
+                      RECEIVED: "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300",
+                      MATCHED: "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300",
+                      DRAFT: "bg-yellow-100 dark:bg-yellow-950/50 text-yellow-800 dark:text-yellow-300",
+                      LINKED: "bg-purple-100 dark:bg-purple-950/50 text-purple-800 dark:text-purple-300",
+                      ARCHIVED: "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300",
+                    };
+                    return (
+                      <div key={status} className="text-center">
+                        <p className="text-2xl font-bold text-slate-900 dark:text-slate-50">{count}</p>
+                        <span className={`inline-block text-xs font-medium px-2.5 py-0.5 rounded-md mt-2 ${colors[status]}`}>{status}</span>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                          {((count / metrics.summary.totalForms) * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Form Types */}
+            <div className={card}>
+              <div className={cardHeader}><h3 className={cardTitle}>Forms by Type</h3></div>
+              <div className="p-6 space-y-4">
+                {metrics.trends.formTypeBreakdown.length === 0 ? (
+                  <p className="text-slate-500 dark:text-slate-400 text-center py-8">No form types found</p>
+                ) : (
+                  metrics.trends.formTypeBreakdown.map((form, idx) => (
+                    <div key={idx}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{form.title}</p>
+                        <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{form.count} forms</p>
+                      </div>
+                      <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-purple-500 transition-all"
+                          style={{ width: `${(form.count / Math.max(...metrics.trends.formTypeBreakdown.map(f => f.count), 1)) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

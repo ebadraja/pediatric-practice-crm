@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import AddPatientDialog from "@/components/patients/add-patient-dialog";
+import { format } from "date-fns";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -14,309 +23,741 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Plus,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Search,
+  Plus,
+  Upload,
+  MoreVertical,
   ChevronLeft,
   ChevronRight,
-  Upload,
-  ArrowRight,
+  User,
+  Eye,
+  Edit,
+  Archive,
+  Trash2,
+  AlertCircle,
+  FileText,
 } from "lucide-react";
-import CSVImportModal from "@/components/csv-import-modal";
-import AddPatientModal from "@/components/add-patient-modal";
+
+// ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface Patient {
   id: string;
-  name: string;
-  parent: string;
-  dob: string;
-  phone: string;
-  lastVisit: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  phone: string | null;
+  parentName: string | null;
+  status: "ACTIVE" | "INACTIVE" | "ARCHIVED";
   totalVisits: number;
-  status: "active" | "inactive";
-  initials: string;
-  color: string;
+  lastVisitAt: string | null;
+  insuranceProvider: string | null;
+  _count: { appointments: number };
 }
 
-const patients: Patient[] = [
-  { id: "1", name: "Emma Wilson", parent: "Sarah Wilson", dob: "2018-03-15", phone: "(555) 123-4567", lastVisit: "2 weeks ago", totalVisits: 8, status: "active", initials: "EW", color: "bg-blue-500" },
-  { id: "2", name: "Lucas Brown", parent: "Michael Brown", dob: "2020-07-22", phone: "(555) 234-5678", lastVisit: "1 week ago", totalVisits: 6, status: "active", initials: "LB", color: "bg-green-500" },
-  { id: "3", name: "Olivia Davis", parent: "Jennifer Davis", dob: "2019-11-08", phone: "(555) 345-6789", lastVisit: "3 weeks ago", totalVisits: 5, status: "active", initials: "OD", color: "bg-purple-500" },
-  { id: "4", name: "Noah Martinez", parent: "Carlos Martinez", dob: "2021-05-12", phone: "(555) 456-7890", lastVisit: "1 month ago", totalVisits: 4, status: "active", initials: "NM", color: "bg-pink-500" },
-  { id: "5", name: "Ava Thompson", parent: "Rebecca Thompson", dob: "2017-09-30", phone: "(555) 567-8901", lastVisit: "Just now", totalVisits: 12, status: "active", initials: "AT", color: "bg-yellow-500" },
-  { id: "6", name: "Ethan Garcia", parent: "David Garcia", dob: "2022-01-19", phone: "(555) 678-9012", lastVisit: "2 months ago", totalVisits: 3, status: "inactive", initials: "EG", color: "bg-red-500" },
-  { id: "7", name: "Mia Rodriguez", parent: "Maria Rodriguez", dob: "2016-04-25", phone: "(555) 789-0123", lastVisit: "3 days ago", totalVisits: 15, status: "active", initials: "MR", color: "bg-indigo-500" },
-  { id: "8", name: "Liam Johnson", parent: "James Johnson", dob: "2023-06-11", phone: "(555) 890-1234", lastVisit: "5 days ago", totalVisits: 2, status: "active", initials: "LJ", color: "bg-cyan-500" },
-  { id: "9", name: "Sophia Lee", parent: "Lisa Lee", dob: "2019-08-03", phone: "(555) 901-2345", lastVisit: "4 months ago", totalVisits: 7, status: "inactive", initials: "SL", color: "bg-orange-500" },
-  { id: "10", name: "Mason Chen", parent: "Wei Chen", dob: "2018-12-20", phone: "(555) 012-3456", lastVisit: "1 week ago", totalVisits: 9, status: "active", initials: "MC", color: "bg-teal-500" },
+interface DraftPatient {
+  id: string;
+  formId: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  email: string | null;
+  phone: string | null;
+  parentName: string | null;
+  parentPhone: string | null;
+  extractedData: Record<string, any>;
+  submittedAt: string;
+  matchConfidence: number;
+}
+
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+type StatusFilter = "all" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const AVATAR_COLORS = [
+  "bg-blue-100 text-blue-700",
+  "bg-green-100 text-green-700",
+  "bg-purple-100 text-purple-700",
+  "bg-orange-100 text-orange-700",
+  "bg-pink-100 text-pink-700",
+  "bg-teal-100 text-teal-700",
 ];
 
-const calculateAge = (dob: string): number => {
-  const today = new Date();
-  const birthDate = new Date(dob);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
-  return age;
-};
+function getAvatarColor(name: string): string {
+  const sum = name.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return AVATAR_COLORS[sum % AVATAR_COLORS.length];
+}
 
-const formatDOB = (dob: string): string => {
-  const date = new Date(dob);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-};
+function getInitials(firstName: string, lastName: string): string {
+  return `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
+}
+
+function calculateAge(dateOfBirth: string): number {
+  const today = new Date();
+  const birth = new Date(dateOfBirth);
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+}
+
+function formatRelativeTime(date: string | null): string {
+  if (!date) return "Never";
+  const d = new Date(date);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 14) return "1 week ago";
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  if (diffDays < 60) return "1 month ago";
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+  return `${Math.floor(diffDays / 365)} years ago`;
+}
+
+const STATUS_FILTER_OPTIONS: { label: string; value: StatusFilter }[] = [
+  { label: "All Patients", value: "all" },
+  { label: "Active", value: "ACTIVE" },
+  { label: "Inactive", value: "INACTIVE" },
+  { label: "Archived", value: "ARCHIVED" },
+];
+
+function StatusBadge({ status }: { status: Patient["status"] }) {
+  if (status === "ACTIVE")
+    return <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-0">Active</Badge>;
+  if (status === "INACTIVE")
+    return <Badge className="bg-slate-100 text-slate-600 hover:bg-slate-100 border-0">Inactive</Badge>;
+  return <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 border-0">Archived</Badge>;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function PatientsPage() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState("all");
+
+  // All Patients State
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "new" | "returning" | "inactive">("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const [csvImportOpen, setCSVImportOpen] = useState(false);
-  const [addPatientOpen, setAddPatientOpen] = useState(false);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-  const filteredPatients = patients.filter((patient) => {
-    const matchesSearch =
-      patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      patient.parent.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      patient.phone.includes(searchTerm);
-    if (filterStatus === "inactive") return matchesSearch && patient.status === "inactive";
-    if (filterStatus === "new") return matchesSearch && patient.totalVisits <= 3;
-    if (filterStatus === "returning") return matchesSearch && patient.totalVisits > 3;
-    return matchesSearch;
-  });
+  // Draft Patients State
+  const [draftPatients, setDraftPatients] = useState<DraftPatient[]>([]);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftCurrentPage, setDraftCurrentPage] = useState(1);
+  const [draftPagination, setDraftPagination] = useState<Pagination | null>(null);
+  const [draftSearchTerm, setDraftSearchTerm] = useState("");
+  const [debouncedDraftSearch, setDebouncedDraftSearch] = useState("");
 
-  const totalPatients = 1247;
-  const itemsPerPage = 10;
-  const totalPages = Math.ceil(filteredPatients.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = Math.min(startIndex + itemsPerPage, filteredPatients.length);
-  const displayedPatients = filteredPatients.slice(startIndex, endIndex);
+  // Debounce search 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
-  return (
-    <div className="pt-4 pb-8 space-y-6 md:space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl lg:text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Patients</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 md:mt-2 text-sm">Manage and view your patient database</p>
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedDraftSearch(draftSearchTerm);
+      setDraftCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [draftSearchTerm]);
+
+  // Reset page when filter changes
+  useEffect(() => { setCurrentPage(1); }, [statusFilter]);
+
+  // Fetch patients
+  const fetchPatients = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ page: String(currentPage), limit: "20" });
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+
+      const res = await fetch(`/api/patients?${params}`);
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const json = await res.json();
+      setPatients(json.data);
+      setPagination(json.pagination);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load patients.");
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearch, statusFilter, currentPage]);
+
+  // Fetch draft patients
+  const fetchDraftPatients = useCallback(async () => {
+    setDraftLoading(true);
+    setDraftError(null);
+    try {
+      const params = new URLSearchParams({ page: String(draftCurrentPage), limit: "20" });
+      if (debouncedDraftSearch) params.set("search", debouncedDraftSearch);
+
+      const res = await fetch(`/api/intake-forms/unmatched?${params}`);
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const json = await res.json();
+      
+      // Map intake forms to draft patients
+      const drafts: DraftPatient[] = json.data.map((form: any) => ({
+        id: form.id,
+        formId: form.id,
+        firstName: form.extractedData?.firstName || "",
+        lastName: form.extractedData?.lastName || "",
+        dateOfBirth: form.extractedData?.dateOfBirth || "",
+        email: form.extractedData?.email || null,
+        phone: form.extractedData?.phone || null,
+        parentName: form.extractedData?.parentName || null,
+        parentPhone: form.extractedData?.parentPhone || null,
+        extractedData: form.extractedData || {},
+        submittedAt: form.createdAt,
+        matchConfidence: form.matchConfidence || 0,
+      }));
+      
+      setDraftPatients(drafts);
+      setDraftPagination(json.pagination);
+    } catch (err) {
+      setDraftError(err instanceof Error ? err.message : "Failed to load draft patients.");
+    } finally {
+      setDraftLoading(false);
+    }
+  }, [debouncedDraftSearch, draftCurrentPage]);
+
+  useEffect(() => { fetchPatients(); }, [fetchPatients]);
+  useEffect(() => { if (activeTab === "draft") fetchDraftPatients(); }, [activeTab, fetchDraftPatients]);
+
+  const handleViewDraft = (draft: DraftPatient) => {
+    router.push(`/intake-forms/${draft.formId}`);
+  };
+
+  const handleConvertDraft = (draft: DraftPatient) => {
+    router.push(`/intake-forms/${draft.formId}`);
+  };
+
+  const handleDiscardDraft = async (draft: DraftPatient) => {
+    if (!confirm(`Discard intake form for ${draft.firstName} ${draft.lastName}? This will archive the form.`)) return;
+    try {
+      const res = await fetch(`/api/intake-forms/${draft.formId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ARCHIVED' }),
+      });
+      if (res.ok) fetchDraftPatients();
+    } catch (e) {
+      console.error('Discard failed', e);
+    }
+  };
+
+  const total = pagination?.total ?? 0;
+  const totalPages = pagination?.totalPages ?? 1;
+  const showingFrom = total === 0 ? 0 : (currentPage - 1) * 20 + 1;
+  const showingTo = Math.min(currentPage * 20, total);
+
+  const draftTotal = draftPagination?.total ?? 0;
+  const draftTotalPages = draftPagination?.totalPages ?? 1;
+  const draftShowingFrom = draftTotal === 0 ? 0 : (draftCurrentPage - 1) * 20 + 1;
+  const draftShowingTo = Math.min(draftCurrentPage * 20, draftTotal);
+
+  // ── Skeleton rows ──────────────────────────────────────────────────────────
+  if (loading && activeTab === "all") {
+    return (
+      <div className="pt-4 pb-8 space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-4 w-56" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-28" />
+            <Skeleton className="h-10 w-36" />
+          </div>
         </div>
-        <div className="flex gap-2 flex-col sm:flex-row w-full sm:w-auto">
-          <button
-            onClick={() => setAddPatientOpen(true)}
-            className="bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 text-white font-medium h-10 px-5 rounded-lg shadow-sm hover:scale-[1.02] transition-all flex items-center gap-2 justify-center flex-1 sm:flex-none"
-          >
-            <Plus className="h-4 w-4" />
-            Add New Patient
-          </button>
-          <button
-            onClick={() => setCSVImportOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-medium h-10 px-5 rounded-lg shadow-sm hover:scale-[1.02] transition-all flex items-center gap-2 justify-center flex-1 sm:flex-none"
-          >
-            <Upload className="h-4 w-4" />
-            Import CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Search and Filters */}
-      <div className="space-y-3 md:space-y-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-          <input
-            placeholder="Search by name, phone, or DOB..."
-            className="w-full h-10 px-3 pl-10 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 focus:border-blue-500 transition-all text-sm md:text-base"
-            value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-          />
-        </div>
-
-        <div className="flex gap-2 flex-wrap">
-          {[
-            { label: "All Patients", value: "all" },
-            { label: "New This Month", value: "new" },
-            { label: "Returning", value: "returning" },
-            { label: "Inactive", value: "inactive" },
-          ].map((filter) => (
-            <button
-              key={filter.value}
-              onClick={() => { setFilterStatus(filter.value as typeof filterStatus); setCurrentPage(1); }}
-              className={`h-9 px-3.5 rounded-lg font-medium text-xs md:text-sm transition-all whitespace-nowrap ${
-                filterStatus === filter.value
-                  ? "bg-slate-900 dark:bg-blue-600 text-white shadow-sm hover:bg-slate-800 dark:hover:bg-blue-700 border border-transparent"
-                  : "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Desktop Table View */}
-      <div className="hidden md:block">
         <Card>
-          <CardHeader>
-            <CardTitle>Patient List</CardTitle>
-            <CardDescription>
-              Showing {startIndex + 1}–{endIndex} of {totalPatients} patients
-            </CardDescription>
-          </CardHeader>
+          <CardHeader><Skeleton className="h-10 w-full" /></CardHeader>
           <CardContent>
-            <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60">
-                    <TableHead className="text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Patient</TableHead>
-                    <TableHead className="text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Date of Birth</TableHead>
-                    <TableHead className="text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Phone</TableHead>
-                    <TableHead className="text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Last Visit</TableHead>
-                    <TableHead className="text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider text-center">Total Visits</TableHead>
-                    <TableHead className="text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Status</TableHead>
-                    <TableHead className="text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayedPatients.map((patient) => (
-                    <TableRow
-                      key={patient.id}
-                      className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className={`${patient.color} h-10 w-10 rounded-lg flex items-center justify-center text-white text-sm font-semibold`}>
-                            {patient.initials}
-                          </div>
-                          <div>
-                            <p className="font-medium text-slate-900 dark:text-slate-100">{patient.name}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">{patient.parent}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-slate-900 dark:text-slate-100">{formatDOB(patient.dob)}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{calculateAge(patient.dob)} years old</p>
-                      </TableCell>
-                      <TableCell className="text-slate-900 dark:text-slate-100">{patient.phone}</TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400">{patient.lastVisit}</TableCell>
-                      <TableCell className="text-center font-medium text-slate-900 dark:text-slate-100">
-                        {patient.totalVisits}
-                      </TableCell>
-                      <TableCell>
-                        <div className={`inline-flex text-xs font-medium px-2.5 py-0.5 rounded-md border ${
-                          patient.status === "active"
-                            ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60"
-                            : "bg-slate-100 dark:bg-slate-700/40 text-slate-700 dark:text-slate-300 border-slate-200/60 dark:border-slate-600/60"
-                        }`}>
-                          {patient.status === "active" ? "Active" : "Inactive"}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <button
-                          onClick={() => router.push(`/patients/${patient.id}`)}
-                          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded px-2 py-1 transition-colors flex items-center gap-1"
-                        >
-                          <ArrowRight className="h-4 w-4" />
-                          <span className="text-xs">View</span>
-                        </button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <div className="space-y-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <Skeleton className="h-10 w-10 rounded-full flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-1/4" />
+                  </div>
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-6 w-16 rounded-full" />
+                  <Skeleton className="h-8 w-8 rounded" />
+                </div>
+              ))}
             </div>
           </CardContent>
-          <div className="border-t border-slate-100 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Page {currentPage} of {totalPages}</p>
-            <div className="flex gap-2">
-              <Button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} size="sm" variant="outline" className="gap-1">
-                <ChevronLeft className="h-3 w-3" />
-                Previous
-              </Button>
-              <Button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} size="sm" variant="outline" className="gap-1">
-                Next
-                <ChevronRight className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
         </Card>
       </div>
+    );
+  }
 
-      {/* Mobile Card View */}
-      <div className="md:hidden space-y-3">
-        {displayedPatients.length > 0 ? (
-          displayedPatients.map((patient) => (
-            <div
-              key={patient.id}
-              onClick={() => router.push(`/patients/${patient.id}`)}
-              className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-white dark:bg-slate-900 hover:shadow-md dark:hover:bg-slate-800/80 transition-all cursor-pointer"
-            >
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-start gap-3 flex-1">
-                  <div className={`${patient.color} h-10 w-10 rounded-lg flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 mt-0.5`}>
-                    {patient.initials}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-slate-900 dark:text-slate-100 text-sm">{patient.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{patient.parent}</p>
-                  </div>
-                </div>
-                <div className={`inline-flex text-xs font-medium px-2.5 py-0.5 rounded-md border flex-shrink-0 ${
-                  patient.status === "active"
-                    ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60"
-                    : "bg-slate-100 dark:bg-slate-700/40 text-slate-700 dark:text-slate-300 border-slate-200/60 dark:border-slate-600/60"
-                }`}>
-                  {patient.status === "active" ? "Active" : "Inactive"}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Age</p>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{calculateAge(patient.dob)} years</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Total Visits</p>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{patient.totalVisits}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Last Visit</p>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{patient.lastVisit}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Phone</p>
-                  <p className="text-sm font-medium text-slate-600 dark:text-slate-300 truncate">{patient.phone}</p>
-                </div>
-              </div>
+  // ── Error state ────────────────────────────────────────────────────────────
+  if (error) {
+    return (
+      <div className="pt-4 pb-8 space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Patients</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">Manage your patient database</p>
+        </div>
+        <Card className="border-red-200 dark:border-red-800">
+          <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
+            <AlertCircle className="h-10 w-10 text-red-500" />
+            <div className="text-center">
+              <p className="font-semibold text-slate-900 dark:text-slate-50">Failed to load patients</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{error}</p>
             </div>
-          ))
-        ) : (
-          <div className="text-center py-8">
-            <p className="text-slate-500 dark:text-slate-400">No patients found</p>
-          </div>
-        )}
+            <Button onClick={() => { setError(null); setLoading(true); setCurrentPage(1); }}>
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-        <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex items-center justify-between">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Page {currentPage} of {totalPages}</p>
-          <div className="flex gap-2">
-            <Button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} size="sm" variant="outline" className="gap-1">
-              <ChevronLeft className="h-3 w-3" />
-              Prev
-            </Button>
-            <Button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} size="sm" variant="outline" className="gap-1">
-              Next
-              <ChevronRight className="h-3 w-3" />
-            </Button>
-          </div>
+  // ── Main render ────────────────────────────────────────────────────────────
+  return (
+    <div className="pt-4 pb-8 space-y-6">
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Patients</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">Manage your patient database</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" className="gap-2">
+            <Upload className="h-4 w-4" />
+            Bulk Import
+          </Button>
+          <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Add New Patient
+          </Button>
         </div>
       </div>
 
-      <CSVImportModal
-        open={csvImportOpen}
-        onOpenChange={setCSVImportOpen}
-        onImportComplete={(result) => { console.log("Import completed:", result); setCurrentPage(1); }}
-      />
-      <AddPatientModal
-        open={addPatientOpen}
-        onOpenChange={setAddPatientOpen}
-        onPatientAdded={(patient) => { console.log("Patient added:", patient); setCurrentPage(1); }}
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 dark:bg-slate-800">
+          <TabsTrigger value="all" className="dark:text-slate-300">All Patients</TabsTrigger>
+          <TabsTrigger value="draft" className="dark:text-slate-300">
+            <FileText className="h-4 w-4 mr-2" />
+            Draft Patients
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ── All Patients Tab ── */}
+        <TabsContent value="all" className="space-y-6">
+          {/* Search + Filters */}
+          <Card>
+            <CardContent className="pt-4 space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search by name, phone, or parent name..."
+                  className="pl-9"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                {STATUS_FILTER_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant={statusFilter === opt.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setStatusFilter(opt.value)}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Empty state */}
+          {patients.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
+                <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                  <User className="h-8 w-8 text-slate-400" />
+                </div>
+                <div className="text-center">
+                  <p className="font-semibold text-slate-900 dark:text-slate-50">No patients found</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    {debouncedSearch || statusFilter !== "all"
+                      ? "Try adjusting your search or filter criteria."
+                      : "Add your first patient to get started."}
+                  </p>
+                </div>
+                {!debouncedSearch && statusFilter === "all" && (
+                  <Button className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Add First Patient
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            /* Table */
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>DOB</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Last Visit</TableHead>
+                      <TableHead className="text-center">Total Visits</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-10" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {patients.map((patient) => {
+                      const fullName = `${patient.firstName} ${patient.lastName}`;
+                      const avatarColor = getAvatarColor(fullName);
+                      return (
+                        <TableRow
+                          key={patient.id}
+                          className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          onClick={() => router.push(`/patients/${patient.id}`)}
+                        >
+                          {/* Patient name + parent */}
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className={`h-10 w-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 ${avatarColor}`}>
+                                {getInitials(patient.firstName, patient.lastName)}
+                              </div>
+                              <div>
+                                <p className="font-medium text-slate-900 dark:text-slate-100">{fullName}</p>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">{patient.parentName ?? "—"}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+
+                          {/* DOB + age */}
+                          <TableCell className="text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                            {format(new Date(patient.dateOfBirth), "MMM d, yyyy")}
+                            <span className="text-slate-500 dark:text-slate-400"> ({calculateAge(patient.dateOfBirth)} yrs)</span>
+                          </TableCell>
+
+                          {/* Phone */}
+                          <TableCell className="text-slate-700 dark:text-slate-300">
+                            {patient.phone ?? "—"}
+                          </TableCell>
+
+                          {/* Last visit */}
+                          <TableCell className="text-slate-600 dark:text-slate-400">
+                            {formatRelativeTime(patient.lastVisitAt)}
+                          </TableCell>
+
+                          {/* Total visits */}
+                          <TableCell className="text-center font-medium text-slate-900 dark:text-slate-100">
+                            {patient.totalVisits}
+                          </TableCell>
+
+                          {/* Status badge */}
+                          <TableCell>
+                            <StatusBadge status={patient.status} />
+                          </TableCell>
+
+                          {/* Actions — stop row click from firing */}
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+                                <MoreVertical className="h-4 w-4" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40">
+                                <DropdownMenuItem
+                                  className="gap-2"
+                                  onClick={() => router.push(`/patients/${patient.id}`)}
+                                >
+                                  <Eye className="h-4 w-4" /> View
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="gap-2">
+                                  <Edit className="h-4 w-4" /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="gap-2 text-orange-600 focus:text-orange-600">
+                                  <Archive className="h-4 w-4" /> Archive
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="gap-2 text-red-600 focus:text-red-600">
+                                  <Trash2 className="h-4 w-4" /> Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+
+                {/* Pagination */}
+                {pagination && totalPages > 1 && (
+                  <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 dark:border-slate-800">
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      Showing {showingFrom}–{showingTo} of {total} patients
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="gap-1"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="gap-1"
+                      >
+                        Next
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ── Draft Patients Tab ── */}
+        <TabsContent value="draft" className="space-y-6">
+          {draftLoading ? (
+            <Card>
+              <CardContent className="p-0">
+                <div className="space-y-4 p-6">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-4">
+                      <Skeleton className="h-10 w-10 rounded-full flex-shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-1/3" />
+                        <Skeleton className="h-3 w-1/4" />
+                      </div>
+                      <Skeleton className="h-6 w-16 rounded-full" />
+                      <Skeleton className="h-8 w-8 rounded" />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : draftError ? (
+            <Card className="border-red-200 dark:border-red-800">
+              <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
+                <AlertCircle className="h-10 w-10 text-red-500" />
+                <div className="text-center">
+                  <p className="font-semibold text-slate-900 dark:text-slate-50">Failed to load draft patients</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{draftError}</p>
+                </div>
+                <Button onClick={() => fetchDraftPatients()}>Try again</Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Search */}
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      placeholder="Search by name or form ID..."
+                      className="pl-9"
+                      value={draftSearchTerm}
+                      onChange={(e) => setDraftSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Draft Patients Table */}
+              {draftPatients.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
+                    <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                      <FileText className="h-8 w-8 text-slate-400" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold text-slate-900 dark:text-slate-50">No draft patients</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">All intake forms have been matched or processed.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Patient Name</TableHead>
+                          <TableHead>DOB</TableHead>
+                          <TableHead>Phone</TableHead>
+                          <TableHead>Parent/Guardian</TableHead>
+                          <TableHead>Submitted</TableHead>
+                          <TableHead className="text-center">Confidence</TableHead>
+                          <TableHead className="w-10" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {draftPatients.map((draft) => {
+                          const fullName = `${draft.firstName} ${draft.lastName}`;
+                          const avatarColor = getAvatarColor(fullName);
+                          const confBg = draft.matchConfidence >= 85 
+                            ? "bg-green-100 text-green-700"
+                            : draft.matchConfidence >= 50 
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-amber-100 text-amber-700";
+                          
+                          return (
+                            <TableRow key={draft.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <div className={`h-10 w-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 ${avatarColor}`}>
+                                    {getInitials(draft.firstName, draft.lastName)}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-slate-900 dark:text-slate-100">{fullName}</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Form: {draft.formId.slice(0, 8)}...</p>
+                                  </div>
+                                </div>
+                              </TableCell>
+
+                              <TableCell className="text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                                {draft.dateOfBirth ? format(new Date(draft.dateOfBirth), "MMM d, yyyy") : "—"}
+                              </TableCell>
+
+                              <TableCell className="text-slate-700 dark:text-slate-300">
+                                {draft.phone ?? "—"}
+                              </TableCell>
+
+                              <TableCell className="text-slate-600 dark:text-slate-400">
+                                {draft.parentName ?? "—"}
+                              </TableCell>
+
+                              <TableCell className="text-slate-600 dark:text-slate-400 text-sm">
+                                {formatRelativeTime(draft.submittedAt)}
+                              </TableCell>
+
+                              <TableCell>
+                                <Badge className={`${confBg} hover:${confBg} border-0`}>
+                                  {Math.round(draft.matchConfidence)}%
+                                </Badge>
+                              </TableCell>
+
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-44">
+                                    <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => handleViewDraft(draft)}>
+                                      <Eye className="h-4 w-4" /> View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => handleConvertDraft(draft)}>
+                                      <Edit className="h-4 w-4" /> Convert to Patient
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem className="gap-2 cursor-pointer text-red-600 focus:text-red-600" onClick={() => handleDiscardDraft(draft)}>
+                                      <Trash2 className="h-4 w-4" /> Discard
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+
+                    {/* Pagination */}
+                    {draftPagination && draftTotalPages > 1 && (
+                      <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 dark:border-slate-800">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          Showing {draftShowingFrom}–{draftShowingTo} of {draftTotal} draft patients
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDraftCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={draftCurrentPage === 1}
+                            className="gap-1"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                            Previous
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDraftCurrentPage((p) => Math.min(draftTotalPages, p + 1))}
+                            disabled={draftCurrentPage === draftTotalPages}
+                            className="gap-1"
+                          >
+                            Next
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <AddPatientDialog
+        isOpen={isAddDialogOpen}
+        onClose={() => setIsAddDialogOpen(false)}
+        onSuccess={() => { setCurrentPage(1); fetchPatients(); }}
       />
     </div>
   );
