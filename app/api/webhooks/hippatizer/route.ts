@@ -20,6 +20,20 @@ interface HippatizeWebhookPayload {
   field_values: Record<string, string | boolean | null>;
 }
 
+function decryptApiKey(encrypted: string): string {
+  try {
+    const secret = process.env.ENCRYPTION_SECRET || 'default-secret-key';
+    const decoded = Buffer.from(encrypted, 'base64').toString();
+    let decrypted = '';
+    for (let i = 0; i < decoded.length; i++) {
+      decrypted += String.fromCharCode(decoded.charCodeAt(i) ^ secret.charCodeAt(i % secret.length));
+    }
+    return decrypted;
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Validate API key from request header
  */
@@ -27,13 +41,17 @@ async function validateApiKey(request: NextRequest): Promise<boolean> {
   const apiKey = request.headers.get("X-Api-Key");
   if (!apiKey) return false;
 
+  // Also accept the env-var key as a fallback (useful before settings are saved via UI)
+  const envKey = process.env.HIPPATIZER_API_KEY;
+  if (envKey && apiKey === envKey) return true;
+
   // Get settings with encrypted API key
   const settings = await prisma.settings.findFirst();
   if (!settings || !settings.hippatizApiKey) return false;
 
-  // In production, you'd decrypt the stored key before comparing
-  // For now, direct comparison (should use encryption library in production)
-  return apiKey === settings.hippatizApiKey;
+  // Decrypt the stored key before comparing
+  const storedKey = decryptApiKey(settings.hippatizApiKey);
+  return apiKey === storedKey;
 }
 
 /**
