@@ -207,8 +207,10 @@ export default function IntakeFormsPage() {
 
             {/* Status Filter */}
             <Select value={selectedStatus} onValueChange={(value) => {
-              setSelectedStatus(value);
-              setCurrentPage(1);
+              if (value) {
+                setSelectedStatus(value);
+                setCurrentPage(1);
+              }
             }}>
               <SelectTrigger>
                 <SelectValue />
