@@ -4,6 +4,10 @@ export default auth(async (req) => {
   const session = req.auth
   const pathname = req.nextUrl.pathname
 
+  // Public routes — no auth required
+  if (pathname.includes("/api/webhooks")) return
+  if (pathname.includes("/api/auth")) return
+
   const isLoggedIn = !!session?.user
   const isOnLogin = pathname === "/login"
   const isOnRoot = pathname === "/"
@@ -24,6 +28,6 @@ export default auth(async (req) => {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|public|api/auth|api/webhooks).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|public).*)",
   ],
 }
