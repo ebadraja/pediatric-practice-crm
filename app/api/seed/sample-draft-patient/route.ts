@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 
 /**
  * POST /api/seed/sample-draft-patient
- * Admin-only endpoint to create a sample draft patient for testing
+ * Admin-only endpoint to create a sample intake form for testing
  */
 export async function POST(request: NextRequest) {
   try {
@@ -15,19 +15,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if sample already exists
+    // Check if sample intake form already exists by hippatizer ID
     const existing = await prisma.intakeForm.findFirst({
       where: {
-        extractedData: {
-          path: ["email"],
-          equals: "emma.johnson@example.com",
-        },
+        hippatizerId: "sample-emma-johnson-001",
       },
     });
 
     if (existing) {
       return NextResponse.json(
-        { message: "Sample draft patient already exists", id: existing.id },
+        { message: "Sample intake form already exists", id: existing.id },
         { status: 200 }
       );
     }
@@ -35,61 +32,85 @@ export async function POST(request: NextRequest) {
     // Create sample intake form
     const sampleForm = await prisma.intakeForm.create({
       data: {
-        userId: session.user.id,
-        formType: "Well Child Visit",
+        hippatizerId: "sample-emma-johnson-001",
+        hippatizFormId: "form-well-child-visit",
+        hippatizFormTitle: "Well Child Visit - Emma Johnson",
         status: "RECEIVED",
+        submittedAt: new Date(),
         fieldValues: {
-          firstName: "Emma",
-          lastName: "Johnson",
-          dateOfBirth: "2018-03-15",
-          email: "emma.johnson@example.com",
-          phone: "+1-555-123-4567",
-          gender: "Female",
-          parentName: "Sarah Johnson",
-          parentPhone: "+1-555-123-4568",
-          address: "123 Oak Street",
-          city: "Portland",
-          state: "OR",
-          zipCode: "97201",
-          insuranceProvider: "Blue Cross",
-          visitReason: "Annual well-child checkup",
+          create: [
+            {
+              fieldId: "first_name",
+              fieldLabel: "First Name",
+              fieldType: "text",
+              value: "Emma",
+            },
+            {
+              fieldId: "last_name",
+              fieldLabel: "Last Name",
+              fieldType: "text",
+              value: "Johnson",
+            },
+            {
+              fieldId: "date_of_birth",
+              fieldLabel: "Date of Birth",
+              fieldType: "date",
+              value: "2018-03-15",
+            },
+            {
+              fieldId: "email",
+              fieldLabel: "Email",
+              fieldType: "email",
+              value: "emma.johnson@example.com",
+            },
+            {
+              fieldId: "phone",
+              fieldLabel: "Phone",
+              fieldType: "tel",
+              value: "+1-555-123-4567",
+            },
+            {
+              fieldId: "gender",
+              fieldLabel: "Gender",
+              fieldType: "select",
+              value: "Female",
+            },
+            {
+              fieldId: "parent_name",
+              fieldLabel: "Parent Name",
+              fieldType: "text",
+              value: "Sarah Johnson",
+            },
+            {
+              fieldId: "parent_phone",
+              fieldLabel: "Parent Phone",
+              fieldType: "tel",
+              value: "+1-555-123-4568",
+            },
+            {
+              fieldId: "address",
+              fieldLabel: "Address",
+              fieldType: "text",
+              value: "123 Oak Street, Springfield, IL 62701",
+            },
+          ],
         },
-        extractedData: {
-          firstName: "Emma",
-          lastName: "Johnson",
-          dateOfBirth: "2018-03-15",
-          email: "emma.johnson@example.com",
-          phone: "+1-555-123-4567",
-          gender: "Female",
-          parentName: "Sarah Johnson",
-          parentPhone: "+1-555-123-4568",
-          address: "123 Oak Street",
-          city: "Portland",
-          state: "OR",
-          zipCode: "97201",
-        },
-        matchConfidence: 92,
-        processingStatus: "COMPLETED",
       },
+      include: { fieldValues: true },
     });
 
     return NextResponse.json(
       {
-        success: true,
-        message: "Sample draft patient created successfully",
-        data: {
-          formId: sampleForm.id,
-          patientName: "Emma Johnson",
-          matchConfidence: 92,
-          status: "RECEIVED",
-        },
+        message: "Sample intake form created successfully",
+        id: sampleForm.id,
+        formTitle: sampleForm.hippatizFormTitle,
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Error creating sample draft patient:", error);
+    console.error("Error creating sample intake form:", error);
     return NextResponse.json(
-      { error: "Failed to create sample draft patient" },
+      { error: "Failed to create sample intake form" },
       { status: 500 }
     );
   }
