@@ -70,7 +70,8 @@ export function WebhookTestingComponent() {
     loadSamples();
   }, []);
 
-  const handleFormTypeChange = (formType: string) => {
+  const handleFormTypeChange = (formType: string | null) => {
+    if (!formType) return;
     setSelectedFormType(formType);
     if (samplePayloads[formType]) {
       setPayload(JSON.stringify(samplePayloads[formType], null, 2));

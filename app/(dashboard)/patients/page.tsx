@@ -375,7 +375,7 @@ export default function PatientsPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={(value) => value && setActiveTab(value)} className="w-full">
         <TabsList className="grid w-full grid-cols-2 dark:bg-slate-800">
           <TabsTrigger value="all" className="dark:text-slate-300">All Patients</TabsTrigger>
           <TabsTrigger value="draft" className="dark:text-slate-300">

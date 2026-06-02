@@ -480,7 +480,9 @@ export function AddAppointmentDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Type <span className="text-destructive">*</span></FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value || ""} onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}>
                       <SelectTrigger className="w-full h-8">
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
@@ -501,7 +503,9 @@ export function AddAppointmentDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Provider <span className="text-destructive">*</span></FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value || ""} onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}>
                       <SelectTrigger className="w-full h-8">
                         <SelectValue placeholder="Select provider" />
                       </SelectTrigger>
@@ -556,7 +560,9 @@ export function AddAppointmentDialog({
                 render={({ field }) => (
                   <FormItem className="sm:w-48 flex-shrink-0">
                     <FormLabel>Duration <span className="text-destructive">*</span></FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value || ""} onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}>
                       <SelectTrigger className="w-full h-8">
                         <SelectValue placeholder="Duration" />
                       </SelectTrigger>

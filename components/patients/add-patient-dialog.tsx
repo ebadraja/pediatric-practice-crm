@@ -213,7 +213,9 @@ export default function AddPatientDialog({ isOpen, onClose, onSuccess }: AddPati
                   <FormField control={form.control} name="gender" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Gender</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                      <Select onValueChange={(value) => {
+                        if (value) field.onChange(value);
+                      }} value={field.value ?? ""}>
                         <FormControl>
                           <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
                         </FormControl>
@@ -233,7 +235,9 @@ export default function AddPatientDialog({ isOpen, onClose, onSuccess }: AddPati
                 <FormField control={form.control} name="preferredLanguage" render={({ field }) => (
                   <FormItem className="w-1/2">
                     <FormLabel>Preferred Language</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }} value={field.value ?? ""}>
                       <FormControl>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                       </FormControl>
@@ -346,7 +350,9 @@ export default function AddPatientDialog({ isOpen, onClose, onSuccess }: AddPati
                   <FormField control={form.control} name="parentRelation" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Relationship</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                      <Select onValueChange={(value) => {
+                        if (value) field.onChange(value);
+                      }} value={field.value ?? ""}>
                         <FormControl>
                           <SelectTrigger><SelectValue placeholder="Select relation" /></SelectTrigger>
                         </FormControl>
