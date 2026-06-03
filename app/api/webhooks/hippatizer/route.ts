@@ -19,6 +19,8 @@ interface NormalizedPayload {
   submission_counter: number;
   form_title: string;
   created_at: string;
+  view_link: string | null;
+  pdf_link: string | null;
   field_values: Record<string, string | boolean | null>;
 }
 
@@ -80,7 +82,9 @@ function normalizePayload(raw: Record<string, string | null>): NormalizedPayload
     submission_counter: increment,
     form_title: formTitle,
     created_at: createdAt,
-    field_values: raw, // the entire flat payload — field labels are used as keys
+    view_link: raw["View Submission Link"] || null,
+    pdf_link: raw["Download PDF Link"] || null,
+    field_values: raw,
   };
 }
 
@@ -116,7 +120,7 @@ function hasCriticalFields(fieldValues: Record<string, string | boolean | null>)
 }
 
 export async function processWebhookPayload(payload: NormalizedPayload) {
-  const { form_id, submission_id, form_title, created_at, field_values } = payload;
+  const { form_id, submission_id, form_title, created_at, view_link, pdf_link, field_values } = payload;
 
   const existingForm = await prisma.intakeForm.findUnique({
     where: { hippatizerId: submission_id },
@@ -134,6 +138,8 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
         hippatizerId: submission_id,
         hippatizFormId: form_id,
         hippatizFormTitle: form_title,
+        hippatizViewLink: view_link,
+        hippatizPdfLink: pdf_link,
         submittedAt: new Date(created_at),
         status: "RECEIVED",
         fieldValues: {
@@ -195,6 +201,8 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
       hippatizerId: submission_id,
       hippatizFormId: form_id,
       hippatizFormTitle: form_title,
+      hippatizViewLink: view_link,
+      hippatizPdfLink: pdf_link,
       submittedAt: new Date(created_at),
       status: intakeFormStatus,
       patientId: linkedPatientId,

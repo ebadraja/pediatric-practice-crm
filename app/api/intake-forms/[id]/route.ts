@@ -106,6 +106,8 @@ export async function GET(
     return NextResponse.json({
       id: form.id,
       hippatizFormTitle: form.hippatizFormTitle,
+      hippatizViewLink: form.hippatizViewLink,
+      hippatizPdfLink: form.hippatizPdfLink,
       status: form.status,
       matchConfidence: form.matchConfidence,
       matchNotes: form.matchNotes,

@@ -520,6 +520,8 @@ model IntakeForm {
   hippatizerId      String   @unique @map("hippatizer_id")
   hippatizFormId    String   @map("hippatiz_form_id")
   hippatizFormTitle String   @map("hippatiz_form_title")
+  hippatizViewLink  String?  @map("hippatiz_view_link") @db.Text
+  hippatizPdfLink   String?  @map("hippatiz_pdf_link") @db.Text
 
   // Patient linking
   patientId         String?  @map("patient_id")
