@@ -42,6 +42,7 @@ export default function IntakeFormsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [showTrash, setShowTrash] = useState(false);
+  const [selectedFormType, setSelectedFormType] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
   const [showMatchModal, setShowMatchModal] = useState(false);
@@ -56,6 +57,7 @@ export default function IntakeFormsPage() {
         limit: "20",
         trash: String(showTrash),
         ...(selectedStatus !== "all" && !showTrash && { status: selectedStatus }),
+        ...(selectedFormType !== "all" && { formType: selectedFormType }),
         ...(searchTerm && { search: searchTerm }),
       });
       const res = await fetch(`/api/intake-forms?${params}`);
@@ -196,7 +198,7 @@ export default function IntakeFormsPage() {
             variant={showTrash ? "default" : "outline"}
             size="sm"
             className="gap-2"
-            onClick={() => { setShowTrash((v) => !v); setCurrentPage(1); setSelectedIds(new Set()); }}
+            onClick={() => { setShowTrash((v) => !v); setCurrentPage(1); setSelectedIds(new Set()); setSelectedFormType("all"); }}
           >
             <Trash className="h-4 w-4" />
             {showTrash ? "Back to Forms" : "Trash"}
@@ -217,6 +219,21 @@ export default function IntakeFormsPage() {
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               />
             </div>
+            <Select value={selectedFormType} onValueChange={(v) => { setSelectedFormType(v); setCurrentPage(1); }}>
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="All Form Types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Form Types</SelectItem>
+                <SelectItem value="NEW PATIENT PRE-REGISTRATION">New Patient Pre-Registration</SelectItem>
+                <SelectItem value="KiDS PATIENT INTAKE FORM">KiDS Patient Intake Form</SelectItem>
+                <SelectItem value="DIAGNOSTIC INTERVIEW">Diagnostic Interview</SelectItem>
+                <SelectItem value="SENSORY ASSESSMENT - PARENT/CAREGIVER">Sensory Assessment – Parent</SelectItem>
+                <SelectItem value="SENSORY ASSESSMENT - ADOLESCENT">Sensory Assessment – Adolescent</SelectItem>
+                <SelectItem value="SENSORY ASSESSMENT - TEACHER">Sensory Assessment – Teacher</SelectItem>
+                <SelectItem value="PREVIEW INTERVIEW QUESTION">Preview Interview Question</SelectItem>
+              </SelectContent>
+            </Select>
             {!showTrash && (
               <Select value={selectedStatus} onValueChange={(v) => { setSelectedStatus(v); setCurrentPage(1); }}>
                 <SelectTrigger className="w-44">
