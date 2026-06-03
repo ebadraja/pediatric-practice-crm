@@ -1,107 +1,61 @@
-/**
- * GET /api/intake-forms
- * List intake forms with filtering, search, and pagination
- */
-
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
 
+async function checkAccess(session: any) {
+  if (!session?.user?.id) return false;
+  if (session.user.role === "ADMIN") return true;
+  const ac = await prisma.intakeFormAccessControl.findUnique({ where: { userId: session.user.id } });
+  return !!ac?.canView;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!await checkAccess(session)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Check if user has intake form access
-    const accessControl = await prisma.intakeFormAccessControl.findUnique({
-      where: { userId: session.user.id },
-    });
+    const sp = request.nextUrl.searchParams;
+    const page = parseInt(sp.get("page") || "1", 10);
+    const limit = parseInt(sp.get("limit") || "20", 10);
+    const status = sp.get("status");
+    const search = sp.get("search") || "";
+    const trash = sp.get("trash") === "true";
 
-    // Only ADMIN role can view by default, or users granted explicit access
-    if (session.user.role !== "ADMIN" && !accessControl?.canView) {
-      return NextResponse.json(
-        { error: "Forbidden: No intake form access" },
-        { status: 403 }
-      );
-    }
-
-    // Get query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(searchParams.get("limit") || "20", 10);
-    const status = searchParams.get("status");
-    const search = searchParams.get("search") || "";
-    const fromDate = searchParams.get("fromDate");
-    const toDate = searchParams.get("toDate");
-    const unmatched = searchParams.get("unmatched") === "true";
-    const formType = searchParams.get("formType");
-
-    // Build filters
     const filters: any = {};
 
-    if (status) {
-      filters.status = status;
+    // Trash view shows only soft-deleted; default hides them
+    if (trash) {
+      filters.deletedAt = { not: null };
+    } else {
+      filters.deletedAt = null;
     }
 
-    if (unmatched) {
-      filters.status = "DRAFT";
-    }
+    if (!trash && status) filters.status = status;
 
-    if (fromDate || toDate) {
-      filters.submittedAt = {};
-      if (fromDate) {
-        filters.submittedAt.gte = new Date(fromDate);
-      }
-      if (toDate) {
-        filters.submittedAt.lte = new Date(toDate);
-      }
-    }
-
-    if (formType) {
-      filters.hippatizFormTitle = formType;
-    }
-
-    // Build search filter (searches in patient name and email)
     if (search) {
       filters.OR = [
         { patient: { firstName: { contains: search, mode: "insensitive" } } },
         { patient: { lastName: { contains: search, mode: "insensitive" } } },
-        { patient: { email: { contains: search, mode: "insensitive" } } },
+        { patientDraft: { firstName: { contains: search, mode: "insensitive" } } },
+        { patientDraft: { lastName: { contains: search, mode: "insensitive" } } },
       ];
     }
 
-    // Get total count
     const total = await prisma.intakeForm.count({ where: filters });
 
-    // Get paginated results
     const forms = await prisma.intakeForm.findMany({
       where: filters,
       include: {
-        patient: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-          },
-        },
-        patientDraft: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
+        patient: { select: { id: true, firstName: true, lastName: true } },
+        patientDraft: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { submittedAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
     });
 
-    // Transform response
     const data = forms.map((form) => ({
       id: form.id,
       hippatizFormTitle: form.hippatizFormTitle,
@@ -110,30 +64,48 @@ export async function GET(request: NextRequest) {
       status: form.status,
       matchConfidence: form.matchConfidence,
       submittedAt: form.submittedAt.toISOString(),
+      deletedAt: form.deletedAt?.toISOString() ?? null,
       linkedPatientId: form.patientId,
-      linkedPatientName: form.patient
-        ? `${form.patient.firstName} ${form.patient.lastName}`
-        : null,
+      linkedPatientName: form.patient ? `${form.patient.firstName} ${form.patient.lastName}` : null,
       draftPatientId: form.patientDraftId,
-      draftPatientName: form.patientDraft
-        ? `${form.patientDraft.firstName} ${form.patientDraft.lastName}`
-        : null,
+      draftPatientName: form.patientDraft ? `${form.patientDraft.firstName} ${form.patientDraft.lastName}` : null,
     }));
 
-    return NextResponse.json({
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    });
+    return NextResponse.json({ data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (error) {
     console.error("Error fetching intake forms:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// POST /api/intake-forms — bulk operations
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id || session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const { action, ids } = await request.json();
+    if (!action || !Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: "action and ids required" }, { status: 400 });
+    }
+
+    if (action === "trash") {
+      await prisma.intakeForm.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
+    } else if (action === "restore") {
+      await prisma.intakeForm.updateMany({ where: { id: { in: ids } }, data: { deletedAt: null } });
+    } else if (action === "delete") {
+      await prisma.intakeForm.deleteMany({ where: { id: { in: ids } } });
+    } else if (action === "archive") {
+      await prisma.intakeForm.updateMany({ where: { id: { in: ids } }, data: { status: "ARCHIVED", deletedAt: null } });
+    } else {
+      return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true, count: ids.length });
+  } catch (error) {
+    console.error("Bulk action error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

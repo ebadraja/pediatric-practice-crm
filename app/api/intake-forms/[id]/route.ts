@@ -147,11 +147,21 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { status } = body;
+    const { status, action } = body;
+
+    // Soft delete / restore actions
+    if (action === "trash") {
+      const updated = await prisma.intakeForm.update({ where: { id }, data: { deletedAt: new Date() } });
+      return NextResponse.json(updated);
+    }
+    if (action === "restore") {
+      const updated = await prisma.intakeForm.update({ where: { id }, data: { deletedAt: null } });
+      return NextResponse.json(updated);
+    }
 
     if (!status) {
       return NextResponse.json(
-        { error: "Status is required" },
+        { error: "Status or action is required" },
         { status: 400 }
       );
     }
@@ -188,10 +198,31 @@ export async function PUT(
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Error updating form:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const session = await auth();
+    if (!session?.user?.id || session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    await prisma.intakeForm.delete({ where: { id } });
+
+    await prisma.auditLog.create({
+      data: { userId: session.user.id, action: "DELETE", entity: "intake_form", entityId: id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting form:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
