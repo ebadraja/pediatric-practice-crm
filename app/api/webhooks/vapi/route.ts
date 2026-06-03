@@ -260,6 +260,54 @@ export async function processVapiEndOfCall(
     },
   })
 
+  // ── Notifications for admins ───────────────────────────────────────────────
+  try {
+    const admins = await prisma.user.findMany({
+      where:  { role: "ADMIN", isActive: true },
+      select: { id: true },
+    })
+
+    const callerLabel = visitorName ?? visitorPhone ?? "Unknown caller"
+    const durationLabel = duration ? `${Math.floor(duration / 60)}m ${duration % 60}s` : null
+
+    let title   = "New Call Received"
+    let message = `${callerLabel} called`
+    let icon    = "phone"
+
+    if (callOutcome === "BOOKED") {
+      title   = "Appointment Booked via Call"
+      message = `${callerLabel} booked an appointment${durationLabel ? ` · ${durationLabel}` : ""}`
+      icon    = "check"
+    } else if (callOutcome === "TRANSFERRED") {
+      title   = "Call Escalated to Staff"
+      message = `${callerLabel} requested a human agent${durationLabel ? ` · ${durationLabel}` : ""}`
+      icon    = "alert"
+    } else if (callOutcome === "HUNG_UP" || callOutcome === "VOICEMAIL") {
+      title   = callOutcome === "VOICEMAIL" ? "Voicemail Left" : "Missed Call"
+      message = `${callerLabel}${durationLabel ? ` · ${durationLabel}` : ""}`
+      icon    = "alert"
+    } else {
+      message = `${callerLabel}${durationLabel ? ` · ${durationLabel}` : ""} · ${callIntent.replace(/_/g, " ").toLowerCase()}`
+    }
+
+    for (const admin of admins) {
+      await prisma.notification.create({
+        data: {
+          userId:     admin.id,
+          type:       "call_received",
+          title,
+          message,
+          icon,
+          entityType: "call_log",
+          entityId:   callLogId ?? undefined,
+          actionUrl:  "/call-logs",
+        },
+      })
+    }
+  } catch (err) {
+    console.error("[VAPI WEBHOOK] Notification creation failed:", err)
+  }
+
   return { chatLogId: chatLog.id, callLogId }
 }
 

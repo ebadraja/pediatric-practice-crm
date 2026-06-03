@@ -483,10 +483,14 @@ export default function CallLogsPage() {
     }
   }, [currentPage, debouncedSearch, filterIntent, filterOutcome, datePreset])
 
-  useEffect(() => { fetchLogs() }, [fetchLogs])
-
-  // Today stats — separate fetch on mount
   useEffect(() => {
+    fetchLogs()
+    const id = setInterval(fetchLogs, 30_000)
+    return () => clearInterval(id)
+  }, [fetchLogs])
+
+  // Today stats — fetch on mount and refresh every 60 s
+  const fetchTodayStats = useCallback(() => {
     const now = new Date()
     const p = new URLSearchParams({
       dateFrom: startOfDay(now).toISOString(),
@@ -510,6 +514,12 @@ export default function CallLogsPage() {
       })
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    fetchTodayStats()
+    const id = setInterval(fetchTodayStats, 60_000)
+    return () => clearInterval(id)
+  }, [fetchTodayStats])
 
   // Open dialog — show partial data immediately, fetch full record for transcript/appointment
   async function openDialog(log: ApiCallLog) {
