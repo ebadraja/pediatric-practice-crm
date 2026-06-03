@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -102,7 +102,7 @@ const selectCls = "w-full px-3 py-2 border border-slate-300 dark:border-slate-60
 const textareaCls = "w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500";
 const labelCls = "block text-sm font-medium text-slate-900 dark:text-slate-100 mb-2";
 
-export default function SettingsPage() {
+function SettingsPage() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const [hasChanges, setHasChanges] = useState(false);
@@ -1624,5 +1624,13 @@ export default function SettingsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SettingsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading settings…</div>}>
+      <SettingsPage />
+    </Suspense>
   );
 }
