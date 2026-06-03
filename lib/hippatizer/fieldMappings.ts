@@ -84,143 +84,99 @@ export interface FieldMapping {
  * NEW PATIENT PRE-REGISTRATION FORM
  * Form ID: aa70234d-8dc6-4a9b-88e7-211289c891a0 (example from CSV)
  */
+// Field IDs now match the exact label keys HIPPAtizer sends in the webhook payload
 export const newPatientPreRegistrationMapping: FieldMapping[] = [
   {
-    hippatizFieldId: "d7a0e3aa-b3e8-4469-be33-ef07bfe3fc6f",
-    fieldLabel: "Patient First Name",
+    hippatizFieldId: "First Name",
+    fieldLabel: "First Name",
     fieldType: "text",
     patientField: "firstName",
     required: true,
   },
   {
-    hippatizFieldId: "a3900ee5-9cf0-43f1-b1de-1a85350326db",
-    fieldLabel: "Patient Middle Initial",
-    fieldType: "text",
-    patientField: "middleInitial",
-  },
-  {
-    hippatizFieldId: "d0a6c085-e1d4-4bb2-bd24-beea35c89ad0",
-    fieldLabel: "Patient Last Name",
+    hippatizFieldId: "Last Name",
+    fieldLabel: "Last Name",
     fieldType: "text",
     patientField: "lastName",
     required: true,
   },
   {
-    hippatizFieldId: "c409fb58-df5d-4f10-b999-92f7dc3b4f62",
+    hippatizFieldId: "Patient Date of Birth",
     fieldLabel: "Patient Date of Birth",
     fieldType: "date",
     patientField: "dateOfBirth",
     required: true,
     transform: (value) => {
-      // Convert MM/DD/YYYY to ISO date
       if (!value) return null;
       const [month, day, year] = value.split("/");
-      return new Date(`${year}-${month}-${day}`);
+      return new Date(`${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`);
     },
   },
   {
-    hippatizFieldId: "10f279d0-60b6-455b-bf55-0819fc77c081",
-    fieldLabel: "Gender",
-    fieldType: "radio",
-    patientField: "gender",
-  },
-  {
-    hippatizFieldId: "30a6df3a-345f-4cd6-b4d2-f47dfbb354c0",
-    fieldLabel: "Preferred Pronouns",
-    fieldType: "text",
-    patientField: "preferredPronouns",
-  },
-  {
-    hippatizFieldId: "41fbbd0a-9ab8-46d8-9df2-5b9679dc6e88",
-    fieldLabel: "Preferred Language",
-    fieldType: "radio",
-    patientField: "preferredLanguage",
-  },
-  {
-    hippatizFieldId: "8fb86629-9e8c-4a30-81f1-ef2547b3beaa",
-    fieldLabel: "Patient Street Address",
+    hippatizFieldId: "Where does your child reside?",
+    fieldLabel: "Where does your child reside?",
     fieldType: "text",
     patientField: "streetAddress",
   },
   {
-    hippatizFieldId: "5c8e23b0-2b1d-4876-8f3b-6baea4d95bb1",
+    hippatizFieldId: "City",
     fieldLabel: "City",
     fieldType: "text",
     patientField: "city",
   },
   {
-    hippatizFieldId: "6c10b2f5-46f9-467f-94d2-9bc50ee47a61",
-    fieldLabel: "State",
+    hippatizFieldId: "State / Province",
+    fieldLabel: "State / Province",
     fieldType: "text",
     patientField: "state",
   },
   {
-    hippatizFieldId: "2e0b7cb3-4b68-45ee-9e1d-c8ef6deea488",
-    fieldLabel: "Zip Code",
+    hippatizFieldId: "Label",
+    fieldLabel: "Label",
     fieldType: "text",
     patientField: "zipCode",
   },
-  // Caregiver #1
   {
-    hippatizFieldId: "9fb86eef-8bb3-456d-b8d4-53bf7bb3e2bb",
-    fieldLabel: "Caregiver #1 First Name",
-    fieldType: "text",
-    patientField: "caregiver1FirstName",
-  },
-  {
-    hippatizFieldId: "b6807cc3-ef0b-410a-bde9-bf3beee56b00",
-    fieldLabel: "Caregiver #1 Last Name",
-    fieldType: "text",
-    patientField: "caregiver1LastName",
-  },
-  {
-    hippatizFieldId: "88c2cb5f-bc7a-4dd1-8fa1-7f897cb2debb",
-    fieldLabel: "Relationship to Child",
+    hippatizFieldId: "Relationship to Patient",
+    fieldLabel: "Relationship to Patient",
     fieldType: "text",
     patientField: "caregiver1Relationship",
   },
   {
-    hippatizFieldId: "4fa0bb65-efc2-48bc-9f9b-6db35beeb6fa",
-    fieldLabel: "Primary Contact Number",
+    hippatizFieldId: "Parent/Caregiver #1 Phone Number",
+    fieldLabel: "Parent/Caregiver #1 Phone Number",
     fieldType: "phone",
     patientField: "caregiver1Phone",
   },
   {
-    hippatizFieldId: "223cebfa-9ab3-4c07-b8fd-ef4bcbe35ea1",
-    fieldLabel: "Caregiver Email",
+    hippatizFieldId: "Parent/Caregiver #1 Email Address",
+    fieldLabel: "Parent/Caregiver #1 Email Address",
     fieldType: "email",
     patientField: "caregiver1Email",
   },
-  // Caregiver #2
   {
-    hippatizFieldId: "8b07eeef-4a90-410c-99a2-fb4bbbe35f4a",
-    fieldLabel: "Caregiver #2 First Name",
-    fieldType: "text",
-    patientField: "caregiver2FirstName",
-  },
-  {
-    hippatizFieldId: "fb70fca1-dfc5-43ea-9ea3-8fbc3ee5fa6d",
-    fieldLabel: "Caregiver #2 Last Name",
-    fieldType: "text",
-    patientField: "caregiver2LastName",
-  },
-  {
-    hippatizFieldId: "38cfb2aa-ef8c-402a-bf39-2fb08bbef5aa",
-    fieldLabel: "Relationship to Child",
-    fieldType: "text",
-    patientField: "caregiver2Relationship",
-  },
-  {
-    hippatizFieldId: "dca1be05-8bb3-46bc-81bf-4f93be3bf791",
-    fieldLabel: "Caregiver Phone",
+    hippatizFieldId: " Parent/Caregiver #2 Phone Number",
+    fieldLabel: "Parent/Caregiver #2 Phone Number",
     fieldType: "phone",
     patientField: "caregiver2Phone",
   },
   {
-    hippatizFieldId: "fa13efca-cb02-48df-9fbc-be4abde34ffc",
-    fieldLabel: "Caregiver Email",
+    hippatizFieldId: "Parent/Caregiver #2 Email Address",
+    fieldLabel: "Parent/Caregiver #2 Email Address",
     fieldType: "email",
     patientField: "caregiver2Email",
+  },
+  {
+    hippatizFieldId: "Previous Pediatrician or Clinic Name",
+    fieldLabel: "Previous Pediatrician or Clinic Name",
+    fieldType: "text",
+    patientField: "pcpClinicName",
+  },
+  {
+    hippatizFieldId: "Phone Number",
+    fieldLabel: "Phone Number",
+    fieldType: "phone",
+    patientField: "pcpPhone",
   },
 ];
 
@@ -525,7 +481,7 @@ export function getAllMappedFieldIds(): Set<string> {
  * Critical matching fields (must be present in NEW PATIENT PRE-REGISTRATION)
  */
 export const CRITICAL_MATCHING_FIELDS = [
-  "d7a0e3aa-b3e8-4469-be33-ef07bfe3fc6f", // firstName
-  "d0a6c085-e1d4-4bb2-bd24-beea35c89ad0", // lastName
-  "c409fb58-df5d-4f10-b999-92f7dc3b4f62", // dateOfBirth
+  "First Name",
+  "Last Name",
+  "Patient Date of Birth",
 ];

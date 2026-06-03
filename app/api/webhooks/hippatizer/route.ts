@@ -1,7 +1,8 @@
 /**
  * Hippatizer Webhook Receiver
- * Receives form submissions from Hippatizer and processes them
- * POST /api/webhooks/hippatizer
+ * HIPPAtizer sends a flat JSON object where field labels are keys.
+ * System fields: "Form Name", "Submission Id", "Form Id", "Increment",
+ *                "Submission Created Date (MM/dd/yyyy)"
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -11,7 +12,8 @@ import { findBestPatientMatch, findPatientMatches, type PatientMatch } from "@/l
 
 export const dynamic = "force-dynamic";
 
-interface HippatizeWebhookPayload {
+// Internal normalized payload after transforming HIPPAtizer's flat format
+interface NormalizedPayload {
   form_id: string;
   submission_id: string;
   submission_counter: number;
@@ -34,29 +36,54 @@ function decryptApiKey(encrypted: string): string {
   }
 }
 
-/**
- * Validate API key from request header
- */
 async function validateApiKey(request: NextRequest): Promise<boolean> {
   const apiKey = request.headers.get("X-Api-Key");
   if (!apiKey) return false;
 
-  // Also accept the env-var key as a fallback (useful before settings are saved via UI)
+  // Env-var fallback — works before Settings UI is configured
   const envKey = process.env.HIPPATIZER_API_KEY;
   if (envKey && apiKey === envKey) return true;
 
-  // Get settings with encrypted API key
   const settings = await prisma.settings.findFirst();
   if (!settings || !settings.hippatizApiKey) return false;
 
-  // Decrypt the stored key before comparing
   const storedKey = decryptApiKey(settings.hippatizApiKey);
   return apiKey === storedKey;
 }
 
 /**
- * Extract patient data from form field values using mappings
+ * Transform HIPPAtizer's flat payload into our normalized format.
+ * HIPPAtizer sends: { "First Name": "John", "Form Name": "...", "Submission Id": "...", ... }
  */
+function normalizePayload(raw: Record<string, string | null>): NormalizedPayload | null {
+  const formTitle = raw["Form Name"] || "";
+  const submissionId = raw["Submission Id"] || "";
+  const formId = raw["Form Id"] || "";
+  const increment = parseInt(raw["Increment"] || "0") || 0;
+
+  if (!formTitle || !submissionId || !formId) return null;
+
+  // Parse submission date
+  let createdAt = new Date().toISOString();
+  const dateStr = raw["Submission Created Date (MM/dd/yyyy)"];
+  if (dateStr) {
+    const parts = dateStr.split("/");
+    if (parts.length === 3) {
+      const parsed = new Date(`${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`);
+      if (!isNaN(parsed.getTime())) createdAt = parsed.toISOString();
+    }
+  }
+
+  return {
+    form_id: formId,
+    submission_id: submissionId,
+    submission_counter: increment,
+    form_title: formTitle,
+    created_at: createdAt,
+    field_values: raw, // the entire flat payload — field labels are used as keys
+  };
+}
+
 function extractPatientData(
   formTitle: string,
   fieldValues: Record<string, string | boolean | null>
@@ -67,32 +94,20 @@ function extractPatientData(
 
   for (const mapping of mappings) {
     const value = fieldValues[mapping.hippatizFieldId];
-
     if (value !== undefined && value !== null && value !== "") {
-      // Store raw field data
       rawFields.push({
         fieldId: mapping.hippatizFieldId,
         fieldLabel: mapping.fieldLabel,
         fieldType: mapping.fieldType,
         value,
       });
-
-      // Extract to patient field
-      let transformedValue = value;
-      if (mapping.transform) {
-        transformedValue = mapping.transform(value);
-      }
-
-      extracted[mapping.patientField] = transformedValue;
+      extracted[mapping.patientField] = mapping.transform ? mapping.transform(value) : value;
     }
   }
 
   return { extracted, rawFields };
 }
 
-/**
- * Check if form has critical matching fields
- */
 function hasCriticalFields(fieldValues: Record<string, string | boolean | null>): boolean {
   return CRITICAL_MATCHING_FIELDS.every((fieldId) => {
     const value = fieldValues[fieldId];
@@ -100,31 +115,20 @@ function hasCriticalFields(fieldValues: Record<string, string | boolean | null>)
   });
 }
 
-/**
- * Process webhook and create IntakeForm record
- */
-export async function processWebhookPayload(payload: HippatizeWebhookPayload) {
+export async function processWebhookPayload(payload: NormalizedPayload) {
   const { form_id, submission_id, form_title, created_at, field_values } = payload;
 
-  // Check for duplicate submissions
   const existingForm = await prisma.intakeForm.findUnique({
     where: { hippatizerId: submission_id },
   });
 
   if (existingForm) {
-    return {
-      success: false,
-      message: "Duplicate submission",
-      formId: existingForm.id,
-    };
+    return { success: false, message: "Duplicate submission", formId: existingForm.id };
   }
 
-  // Extract patient data
   const { extracted, rawFields } = extractPatientData(form_title, field_values);
 
-  // Check for critical fields
   if (!hasCriticalFields(field_values)) {
-    // Form doesn't have required fields, just store it
     const intakeForm = await prisma.intakeForm.create({
       data: {
         hippatizerId: submission_id,
@@ -133,11 +137,11 @@ export async function processWebhookPayload(payload: HippatizeWebhookPayload) {
         submittedAt: new Date(created_at),
         status: "RECEIVED",
         fieldValues: {
-          create: rawFields.map((field) => ({
-            fieldId: field.fieldId,
-            fieldLabel: field.fieldLabel,
-            fieldType: field.fieldType,
-            value: String(field.value),
+          create: rawFields.map((f) => ({
+            fieldId: f.fieldId,
+            fieldLabel: f.fieldLabel,
+            fieldType: f.fieldType,
+            value: String(f.value),
           })),
         },
       },
@@ -152,7 +156,6 @@ export async function processWebhookPayload(payload: HippatizeWebhookPayload) {
     };
   }
 
-  // Try to find existing patient match
   let bestMatch = null;
   let potentialMatches: PatientMatch[] = [];
 
@@ -163,11 +166,10 @@ export async function processWebhookPayload(payload: HippatizeWebhookPayload) {
       extracted.dateOfBirth,
       extracted.email,
       extracted.phone,
-      0.85 // 85% confidence threshold
+      0.85
     );
 
     if (!bestMatch) {
-      // Get all potential matches for manual review
       potentialMatches = await findPatientMatches(
         extracted.firstName,
         extracted.lastName,
@@ -178,7 +180,6 @@ export async function processWebhookPayload(payload: HippatizeWebhookPayload) {
     }
   }
 
-  // Create intake form record
   let intakeFormStatus: "RECEIVED" | "MATCHED" | "DRAFT" | "LINKED" | "ARCHIVED" = "RECEIVED";
   let linkedPatientId = null;
   let linkedAt = null;
@@ -201,29 +202,20 @@ export async function processWebhookPayload(payload: HippatizeWebhookPayload) {
       matchConfidence: bestMatch?.confidence ?? null,
       matchNotes: bestMatch?.matchReasons.join(", ") ?? null,
       fieldValues: {
-        create: rawFields.map((field) => ({
-          fieldId: field.fieldId,
-          fieldLabel: field.fieldLabel,
-          fieldType: field.fieldType,
-          value: String(field.value),
+        create: rawFields.map((f) => ({
+          fieldId: f.fieldId,
+          fieldLabel: f.fieldLabel,
+          fieldType: f.fieldType,
+          value: String(f.value),
         })),
       },
     },
     include: {
       fieldValues: true,
-      patient: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-        },
-      },
+      patient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
     },
   });
 
-  // If no match found and form has critical fields, create patient draft
   if (!bestMatch && intakeFormStatus === "RECEIVED") {
     const draft = await prisma.patientDraft.create({
       data: {
@@ -254,36 +246,26 @@ export async function processWebhookPayload(payload: HippatizeWebhookPayload) {
         pcpClinicName: extracted.pcpClinicName,
         pcpPhone: extracted.pcpPhone,
         status: "PENDING",
-        createdById: "system", // Will be set to first admin user that processes it
+        createdById: "system",
       },
     });
 
-    // Link intake form to draft
     await prisma.intakeForm.update({
       where: { id: intakeForm.id },
-      data: {
-        patientDraftId: draft.id,
-        status: "DRAFT",
-      },
+      data: { patientDraftId: draft.id, status: "DRAFT" },
     });
   }
 
-  // Create audit log
   await prisma.auditLog.create({
     data: {
       action: "CREATE",
       entity: "intake_form",
       entityId: intakeForm.id,
-      changes: {
-        status: intakeFormStatus,
-        formTitle: form_title,
-        matched: !!bestMatch,
-      },
-      ipAddress: null, // Will be extracted from request context in middleware
+      changes: { status: intakeFormStatus, formTitle: form_title, matched: !!bestMatch },
+      ipAddress: null,
     },
   });
 
-  // Create notifications for admins
   await createFormSubmissionNotifications(intakeForm.id, intakeFormStatus, extracted);
 
   return {
@@ -291,39 +273,26 @@ export async function processWebhookPayload(payload: HippatizeWebhookPayload) {
     formId: intakeForm.id,
     status: intakeFormStatus,
     matchedPatientId: linkedPatientId,
-    potentialMatches: potentialMatches.slice(0, 3), // Return top 3 potential matches
+    potentialMatches: potentialMatches.slice(0, 3),
     message: bestMatch
       ? "Form auto-matched to existing patient"
       : "Form created. No auto-match found.",
   };
 }
 
-/**
- * Create notifications for admins when new form is submitted
- */
 async function createFormSubmissionNotifications(
   formId: string,
   status: string,
   extractedData: Record<string, any>
 ) {
   try {
-    // Get all admin and staff users with notification preference
     const admins = await prisma.user.findMany({
-      where: {
-        role: "ADMIN",
-        isActive: true,
-      },
-      select: { id: true, firstName: true },
+      where: { role: "ADMIN", isActive: true },
+      select: { id: true },
     });
 
-    // Get users with intake form view access
     const staffWithAccess = await prisma.user.findMany({
-      where: {
-        intakeFormAccessControl: {
-          canView: true,
-        },
-        isActive: true,
-      },
+      where: { intakeFormAccessControl: { canView: true }, isActive: true },
       select: { id: true },
     });
 
@@ -332,7 +301,6 @@ async function createFormSubmissionNotifications(
       ...staffWithAccess.map((s) => s.id),
     ]);
 
-    // Create notifications for each recipient
     const patientName = `${extractedData.firstName || "Unknown"} ${extractedData.lastName || ""}`.trim();
 
     for (const userId of recipientIds) {
@@ -354,66 +322,43 @@ async function createFormSubmissionNotifications(
     }
   } catch (error) {
     console.error("[NOTIFICATION_CREATION]", error);
-    // Don't fail the webhook if notification creation fails
   }
 }
 
-/**
- * POST /api/webhooks/hippatizer
- */
 export async function POST(request: NextRequest) {
   try {
-    // Validate API key
     const isValid = await validateApiKey(request);
     if (!isValid) {
-      return NextResponse.json(
-        { error: "Unauthorized: Invalid API key" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized: Invalid API key" }, { status: 401 });
     }
 
-    // Parse payload
-    let payload: HippatizeWebhookPayload;
+    let rawPayload: Record<string, string | null>;
     try {
-      payload = await request.json();
-    } catch (e) {
+      rawPayload = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    }
+
+    const payload = normalizePayload(rawPayload);
+    if (!payload) {
       return NextResponse.json(
-        { error: "Invalid JSON payload" },
+        { error: "Missing required fields: Form Name, Submission Id, Form Id" },
         { status: 400 }
       );
     }
 
-    // Validate required fields
-    if (!payload.form_id || !payload.submission_id || !payload.form_title) {
-      return NextResponse.json(
-        { error: "Missing required fields: form_id, submission_id, form_title" },
-        { status: 400 }
-      );
-    }
-
-    // Process webhook
     const result = await processWebhookPayload(payload);
 
-    if (result.success) {
-      return NextResponse.json(result, { status: 200 });
-    } else {
-      return NextResponse.json(result, { status: 409 }); // Conflict (duplicate)
-    }
+    return NextResponse.json(result, { status: result.success ? 200 : 409 });
   } catch (error) {
     console.error("Webhook error:", error);
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
+      { error: "Internal server error", message: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }
 }
 
-/**
- * GET /api/webhooks/hippatizer (health check)
- */
 export async function GET() {
   return NextResponse.json({
     status: "Hippatizer webhook receiver is running",
