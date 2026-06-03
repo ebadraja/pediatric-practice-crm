@@ -39,6 +39,8 @@ import { useRouter } from "next/navigation";
 interface IntakeFormListItem {
   id: string;
   hippatizFormTitle: string;
+  hippatizViewLink?: string;
+  hippatizPdfLink?: string;
   status: "RECEIVED" | "MATCHED" | "DRAFT" | "LINKED" | "ARCHIVED";
   matchConfidence?: number;
   submittedAt: string;
@@ -309,14 +311,22 @@ export default function IntakeFormsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewDetails(form)}
-                            title="View details"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
+                          {form.hippatizViewLink ? (
+                            <a href={form.hippatizViewLink} target="_blank" rel="noopener noreferrer">
+                              <Button variant="ghost" size="sm" title="View in HIPPAtizer">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </a>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleViewDetails(form)}
+                              title="View details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          )}
                           {form.status === "RECEIVED" && (
                             <Button
                               variant="ghost"
@@ -330,17 +340,25 @@ export default function IntakeFormsPage() {
                               <UserPlus className="h-4 w-4" />
                             </Button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleExportForm(form)}
-                            title="Export as PDF"
-                            disabled={exportingId === form.id}
-                          >
-                            {exportingId === form.id
-                              ? <Loader className="h-4 w-4 animate-spin" />
-                              : <Download className="h-4 w-4" />}
-                          </Button>
+                          {form.hippatizPdfLink ? (
+                            <a href={form.hippatizPdfLink} target="_blank" rel="noopener noreferrer">
+                              <Button variant="ghost" size="sm" title="Download PDF from HIPPAtizer">
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </a>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleExportForm(form)}
+                              title="Export as PDF"
+                              disabled={exportingId === form.id}
+                            >
+                              {exportingId === form.id
+                                ? <Loader className="h-4 w-4 animate-spin" />
+                                : <Download className="h-4 w-4" />}
+                            </Button>
+                          )}
                           {form.status !== "ARCHIVED" && (
                             <Button
                               variant="ghost"

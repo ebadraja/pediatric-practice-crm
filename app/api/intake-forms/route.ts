@@ -105,6 +105,8 @@ export async function GET(request: NextRequest) {
     const data = forms.map((form) => ({
       id: form.id,
       hippatizFormTitle: form.hippatizFormTitle,
+      hippatizViewLink: form.hippatizViewLink,
+      hippatizPdfLink: form.hippatizPdfLink,
       status: form.status,
       matchConfidence: form.matchConfidence,
       submittedAt: form.submittedAt.toISOString(),

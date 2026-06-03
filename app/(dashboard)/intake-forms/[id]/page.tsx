@@ -175,41 +175,7 @@ export default function IntakeFormDetailPage() {
             {new Date(form.submittedAt).toLocaleDateString()}
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {form.hippatizViewLink && (
-            <a href={form.hippatizViewLink} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" className="gap-2">
-                <ExternalLink className="w-4 h-4" />
-                View in HIPPAtizer
-              </Button>
-            </a>
-          )}
-          {form.hippatizPdfLink && (
-            <a href={form.hippatizPdfLink} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" className="gap-2">
-                <FileText className="w-4 h-4" />
-                Download PDF
-              </Button>
-            </a>
-          )}
-          <Button
-            onClick={handleExportPDF}
-            disabled={exporting}
-            className="gap-2 bg-blue-600 hover:bg-blue-700"
-          >
-            {exporting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Exporting...
-              </>
-            ) : (
-              <>
-                <Download className="w-4 h-4" />
-                Export as PDF
-              </>
-            )}
-          </Button>
-        </div>
+        <div />
       </div>
 
       {/* Status Overview */}
