@@ -50,7 +50,7 @@ interface VapiWebhookBody {
   message: VapiEndOfCallReport | { type: string }
 }
 
-// ─── Inference helpers ─────────────────────────────────────────────────────────
+// ─── ChatLog inference helpers (unchanged) ────────────────────────────────────
 
 function inferTopic(text: string): "APPOINTMENT" | "PRICING" | "INSURANCE" | "HOURS" | "SERVICES" | "LOCATION" | "OTHER" {
   const t = text.toLowerCase()
@@ -65,7 +65,7 @@ function inferTopic(text: string): "APPOINTMENT" | "PRICING" | "INSURANCE" | "HO
 
 type ChatOutcomeType = "IN_PROGRESS" | "BOOKED" | "INFO_PROVIDED" | "ESCALATED_TO_CALL" | "LEAD_CAPTURED" | "ABANDONED"
 
-function inferOutcome(summary: string, transcript: string, endedReason?: string, messageCount?: number): ChatOutcomeType {
+function inferChatOutcome(summary: string, transcript: string, endedReason?: string, messageCount?: number): ChatOutcomeType {
   const combined = `${summary} ${transcript}`.toLowerCase()
   if (/\b(booked|scheduled|confirmed|appointment.*set|set.*appointment)\b/.test(combined)) return "BOOKED"
   if (/\b(transfer|escalat|speak with someone|connect you|human agent|call you back|nurse)\b/.test(combined)) return "ESCALATED_TO_CALL"
@@ -77,6 +77,41 @@ function inferOutcome(summary: string, transcript: string, endedReason?: string,
     (messageCount !== undefined && messageCount <= 2)
   ) return "ABANDONED"
   return "INFO_PROVIDED"
+}
+
+// ─── CallLog inference helpers ────────────────────────────────────────────────
+
+type CallIntentType = "APPOINTMENT_BOOKING" | "INQUIRY" | "COMPLAINT" | "SUPPORT" | "ROUTING" | "CANCELLATION" | "VERIFICATION" | "EMERGENCY" | "GENERAL"
+type CallOutcomeType = "IN_PROGRESS" | "BOOKED" | "INFO_PROVIDED" | "TRANSFERRED" | "HUNG_UP" | "VOICEMAIL"
+type SentimentType   = "POSITIVE" | "NEUTRAL" | "NEGATIVE"
+
+function inferCallIntent(text: string): CallIntentType {
+  const t = text.toLowerCase()
+  if (/\b(emergency|urgent|911|severe|critical|life.threatening|allergic)\b/.test(t)) return "EMERGENCY"
+  if (/\b(cancel|cancellation)\b/.test(t)) return "CANCELLATION"
+  if (/\b(appointment|schedule|book|reschedule|visit|checkup|well.child)\b/.test(t)) return "APPOINTMENT_BOOKING"
+  if (/\b(complaint|complain|unhappy|dissatisfied|wrong|mistake|error|terrible)\b/.test(t)) return "COMPLAINT"
+  if (/\b(transfer|route|connect|speak with|human|operator|nurse|staff)\b/.test(t)) return "ROUTING"
+  if (/\b(verify|confirm|check|look up|look me up|records)\b/.test(t)) return "VERIFICATION"
+  if (/\b(support|help|assist|problem|issue|trouble|not working)\b/.test(t)) return "SUPPORT"
+  if (/\b(insurance|coverage|cost|price|fee|billing|hours|location|services|doctor|provider)\b/.test(t)) return "INQUIRY"
+  return "GENERAL"
+}
+
+function inferCallOutcome(summary: string, transcript: string, endedReason?: string, messageCount?: number): CallOutcomeType {
+  const combined = `${summary} ${transcript}`.toLowerCase()
+  if (/\b(booked|scheduled|confirmed|appointment.*set|set.*appointment)\b/.test(combined)) return "BOOKED"
+  if (/\b(transfer|escalat|speak with someone|connect you|human agent|nurse)\b/.test(combined)) return "TRANSFERRED"
+  if (endedReason === "voicemail") return "VOICEMAIL"
+  if (endedReason === "silence-timed-out" || (messageCount !== undefined && messageCount <= 2)) return "HUNG_UP"
+  return "INFO_PROVIDED"
+}
+
+function inferSentiment(transcript: string): SentimentType {
+  const t = transcript.toLowerCase()
+  if (/\b(thank you|great|perfect|wonderful|excellent|love|awesome|appreciate|happy|pleased|fantastic)\b/.test(t)) return "POSITIVE"
+  if (/\b(frustrat|upset|annoyed|terrible|awful|horrible|angry|rude|waste|worst|never again|ridiculous)\b/.test(t)) return "NEGATIVE"
+  return "NEUTRAL"
 }
 
 // ─── Message mapper ────────────────────────────────────────────────────────────
@@ -99,38 +134,46 @@ function mapMessages(vapiMessages: VapiMessage[]): MappedMessage[] {
     .filter(m => m.content.length > 0)
 }
 
-// ─── Core processor (exported for test route) ──────────────────────────────────
+// ─── Core processor ────────────────────────────────────────────────────────────
 
 export async function processVapiEndOfCall(
   report: VapiEndOfCallReport,
   requestIp: string | null,
-): Promise<{ chatLogId: string; alreadyExists?: boolean }> {
+): Promise<{ chatLogId: string; callLogId: string | null; alreadyExists?: boolean }> {
   const call = report.call
 
-  // Dedup — Vapi may retry on non-2xx
+  // Deduplicate on ChatLog (existing behaviour)
   const existing = await prisma.chatLog.findUnique({
     where:  { sessionId: call.id },
     select: { id: true },
   })
-  if (existing) return { chatLogId: existing.id, alreadyExists: true }
+  if (existing) {
+    // Also check if CallLog already exists
+    const existingCall = await prisma.callLog.findUnique({
+      where:  { vapiCallId: call.id },
+      select: { id: true },
+    })
+    return { chatLogId: existing.id, callLogId: existingCall?.id ?? null, alreadyExists: true }
+  }
 
-  // Prefer artifact data (richer) then fall back to top-level fields
+  // ── Shared data extraction ─────────────────────────────────────────────────
   const rawMessages: VapiMessage[] = report.artifact?.messages ?? report.messages ?? []
   const transcript  = report.artifact?.transcript ?? report.transcript ?? ""
   const summary     = report.summary ?? ""
+  const recordingUrl = report.artifact?.recordingUrl ?? report.recordingUrl ?? null
 
   const mapped      = mapMessages(rawMessages)
-  const topic       = inferTopic(transcript || summary)
-  const outcome     = inferOutcome(summary, transcript, report.endedReason, mapped.length)
+  const combined    = `${summary} ${transcript}`
 
-  const visitorName  = call.customer?.name  ?? null
+  const visitorName  = call.customer?.name   ?? null
   const visitorPhone = call.customer?.number ?? null
   const visitorEmail = call.customer?.email  ?? null
 
   const startTime = call.startedAt ? new Date(call.startedAt) : new Date()
   const endTime   = call.endedAt   ? new Date(call.endedAt)   : null
+  const duration  = endTime ? Math.round((endTime.getTime() - startTime.getTime()) / 1000) : null
 
-  // Auto-link existing patient
+  // Auto-link existing patient (shared)
   let patientId: string | null = null
   if (visitorPhone) {
     const m = await prisma.patient.findFirst({ where: { phone: visitorPhone }, select: { id: true } })
@@ -144,6 +187,10 @@ export async function processVapiEndOfCall(
     if (m) patientId = m.id
   }
 
+  // ── 1. Write to ChatLog (unchanged — keeps Chat Logs tab working) ──────────
+  const topic       = inferTopic(combined)
+  const chatOutcome = inferChatOutcome(summary, transcript, report.endedReason, mapped.length)
+
   const chatLog = await prisma.chatLog.create({
     data: {
       sessionId:        call.id,
@@ -154,32 +201,66 @@ export async function processVapiEndOfCall(
       endTime,
       messageCount:     mapped.length,
       topic,
-      outcome,
+      outcome:          chatOutcome,
       messages:         JSON.parse(JSON.stringify(mapped)),
       summary:          summary || null,
       sourcePage:       null,
       deviceType:       call.type === "webCall" ? "Desktop" : null,
       browser:          null,
-      leadCaptured:     outcome === "LEAD_CAPTURED",
-      appointmentBooked: outcome === "BOOKED",
+      leadCaptured:     chatOutcome === "LEAD_CAPTURED",
+      appointmentBooked: chatOutcome === "BOOKED",
       patientId,
     },
   })
 
+  // ── 2. Write to CallLog (new — populates Call Logs tab) ───────────────────
+  const callIntent   = inferCallIntent(combined)
+  const callOutcome  = inferCallOutcome(summary, transcript, report.endedReason, mapped.length)
+  const sentiment    = inferSentiment(transcript)
+
+  let callLogId: string | null = null
+  try {
+    const callLog = await prisma.callLog.create({
+      data: {
+        callerName:       visitorName,
+        callerPhone:      visitorPhone ?? "unknown",
+        startTime,
+        endTime,
+        duration,
+        intent:           callIntent,
+        outcome:          callOutcome,
+        sentiment,
+        transcript:       transcript || null,
+        summary:          summary || null,
+        recordingUrl,
+        vapiCallId:       call.id,
+        wasEscalated:     callOutcome === "TRANSFERRED",
+        escalationReason: callOutcome === "TRANSFERRED" ? "Escalated via Vapi" : null,
+        appointmentBooked: callOutcome === "BOOKED",
+        patientId,
+      },
+    })
+    callLogId = callLog.id
+  } catch (err) {
+    // Don't fail the whole webhook if CallLog write fails
+    console.error("[VAPI WEBHOOK] CallLog write failed:", err)
+  }
+
+  // ── Audit log ──────────────────────────────────────────────────────────────
   await prisma.auditLog.create({
     data: {
       userId:    null,
       action:    "CREATE",
-      entity:    "chat_log",
-      entityId:  chatLog.id,
-      changes:   { source: "vapi_webhook", vapiCallId: call.id, callType: call.type ?? "webCall" },
+      entity:    "call_log",
+      entityId:  callLogId ?? chatLog.id,
+      changes:   { source: "vapi_webhook", vapiCallId: call.id, callType: call.type ?? "webCall", callLogId, chatLogId: chatLog.id },
       ipAddress: requestIp,
       userAgent: "Vapi-Webhook",
       timestamp: new Date(),
     },
   })
 
-  return { chatLogId: chatLog.id }
+  return { chatLogId: chatLog.id, callLogId }
 }
 
 // ─── POST /api/webhooks/vapi ───────────────────────────────────────────────────
@@ -192,26 +273,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
   }
 
-  // Log every incoming event so we can see exactly what Vapi sends
   const eventType = (body?.message as Record<string, unknown>)?.type ?? body?.type ?? "unknown"
   console.log("[VAPI WEBHOOK] event type:", eventType)
   console.log("[VAPI WEBHOOK] full body:", JSON.stringify(body, null, 2))
 
-  const msg = body?.message as Record<string, unknown> | undefined
-
-  // Handle top-level format (some Vapi versions send without wrapping in `message`)
+  const msg     = body?.message as Record<string, unknown> | undefined
   const payload = msg ?? body
-  const type = (payload?.type as string) ?? "unknown"
+  const type    = (payload?.type as string) ?? "unknown"
 
-  // For conversation-update / chat events — Vapi sends these during and after chat sessions
   if (type === "conversation-update" || type === "end-of-call-report") {
-    // Normalise: build a VapiEndOfCallReport-shaped object from whatever arrived
     const call = (payload?.call as VapiCall) ?? { id: (payload?.sessionId as string) ?? `chat_${Date.now()}` }
     if (!call.id) {
       return NextResponse.json({ error: "Missing call id" }, { status: 400 })
     }
 
-    // For conversation-update, only save when the chat is finished (status === "ended")
     if (type === "conversation-update") {
       const status = (payload?.status as string) ?? ""
       if (status !== "ended" && status !== "complete") {
@@ -227,22 +302,22 @@ export async function POST(request: NextRequest) {
       messages:    payload?.messages as VapiMessage[] | undefined,
       endedReason: payload?.endedReason as string | undefined,
       artifact:    payload?.artifact as VapiArtifact | undefined,
+      recordingUrl: payload?.recordingUrl as string | undefined,
     }
 
     try {
       const ip     = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null
       const result = await processVapiEndOfCall(report, ip)
       if (result.alreadyExists) {
-        return NextResponse.json({ received: true, processed: false, reason: "duplicate", chatLogId: result.chatLogId })
+        return NextResponse.json({ received: true, processed: false, reason: "duplicate", chatLogId: result.chatLogId, callLogId: result.callLogId })
       }
-      return NextResponse.json({ received: true, processed: true, chatLogId: result.chatLogId }, { status: 201 })
+      return NextResponse.json({ received: true, processed: true, chatLogId: result.chatLogId, callLogId: result.callLogId }, { status: 201 })
     } catch (err) {
       console.error("[POST /api/webhooks/vapi]", err)
       return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 })
     }
   }
 
-  // All other event types (status-update, speech-update, etc.) — just acknowledge
   return NextResponse.json({ received: true, processed: false, type })
 }
 

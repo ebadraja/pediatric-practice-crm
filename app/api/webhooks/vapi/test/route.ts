@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
       success:      true,
       scenario:     tpl.label,
       chatLogId:    result.chatLogId,
+      callLogId:    result.callLogId,
       alreadyExists: result.alreadyExists ?? false,
       payload:      report,
     })
