@@ -219,7 +219,7 @@ export default function IntakeFormsPage() {
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               />
             </div>
-            <Select value={selectedFormType} onValueChange={(v) => { setSelectedFormType(v); setCurrentPage(1); }}>
+            <Select value={selectedFormType} onValueChange={(v) => { setSelectedFormType(v ?? "all"); setCurrentPage(1); }}>
               <SelectTrigger className="w-56">
                 <SelectValue placeholder="All Form Types" />
               </SelectTrigger>
