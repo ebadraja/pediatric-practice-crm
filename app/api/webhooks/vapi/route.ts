@@ -35,6 +35,26 @@ interface VapiArtifact {
   stereoRecordingUrl?: string
 }
 
+interface VapiStructuredData {
+  callerName?: string
+  patientName?: string
+  patientDOB?: string
+  isNewPatient?: boolean
+  callIntent?: string
+  appointmentType?: string
+  appointmentConfirmed?: boolean
+  requestedDate?: string
+  requestedTime?: string
+  wasEscalated?: boolean
+  insuranceProvider?: string
+}
+
+interface VapiAnalysis {
+  summary?: string
+  structuredData?: VapiStructuredData
+  successEvaluation?: string
+}
+
 interface VapiEndOfCallReport {
   type: "end-of-call-report"
   call: VapiCall
@@ -44,6 +64,7 @@ interface VapiEndOfCallReport {
   recordingUrl?: string
   endedReason?: string
   artifact?: VapiArtifact
+  analysis?: VapiAnalysis
 }
 
 interface VapiWebhookBody {
@@ -114,6 +135,12 @@ function inferSentiment(transcript: string): SentimentType {
   return "NEUTRAL"
 }
 
+// ─── Phone normalizer ─────────────────────────────────────────────────────────
+
+function normalizePhone(raw: string): string {
+  return raw.replace(/\D/g, "").replace(/^1(\d{10})$/, "$1")
+}
+
 // ─── Message mapper ────────────────────────────────────────────────────────────
 
 interface MappedMessage {
@@ -161,18 +188,54 @@ export async function processVapiEndOfCall(
   const endTime   = call.endedAt   ? new Date(call.endedAt)   : null
   const duration  = endTime ? Math.round((endTime.getTime() - startTime.getTime()) / 1000) : null
 
-  // Auto-link patient by phone or email
+  // ── Patient matching — 5-level cascade ────────────────────────────────────
+  const sd            = report.analysis?.structuredData
+  const normPhone     = visitorPhone ? normalizePhone(visitorPhone) : null
   let patientId: string | null = null
-  if (visitorPhone) {
+
+  // 1. Exact phone match
+  if (!patientId && visitorPhone) {
     const m = await prisma.patient.findFirst({ where: { phone: visitorPhone }, select: { id: true } })
     if (m) patientId = m.id
   }
+
+  // 2. Normalized phone match (strips country code / formatting)
+  if (!patientId && normPhone && normPhone !== visitorPhone) {
+    const all = await prisma.patient.findMany({ select: { id: true, phone: true } })
+    const match = all.find(p => p.phone && normalizePhone(p.phone) === normPhone)
+    if (match) patientId = match.id
+  }
+
+  // 3. Parent phone match
+  if (!patientId && visitorPhone) {
+    const m = await prisma.patient.findFirst({ where: { parentPhone: visitorPhone }, select: { id: true } })
+    if (m) patientId = m.id
+  }
+
+  // 4. Email match
   if (!patientId && visitorEmail) {
     const m = await prisma.patient.findFirst({
       where: { email: { equals: visitorEmail, mode: "insensitive" } },
       select: { id: true },
     })
     if (m) patientId = m.id
+  }
+
+  // 5. Patient name match from Vapi structuredData (e.g. "John Smith" → search firstName + lastName)
+  if (!patientId && sd?.patientName) {
+    const parts = sd.patientName.trim().split(/\s+/)
+    if (parts.length >= 2) {
+      const firstName = parts[0]
+      const lastName  = parts.slice(1).join(" ")
+      const m = await prisma.patient.findFirst({
+        where: {
+          firstName: { equals: firstName, mode: "insensitive" },
+          lastName:  { equals: lastName,  mode: "insensitive" },
+        },
+        select: { id: true },
+      })
+      if (m) patientId = m.id
+    }
   }
 
   // ── PHONE CALL → CallLog only ──────────────────────────────────────────────
@@ -182,15 +245,24 @@ export async function processVapiEndOfCall(
     })
     if (existing) return { chatLogId: null, callLogId: existing.id, alreadyExists: true }
 
-    const callIntent  = inferCallIntent(combined)
-    const callOutcome = inferCallOutcome(summary, transcript, report.endedReason, mapped.length)
+    // Prefer Vapi structuredData over regex inference
+    const callIntent = (sd?.callIntent as CallIntentType | undefined)
+      ?? inferCallIntent(combined)
+    const callOutcome = sd?.appointmentConfirmed
+      ? "BOOKED"
+      : sd?.wasEscalated
+      ? "TRANSFERRED"
+      : inferCallOutcome(summary, transcript, report.endedReason, mapped.length)
     const sentiment   = inferSentiment(transcript)
+
+    // Use caller name from structuredData if Vapi didn't send customer.name
+    const resolvedCallerName = visitorName ?? sd?.callerName ?? null
 
     let callLogId: string | null = null
     try {
       const callLog = await prisma.callLog.create({
         data: {
-          callerName:       visitorName,
+          callerName:       resolvedCallerName,
           callerPhone:      visitorPhone ?? "unknown",
           startTime,
           endTime,
@@ -337,6 +409,7 @@ export async function POST(request: NextRequest) {
       endedReason: payload?.endedReason as string | undefined,
       artifact:    payload?.artifact as VapiArtifact | undefined,
       recordingUrl: payload?.recordingUrl as string | undefined,
+      analysis:    payload?.analysis as VapiAnalysis | undefined,
     }
 
     try {
