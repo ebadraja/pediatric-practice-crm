@@ -235,7 +235,7 @@ export default function IntakeFormsPage() {
               </SelectContent>
             </Select>
             {!showTrash && (
-              <Select value={selectedStatus} onValueChange={(v) => { setSelectedStatus(v); setCurrentPage(1); }}>
+              <Select value={selectedStatus} onValueChange={(v) => { setSelectedStatus(v ?? "all"); setCurrentPage(1); }}>
                 <SelectTrigger className="w-44">
                   <SelectValue />
                 </SelectTrigger>
