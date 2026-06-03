@@ -217,6 +217,22 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
   });
 
   if (!bestMatch && intakeFormStatus === "RECEIVED") {
+    // Find the first admin user to satisfy the foreign key constraint
+    const adminUser = await prisma.user.findFirst({
+      where: { role: "ADMIN", isActive: true },
+      select: { id: true },
+    });
+
+    if (!adminUser) {
+      // No admin user exists yet — store form as RECEIVED without draft
+      return {
+        success: true,
+        formId: intakeForm.id,
+        status: "RECEIVED",
+        message: "Form received. No admin user found to assign draft.",
+      };
+    }
+
     const draft = await prisma.patientDraft.create({
       data: {
         firstName: extracted.firstName || "Unknown",
@@ -246,7 +262,7 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
         pcpClinicName: extracted.pcpClinicName,
         pcpPhone: extracted.pcpPhone,
         status: "PENDING",
-        createdById: "system",
+        createdById: adminUser.id,
       },
     });
 
