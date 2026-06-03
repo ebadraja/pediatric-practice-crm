@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +29,8 @@ import {
   Eye as EyeIcon,
   EyeOff,
   Zap,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import { WebhookTestingComponent } from '@/components/webhook-testing';
 
@@ -101,8 +104,9 @@ const labelCls = "block text-sm font-medium text-slate-900 dark:text-slate-100 m
 
 export default function SettingsPage() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
   const [hasChanges, setHasChanges] = useState(false);
-  const [activeTab, setActiveTab] = useState('practice');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') ?? 'practice');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -111,6 +115,27 @@ export default function SettingsPage() {
   const [testingApiKey, setTestingApiKey] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
+
+  // Google Calendar state
+  const [gcal, setGcal] = useState({
+    connected: false,
+    enabled: false,
+    hasClientId: false,
+    hasClientSecret: false,
+    calendarId: 'primary',
+    syncDirection: 'read_only',
+    lastSync: null as string | null,
+  });
+  const [gcalClientId, setGcalClientId] = useState('');
+  const [gcalClientSecret, setGcalClientSecret] = useState('');
+  const [gcalCalendarId, setGcalCalendarId] = useState('primary');
+  const [gcalSyncDirection, setGcalSyncDirection] = useState('read_only');
+  const [gcalSaving, setGcalSaving] = useState(false);
+  const [gcalMessage, setGcalMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showGcalClientId, setShowGcalClientId] = useState(false);
+  const [showGcalClientSecret, setShowGcalClientSecret] = useState(false);
+  const [changingGcalClientId, setChangingGcalClientId] = useState(false);
+  const [changingGcalClientSecret, setChangingGcalClientSecret] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 350);
@@ -122,7 +147,30 @@ export default function SettingsPage() {
     loadStaffMembers();
     // Load Hippatizer settings
     loadHippatizSettings();
+    // Load Google Calendar settings
+    loadGcalSettings();
   }, []);
+
+  // Handle OAuth callback messages
+  useEffect(() => {
+    if (activeTab !== 'google-calendar') return;
+    const connected = searchParams.get('connected');
+    const error = searchParams.get('error');
+    if (connected === '1') {
+      setGcalMessage({ type: 'success', text: 'Google Calendar connected successfully!' });
+      loadGcalSettings();
+      setTimeout(() => setGcalMessage(null), 5000);
+    } else if (error) {
+      const msgs: Record<string, string> = {
+        missing_credentials: 'Save your Client ID and Secret first.',
+        token_exchange_failed: 'Token exchange failed — check your credentials.',
+        server_error: 'A server error occurred.',
+        no_code: 'Authorization was cancelled.',
+      };
+      setGcalMessage({ type: 'error', text: msgs[error] ?? `OAuth error: ${error}` });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const loadStaffMembers = async () => {
     try {
@@ -153,6 +201,84 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error('Failed to load Hippatizer settings:', error);
+    }
+  };
+
+  const loadGcalSettings = async () => {
+    try {
+      const res = await fetch('/api/settings/google-calendar');
+      if (res.ok) {
+        const data = await res.json();
+        setGcal(data);
+        setGcalCalendarId(data.calendarId ?? 'primary');
+        setGcalSyncDirection(data.syncDirection ?? 'read_only');
+      }
+    } catch (err) {
+      console.error('Failed to load Google Calendar settings:', err);
+    }
+  };
+
+  const handleGcalSave = async () => {
+    setGcalSaving(true);
+    setGcalMessage(null);
+    try {
+      const body: Record<string, unknown> = {
+        calendarId: gcalCalendarId,
+        syncDirection: gcalSyncDirection,
+      };
+      if (gcalClientId.trim()) body.clientId = gcalClientId.trim();
+      if (gcalClientSecret.trim()) body.clientSecret = gcalClientSecret.trim();
+
+      const res = await fetch('/api/settings/google-calendar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setGcalMessage({ type: 'error', text: err.error ?? 'Failed to save' });
+      } else {
+        setGcalClientId('');
+        setGcalClientSecret('');
+        setChangingGcalClientId(false);
+        setChangingGcalClientSecret(false);
+        await loadGcalSettings();
+        setGcalMessage({ type: 'success', text: 'Settings saved. Now click Connect to authorize Google.' });
+      }
+    } catch {
+      setGcalMessage({ type: 'error', text: 'An error occurred' });
+    } finally {
+      setGcalSaving(false);
+      setTimeout(() => setGcalMessage(null), 5000);
+    }
+  };
+
+  const handleGcalToggleEnabled = async (enabled: boolean) => {
+    try {
+      await fetch('/api/settings/google-calendar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      setGcal((prev) => ({ ...prev, enabled }));
+    } catch {
+      /* silent */
+    }
+  };
+
+  const handleGcalDisconnect = async () => {
+    if (!confirm('Disconnect Google Calendar? This will remove the OAuth tokens.')) return;
+    try {
+      await fetch('/api/settings/google-calendar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disconnect: true }),
+      });
+      await loadGcalSettings();
+      setGcalMessage({ type: 'success', text: 'Google Calendar disconnected.' });
+      setTimeout(() => setGcalMessage(null), 3000);
+    } catch {
+      setGcalMessage({ type: 'error', text: 'Failed to disconnect' });
     }
   };
 
@@ -345,6 +471,7 @@ export default function SettingsPage() {
     { id: 'appointments', label: 'Appointment Types', icon: Calendar },
     { id: 'knowledge', label: 'Knowledge Base', icon: BookOpen },
     { id: 'integrations', label: 'Integrations', icon: Puzzle },
+    { id: 'google-calendar', label: 'Google Calendar', icon: Calendar },
     { id: 'hippatizer', label: 'Intake Forms (Hippatizer)', icon: FileText },
     { id: 'webhook-test', label: 'Test Webhook', icon: Zap },
     { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -701,37 +828,315 @@ export default function SettingsPage() {
           {/* ── Integrations ── */}
           {activeTab === 'integrations' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {INTEGRATION_DATA.map((integration) => (
-                <div key={integration.name} className={`bg-white dark:bg-slate-900 rounded-xl border p-5 shadow-sm ${integration.status === 'connected' ? 'border-green-200 dark:border-green-800/60' : 'border-slate-200 dark:border-slate-700'}`}>
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-slate-900 dark:text-slate-100">{integration.name}</h3>
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{integration.service}</p>
+              {INTEGRATION_DATA.map((integration) => {
+                const isGcal = integration.name === 'Google Calendar';
+                const gcalStatus = isGcal ? (gcal.connected ? 'connected' : 'disconnected') : integration.status;
+                const gcalLastSync = isGcal && gcal.lastSync ? `Last sync: ${new Date(gcal.lastSync).toLocaleString()}` : integration.lastSync ? `Last sync: ${integration.lastSync}` : null;
+                return (
+                  <div key={integration.name} className={`bg-white dark:bg-slate-900 rounded-xl border p-5 shadow-sm ${gcalStatus === 'connected' ? 'border-green-200 dark:border-green-800/60' : 'border-slate-200 dark:border-slate-700'}`}>
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="font-semibold text-slate-900 dark:text-slate-100">{integration.name}</h3>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{integration.service}</p>
+                      </div>
+                      <span className={`text-xs font-medium px-2.5 py-0.5 rounded-md flex items-center gap-1 ${
+                        gcalStatus === 'connected'
+                          ? 'bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300'
+                          : 'bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300'
+                      }`}>
+                        {gcalStatus === 'connected' && <CheckCircle className="w-3 h-3" />}
+                        {gcalStatus === 'connected' ? 'Connected' : 'Not Connected'}
+                      </span>
                     </div>
-                    <span className={`text-xs font-medium px-2.5 py-0.5 rounded-md flex items-center gap-1 ${
-                      integration.status === 'connected'
-                        ? 'bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300'
-                        : 'bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300'
-                    }`}>
-                      {integration.status === 'connected' && <CheckCircle className="w-3 h-3" />}
-                      {integration.status === 'connected' ? 'Connected' : 'Not Connected'}
-                    </span>
+                    {gcalLastSync && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">{gcalLastSync}</p>
+                    )}
+                    <div className="flex gap-2">
+                      {isGcal ? (
+                        <Button size="sm" variant="outline" className="w-full dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800" onClick={() => setActiveTab('google-calendar')}>
+                          {gcal.connected ? 'Configure' : 'Set Up'}
+                        </Button>
+                      ) : gcalStatus === 'connected' ? (
+                        <>
+                          <Button variant="outline" size="sm" className="flex-1 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Configure</Button>
+                          <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 dark:text-red-400 dark:border-slate-600 dark:hover:bg-slate-800">Disconnect</Button>
+                        </>
+                      ) : (
+                        <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700">Connect</Button>
+                      )}
+                    </div>
                   </div>
-                  {integration.lastSync && (
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Last sync: {integration.lastSync}</p>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Google Calendar ── */}
+          {activeTab === 'google-calendar' && (
+            <div className="space-y-6">
+              {gcalMessage && (
+                <div className={`p-4 rounded-lg flex items-center gap-3 ${
+                  gcalMessage.type === 'success'
+                    ? 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800'
+                    : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800'
+                }`}>
+                  {gcalMessage.type === 'success'
+                    ? <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    : <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />}
+                  <p className={`text-sm font-medium ${
+                    gcalMessage.type === 'success'
+                      ? 'text-green-800 dark:text-green-300'
+                      : 'text-red-800 dark:text-red-300'
+                  }`}>{gcalMessage.text}</p>
+                </div>
+              )}
+
+              {/* Status card */}
+              <Card className="dark:bg-slate-900 dark:border-slate-700">
+                <CardHeader>
+                  <CardTitle className="dark:text-slate-50 flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    Google Calendar Integration
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className={`rounded-lg p-4 flex items-start gap-3 border ${
+                    gcal.connected
+                      ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800'
+                      : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
+                  }`}>
+                    {gcal.connected
+                      ? <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                      : <AlertCircle className="h-5 w-5 text-slate-400 flex-shrink-0 mt-0.5" />}
+                    <div>
+                      <p className={`text-sm font-medium ${gcal.connected ? 'text-green-900 dark:text-green-200' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {gcal.connected ? 'Connected & Authorized' : 'Not Connected'}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {gcal.connected
+                          ? `Syncing calendar: ${gcal.calendarId}${gcal.lastSync ? ` · Last sync: ${new Date(gcal.lastSync).toLocaleString()}` : ''}`
+                          : 'Save your credentials below, then click Connect to authorize via Google OAuth.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Enable toggle (only relevant when connected) */}
+                  {gcal.connected && (
+                    <div className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-700 rounded-lg">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Show on Appointments Calendar</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Overlay your Google Calendar events on the appointments view</p>
+                      </div>
+                      <button
+                        onClick={() => handleGcalToggleEnabled(!gcal.enabled)}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${gcal.enabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${gcal.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
                   )}
-                  <div className="flex gap-2">
-                    {integration.status === 'connected' ? (
-                      <>
-                        <Button variant="outline" size="sm" className="flex-1 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Configure</Button>
-                        <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 dark:text-red-400 dark:border-slate-600 dark:hover:bg-slate-800">Disconnect</Button>
-                      </>
+                </CardContent>
+              </Card>
+
+              {/* Credentials */}
+              <Card className="dark:bg-slate-900 dark:border-slate-700">
+                <CardHeader>
+                  <CardTitle className="dark:text-slate-50 text-base">OAuth Credentials</CardTitle>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Create a project in{' '}
+                    <span className="text-blue-600 dark:text-blue-400">Google Cloud Console</span>
+                    , enable the Calendar API, and create OAuth 2.0 credentials.
+                    Set the redirect URI to:{' '}
+                    <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">
+                      {typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/google-calendar/callback
+                    </code>
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Client ID */}
+                  <div>
+                    <label className={labelCls}>Google Client ID</label>
+                    {gcal.hasClientId && !changingGcalClientId ? (
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          type="text"
+                          disabled
+                          placeholder="Client ID saved — click Change to update"
+                          className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-400 flex-1 italic"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 shrink-0"
+                          onClick={() => setChangingGcalClientId(true)}
+                        >
+                          Change
+                        </Button>
+                      </div>
                     ) : (
-                      <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700">Connect</Button>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            type={showGcalClientId ? 'text' : 'password'}
+                            value={gcalClientId}
+                            onChange={(e) => setGcalClientId(e.target.value)}
+                            placeholder="Paste your Google Client ID"
+                            className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowGcalClientId((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          >
+                            {showGcalClientId ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {changingGcalClientId && (
+                          <Button variant="outline" size="sm" className="dark:border-slate-600 dark:text-slate-300 shrink-0" onClick={() => { setChangingGcalClientId(false); setGcalClientId(''); }}>
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+
+                  {/* Client Secret */}
+                  <div>
+                    <label className={labelCls}>Google Client Secret</label>
+                    {gcal.hasClientSecret && !changingGcalClientSecret ? (
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          type="text"
+                          disabled
+                          placeholder="Client Secret saved — click Change to update"
+                          className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-400 flex-1 italic"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 shrink-0"
+                          onClick={() => setChangingGcalClientSecret(true)}
+                        >
+                          Change
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            type={showGcalClientSecret ? 'text' : 'password'}
+                            value={gcalClientSecret}
+                            onChange={(e) => setGcalClientSecret(e.target.value)}
+                            placeholder="Paste your Google Client Secret"
+                            className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowGcalClientSecret((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          >
+                            {showGcalClientSecret ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {changingGcalClientSecret && (
+                          <Button variant="outline" size="sm" className="dark:border-slate-600 dark:text-slate-300 shrink-0" onClick={() => { setChangingGcalClientSecret(false); setGcalClientSecret(''); }}>
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Calendar ID */}
+                  <div>
+                    <label className={labelCls}>Calendar ID</label>
+                    <Input
+                      value={gcalCalendarId}
+                      onChange={(e) => setGcalCalendarId(e.target.value)}
+                      placeholder="primary (or paste your calendar ID)"
+                      className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Use <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">primary</code> for your main calendar, or paste a specific calendar ID from Google Calendar settings.
+                    </p>
+                  </div>
+
+                  {/* Sync direction */}
+                  <div>
+                    <label className={labelCls}>Sync Mode</label>
+                    <select
+                      value={gcalSyncDirection}
+                      onChange={(e) => setGcalSyncDirection(e.target.value)}
+                      className={selectCls}
+                    >
+                      <option value="read_only">Read Only — show Google events on the CRM calendar</option>
+                      <option value="two_way">Two-way — also push CRM appointments to Google Calendar</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    <Button
+                      onClick={handleGcalSave}
+                      disabled={gcalSaving}
+                      className="bg-blue-600 hover:bg-blue-700 gap-2"
+                    >
+                      {gcalSaving && <RefreshCw className="w-4 h-4 animate-spin" />}
+                      Save Settings
+                    </Button>
+
+                    {gcal.hasClientId && gcal.hasClientSecret && !gcal.connected && (
+                      <a href="/api/auth/google-calendar">
+                        <Button className="bg-green-600 hover:bg-green-700 gap-2">
+                          <ExternalLink className="w-4 h-4" />
+                          Connect Google Calendar
+                        </Button>
+                      </a>
+                    )}
+
+                    {gcal.connected && (
+                      <>
+                        <a href="/api/auth/google-calendar">
+                          <Button variant="outline" className="gap-2 dark:border-slate-600 dark:text-slate-300">
+                            <RefreshCw className="w-4 h-4" />
+                            Re-authorize
+                          </Button>
+                        </a>
+                        <Button
+                          variant="outline"
+                          onClick={handleGcalDisconnect}
+                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:border-slate-600"
+                        >
+                          Disconnect
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Setup guide */}
+              <Card className="dark:bg-slate-900 dark:border-slate-700">
+                <CardHeader><CardTitle className="dark:text-slate-50 text-base">Setup Guide</CardTitle></CardHeader>
+                <CardContent>
+                  <ol className="space-y-3 text-sm text-slate-700 dark:text-slate-300">
+                    {[
+                      'Go to console.cloud.google.com and create a new project (or select an existing one).',
+                      'In the left menu, go to APIs & Services → Library. Search for "Google Calendar API" and enable it.',
+                      'Go to APIs & Services → Credentials. Click "Create Credentials" → "OAuth 2.0 Client IDs".',
+                      'Choose "Web application". Under Authorized Redirect URIs, add the redirect URI shown above.',
+                      'Copy the Client ID and Client Secret and paste them in the fields above. Click Save Settings.',
+                      'Click "Connect Google Calendar" to authorize via your Google account.',
+                    ].map((step, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center">
+                          {i + 1}
+                        </span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </CardContent>
+              </Card>
             </div>
           )}
 

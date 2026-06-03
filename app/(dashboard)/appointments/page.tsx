@@ -18,6 +18,17 @@ import {
   User, ExternalLink, Edit2, Ban, RefreshCw, Loader2,
 } from "lucide-react";
 
+// ─── Google Calendar event type ───────────────────────────────────────────────
+
+interface GCalEvent {
+  id: string;
+  summary: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  htmlLink: string;
+}
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -179,6 +190,42 @@ function AppointmentBlock({
         </p>
       )}
     </div>
+  );
+}
+
+// ─── GCalEventBlock ───────────────────────────────────────────────────────────
+
+function GCalEventBlock({ event }: { event: GCalEvent }) {
+  if (event.allDay) return null;
+
+  const start   = new Date(event.start);
+  const end     = new Date(event.end);
+  const topMin  = start.getHours() * 60 + start.getMinutes() - DAY_START * 60;
+  const durMin  = Math.max((end.getTime() - start.getTime()) / 60_000, 15);
+  const top     = topMin * PX_PER_MIN;
+  const height  = Math.max(durMin * PX_PER_MIN, 18);
+
+  if (top < 0 || top >= TOTAL_HEIGHT) return null;
+
+  return (
+    <a
+      href={event.htmlLink}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ top, height, position: "absolute", left: 3, right: 3, zIndex: 8 }}
+      className="rounded-md px-2 py-0.5 border border-blue-300 dark:border-blue-600 bg-blue-50/80 dark:bg-blue-950/50 overflow-hidden cursor-pointer hover:brightness-95 transition-all select-none"
+      title={`Google Calendar: ${event.summary}`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 truncate leading-tight">
+        <span className="mr-0.5 opacity-60">G</span>{event.summary}
+      </p>
+      {height > 28 && (
+        <p className="text-[9px] text-blue-600 dark:text-blue-400 opacity-80 truncate">
+          {format(start, "h:mm a")}
+        </p>
+      )}
+    </a>
   );
 }
 
@@ -418,6 +465,13 @@ export default function AppointmentsPage() {
   const [editTarget, setEditTarget]     = useState<Appointment | null>(null);
   const [nowTop, setNowTop]             = useState<number | null>(null);
 
+  // Google Calendar overlay
+  const [gcalEvents, setGcalEvents]         = useState<GCalEvent[]>([]);
+  const [gcalEnabled, setGcalEnabled]       = useState(false);
+  const [gcalConnected, setGcalConnected]   = useState(false);
+  const [showGcal, setShowGcal]             = useState(false);
+  const [gcalLoading, setGcalLoading]       = useState(false);
+
   const weekStart = useMemo(() => startOfWeek(currentWeek, { weekStartsOn: 1 }), [currentWeek]);
   const weekEnd   = useMemo(() => endOfWeek(currentWeek, { weekStartsOn: 1 }), [currentWeek]);
   const weekDays  = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -450,6 +504,37 @@ export default function AppointmentsPage() {
   }, [weekStart, weekEnd, filters.provider, filters.type, filters.status]);
 
   useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
+
+  // ── Google Calendar ─────────────────────────────────────────────────────────
+
+  // On mount: check if GCal is enabled in settings
+  useEffect(() => {
+    fetch('/api/settings/google-calendar')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (d) {
+          setGcalConnected(d.connected);
+          setGcalEnabled(d.enabled);
+          if (d.connected && d.enabled) setShowGcal(true);
+        }
+      })
+      .catch(() => {/* silent */});
+  }, []);
+
+  // Fetch GCal events whenever the toggle is on and the week changes
+  useEffect(() => {
+    if (!showGcal) { setGcalEvents([]); return; }
+    setGcalLoading(true);
+    const params = new URLSearchParams({
+      timeMin: weekStart.toISOString(),
+      timeMax: weekEnd.toISOString(),
+    });
+    fetch(`/api/google-calendar/events?${params}`)
+      .then((r) => r.ok ? r.json() : { events: [] })
+      .then((d) => setGcalEvents(d.events ?? []))
+      .catch(() => setGcalEvents([]))
+      .finally(() => setGcalLoading(false));
+  }, [showGcal, weekStart, weekEnd]);
 
   // ── Current-time indicator ──────────────────────────────────────────────────
 
@@ -553,6 +638,18 @@ export default function AppointmentsPage() {
               </button>
             ))}
           </div>
+          {gcalConnected && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowGcal((v) => !v)}
+              className={`gap-1.5 h-9 text-xs border ${showGcal ? 'border-blue-400 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30' : 'dark:border-slate-600 dark:text-slate-300'}`}
+              title={showGcal ? 'Hide Google Calendar events' : 'Show Google Calendar events'}
+            >
+              {gcalLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calendar className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">Google Cal</span>
+            </Button>
+          )}
           <Button
             onClick={() => { setPrefill(null); setEditTarget(null); setNewApptOpen(true); }}
             className="bg-blue-600 hover:bg-blue-700 text-white gap-2 h-9 md:h-10 text-sm"
@@ -828,6 +925,12 @@ export default function AppointmentsPage() {
                             onClick={() => setSelected(appt)}
                           />
                         ))}
+
+                        {/* Google Calendar events */}
+                        {showGcal && gcalEvents
+                          .filter((e) => !e.allDay && isSameDay(new Date(e.start), day))
+                          .map((e) => <GCalEventBlock key={e.id} event={e} />)
+                        }
                       </div>
                     );
                   })}
@@ -885,6 +988,18 @@ export default function AppointmentsPage() {
                   <span className="text-xs text-slate-600 dark:text-slate-400">{label}</span>
                 </div>
               ))}
+              {gcalConnected && (
+                <div className="flex items-center gap-2 mt-1 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-blue-400" />
+                  <span className="text-xs text-slate-600 dark:text-slate-400">Google Calendar</span>
+                  <button
+                    onClick={() => setShowGcal((v) => !v)}
+                    className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-medium ${showGcal ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                  >
+                    {showGcal ? 'On' : 'Off'}
+                  </button>
+                </div>
+              )}
               <div className="pt-1 border-t border-slate-100 dark:border-slate-800 mt-1">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-slate-300 dark:bg-slate-600" />

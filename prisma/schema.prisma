@@ -464,6 +464,17 @@ model Settings {
   intakeFormNotifyEmail     String?   @map("intake_form_notify_email")
   intakeFormNotifyOnNewForm Boolean   @default(true) @map("intake_form_notify_on_new_form")
 
+  // Google Calendar Integration
+  googleCalClientId      String?   @map("google_cal_client_id")
+  googleCalClientSecret  String?   @map("google_cal_client_secret")
+  googleCalCalendarId    String?   @default("primary") @map("google_cal_calendar_id")
+  googleCalAccessToken   String?   @map("google_cal_access_token") @db.Text
+  googleCalRefreshToken  String?   @map("google_cal_refresh_token") @db.Text
+  googleCalTokenExpiry   DateTime? @map("google_cal_token_expiry")
+  googleCalEnabled       Boolean   @default(false) @map("google_cal_enabled")
+  googleCalSyncDirection String    @default("read_only") @map("google_cal_sync_direction")
+  googleCalLastSync      DateTime? @map("google_cal_last_sync")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
