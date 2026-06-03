@@ -139,6 +139,7 @@ function mapMessages(vapiMessages: VapiMessage[]): MappedMessage[] {
 export async function processVapiEndOfCall(
   report: VapiEndOfCallReport,
   requestIp: string | null,
+  isPhoneCall = true,   // false for conversation-update (chatbot only)
 ): Promise<{ chatLogId: string; callLogId: string | null; alreadyExists?: boolean }> {
   const call = report.call
 
@@ -213,12 +214,17 @@ export async function processVapiEndOfCall(
     },
   })
 
-  // ── 2. Write to CallLog (new — populates Call Logs tab) ───────────────────
+  // ── 2. Write to CallLog only for real phone calls, not chatbot conversations ─
   const callIntent   = inferCallIntent(combined)
   const callOutcome  = inferCallOutcome(summary, transcript, report.endedReason, mapped.length)
   const sentiment    = inferSentiment(transcript)
 
   let callLogId: string | null = null
+  if (!isPhoneCall) {
+    // chatbot conversation-update — skip CallLog and notifications
+    return { chatLogId: chatLog.id, callLogId: null }
+  }
+
   try {
     const callLog = await prisma.callLog.create({
       data: {
@@ -354,8 +360,9 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const ip     = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null
-      const result = await processVapiEndOfCall(report, ip)
+      const ip          = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null
+      const isPhoneCall = type === "end-of-call-report"
+      const result = await processVapiEndOfCall(report, ip, isPhoneCall)
       if (result.alreadyExists) {
         return NextResponse.json({ received: true, processed: false, reason: "duplicate", chatLogId: result.chatLogId, callLogId: result.callLogId })
       }
