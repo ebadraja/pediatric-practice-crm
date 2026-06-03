@@ -139,32 +139,19 @@ function mapMessages(vapiMessages: VapiMessage[]): MappedMessage[] {
 export async function processVapiEndOfCall(
   report: VapiEndOfCallReport,
   requestIp: string | null,
-  isPhoneCall = true,   // false for conversation-update (chatbot only)
-): Promise<{ chatLogId: string; callLogId: string | null; alreadyExists?: boolean }> {
+  isPhoneCall = true,   // true = end-of-call-report → CallLog only
+                        // false = conversation-update → ChatLog only
+): Promise<{ chatLogId: string | null; callLogId: string | null; alreadyExists?: boolean }> {
   const call = report.call
-
-  // Deduplicate on ChatLog (existing behaviour)
-  const existing = await prisma.chatLog.findUnique({
-    where:  { sessionId: call.id },
-    select: { id: true },
-  })
-  if (existing) {
-    // Also check if CallLog already exists
-    const existingCall = await prisma.callLog.findUnique({
-      where:  { vapiCallId: call.id },
-      select: { id: true },
-    })
-    return { chatLogId: existing.id, callLogId: existingCall?.id ?? null, alreadyExists: true }
-  }
 
   // ── Shared data extraction ─────────────────────────────────────────────────
   const rawMessages: VapiMessage[] = report.artifact?.messages ?? report.messages ?? []
-  const transcript  = report.artifact?.transcript ?? report.transcript ?? ""
-  const summary     = report.summary ?? ""
+  const transcript   = report.artifact?.transcript ?? report.transcript ?? ""
+  const summary      = report.summary ?? ""
   const recordingUrl = report.artifact?.recordingUrl ?? report.recordingUrl ?? null
 
-  const mapped      = mapMessages(rawMessages)
-  const combined    = `${summary} ${transcript}`
+  const mapped   = mapMessages(rawMessages)
+  const combined = `${summary} ${transcript}`
 
   const visitorName  = call.customer?.name   ?? null
   const visitorPhone = call.customer?.number ?? null
@@ -174,7 +161,7 @@ export async function processVapiEndOfCall(
   const endTime   = call.endedAt   ? new Date(call.endedAt)   : null
   const duration  = endTime ? Math.round((endTime.getTime() - startTime.getTime()) / 1000) : null
 
-  // Auto-link existing patient (shared)
+  // Auto-link patient by phone or email
   let patientId: string | null = null
   if (visitorPhone) {
     const m = await prisma.patient.findFirst({ where: { phone: visitorPhone }, select: { id: true } })
@@ -188,133 +175,126 @@ export async function processVapiEndOfCall(
     if (m) patientId = m.id
   }
 
-  // ── 1. Write to ChatLog (unchanged — keeps Chat Logs tab working) ──────────
+  // ── PHONE CALL → CallLog only ──────────────────────────────────────────────
+  if (isPhoneCall) {
+    const existing = await prisma.callLog.findUnique({
+      where: { vapiCallId: call.id }, select: { id: true },
+    })
+    if (existing) return { chatLogId: null, callLogId: existing.id, alreadyExists: true }
+
+    const callIntent  = inferCallIntent(combined)
+    const callOutcome = inferCallOutcome(summary, transcript, report.endedReason, mapped.length)
+    const sentiment   = inferSentiment(transcript)
+
+    let callLogId: string | null = null
+    try {
+      const callLog = await prisma.callLog.create({
+        data: {
+          callerName:       visitorName,
+          callerPhone:      visitorPhone ?? "unknown",
+          startTime,
+          endTime,
+          duration,
+          intent:           callIntent,
+          outcome:          callOutcome,
+          sentiment,
+          transcript:       transcript || null,
+          summary:          summary || null,
+          recordingUrl,
+          vapiCallId:       call.id,
+          wasEscalated:     callOutcome === "TRANSFERRED",
+          escalationReason: callOutcome === "TRANSFERRED" ? "Escalated via Vapi" : null,
+          appointmentBooked: callOutcome === "BOOKED",
+          patientId,
+        },
+      })
+      callLogId = callLog.id
+    } catch (err) {
+      console.error("[VAPI WEBHOOK] CallLog write failed:", err)
+    }
+
+    // Audit
+    await prisma.auditLog.create({
+      data: {
+        userId: null, action: "CREATE", entity: "call_log", entityId: callLogId ?? call.id,
+        changes: { source: "vapi_webhook", vapiCallId: call.id, callType: call.type ?? "webCall" },
+        ipAddress: requestIp, userAgent: "Vapi-Webhook", timestamp: new Date(),
+      },
+    })
+
+    // Notifications
+    try {
+      const admins = await prisma.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } })
+      const callerLabel   = visitorName ?? visitorPhone ?? "Unknown caller"
+      const durationLabel = duration ? `${Math.floor(duration / 60)}m ${duration % 60}s` : null
+      let title   = "New Call Received"
+      let message = `${callerLabel}${durationLabel ? ` · ${durationLabel}` : ""} · ${callIntent.replace(/_/g, " ").toLowerCase()}`
+      let icon    = "phone"
+      if (callOutcome === "BOOKED") {
+        title = "Appointment Booked via Call"
+        message = `${callerLabel} booked an appointment${durationLabel ? ` · ${durationLabel}` : ""}`
+        icon  = "check"
+      } else if (callOutcome === "TRANSFERRED") {
+        title = "Call Escalated to Staff"
+        message = `${callerLabel} requested a human agent${durationLabel ? ` · ${durationLabel}` : ""}`
+        icon  = "alert"
+      } else if (callOutcome === "HUNG_UP" || callOutcome === "VOICEMAIL") {
+        title = callOutcome === "VOICEMAIL" ? "Voicemail Left" : "Missed Call"
+        icon  = "alert"
+      }
+      for (const admin of admins) {
+        await prisma.notification.create({
+          data: { userId: admin.id, type: "call_received", title, message, icon,
+            entityType: "call_log", entityId: callLogId ?? undefined, actionUrl: "/call-logs" },
+        })
+      }
+    } catch (err) {
+      console.error("[VAPI WEBHOOK] Notification failed:", err)
+    }
+
+    return { chatLogId: null, callLogId }
+  }
+
+  // ── CHATBOT CONVERSATION → ChatLog only ────────────────────────────────────
+  const existing = await prisma.chatLog.findUnique({
+    where: { sessionId: call.id }, select: { id: true },
+  })
+  if (existing) return { chatLogId: existing.id, callLogId: null, alreadyExists: true }
+
   const topic       = inferTopic(combined)
   const chatOutcome = inferChatOutcome(summary, transcript, report.endedReason, mapped.length)
 
   const chatLog = await prisma.chatLog.create({
     data: {
-      sessionId:        call.id,
+      sessionId:         call.id,
       visitorName,
       visitorEmail,
       visitorPhone,
       startTime,
       endTime,
-      messageCount:     mapped.length,
+      messageCount:      mapped.length,
       topic,
-      outcome:          chatOutcome,
-      messages:         JSON.parse(JSON.stringify(mapped)),
-      summary:          summary || null,
-      sourcePage:       null,
-      deviceType:       call.type === "webCall" ? "Desktop" : null,
-      browser:          null,
-      leadCaptured:     chatOutcome === "LEAD_CAPTURED",
+      outcome:           chatOutcome,
+      messages:          JSON.parse(JSON.stringify(mapped)),
+      summary:           summary || null,
+      sourcePage:        null,
+      deviceType:        call.type === "webCall" ? "Desktop" : null,
+      browser:           null,
+      leadCaptured:      chatOutcome === "LEAD_CAPTURED",
       appointmentBooked: chatOutcome === "BOOKED",
       patientId,
     },
   })
 
-  // ── 2. Write to CallLog only for real phone calls, not chatbot conversations ─
-  const callIntent   = inferCallIntent(combined)
-  const callOutcome  = inferCallOutcome(summary, transcript, report.endedReason, mapped.length)
-  const sentiment    = inferSentiment(transcript)
-
-  let callLogId: string | null = null
-  if (!isPhoneCall) {
-    // chatbot conversation-update — skip CallLog and notifications
-    return { chatLogId: chatLog.id, callLogId: null }
-  }
-
-  try {
-    const callLog = await prisma.callLog.create({
-      data: {
-        callerName:       visitorName,
-        callerPhone:      visitorPhone ?? "unknown",
-        startTime,
-        endTime,
-        duration,
-        intent:           callIntent,
-        outcome:          callOutcome,
-        sentiment,
-        transcript:       transcript || null,
-        summary:          summary || null,
-        recordingUrl,
-        vapiCallId:       call.id,
-        wasEscalated:     callOutcome === "TRANSFERRED",
-        escalationReason: callOutcome === "TRANSFERRED" ? "Escalated via Vapi" : null,
-        appointmentBooked: callOutcome === "BOOKED",
-        patientId,
-      },
-    })
-    callLogId = callLog.id
-  } catch (err) {
-    // Don't fail the whole webhook if CallLog write fails
-    console.error("[VAPI WEBHOOK] CallLog write failed:", err)
-  }
-
-  // ── Audit log ──────────────────────────────────────────────────────────────
   await prisma.auditLog.create({
     data: {
-      userId:    null,
-      action:    "CREATE",
-      entity:    "call_log",
-      entityId:  callLogId ?? chatLog.id,
-      changes:   { source: "vapi_webhook", vapiCallId: call.id, callType: call.type ?? "webCall", callLogId, chatLogId: chatLog.id },
-      ipAddress: requestIp,
-      userAgent: "Vapi-Webhook",
-      timestamp: new Date(),
+      userId: null, action: "CREATE", entity: "chat_log", entityId: chatLog.id,
+      changes: { source: "vapi_webhook", vapiCallId: call.id, callType: call.type ?? "webCall" },
+      ipAddress: requestIp, userAgent: "Vapi-Webhook", timestamp: new Date(),
     },
   })
 
-  // ── Notifications for admins ───────────────────────────────────────────────
-  try {
-    const admins = await prisma.user.findMany({
-      where:  { role: "ADMIN", isActive: true },
-      select: { id: true },
-    })
-
-    const callerLabel = visitorName ?? visitorPhone ?? "Unknown caller"
-    const durationLabel = duration ? `${Math.floor(duration / 60)}m ${duration % 60}s` : null
-
-    let title   = "New Call Received"
-    let message = `${callerLabel} called`
-    let icon    = "phone"
-
-    if (callOutcome === "BOOKED") {
-      title   = "Appointment Booked via Call"
-      message = `${callerLabel} booked an appointment${durationLabel ? ` · ${durationLabel}` : ""}`
-      icon    = "check"
-    } else if (callOutcome === "TRANSFERRED") {
-      title   = "Call Escalated to Staff"
-      message = `${callerLabel} requested a human agent${durationLabel ? ` · ${durationLabel}` : ""}`
-      icon    = "alert"
-    } else if (callOutcome === "HUNG_UP" || callOutcome === "VOICEMAIL") {
-      title   = callOutcome === "VOICEMAIL" ? "Voicemail Left" : "Missed Call"
-      message = `${callerLabel}${durationLabel ? ` · ${durationLabel}` : ""}`
-      icon    = "alert"
-    } else {
-      message = `${callerLabel}${durationLabel ? ` · ${durationLabel}` : ""} · ${callIntent.replace(/_/g, " ").toLowerCase()}`
-    }
-
-    for (const admin of admins) {
-      await prisma.notification.create({
-        data: {
-          userId:     admin.id,
-          type:       "call_received",
-          title,
-          message,
-          icon,
-          entityType: "call_log",
-          entityId:   callLogId ?? undefined,
-          actionUrl:  "/call-logs",
-        },
-      })
-    }
-  } catch (err) {
-    console.error("[VAPI WEBHOOK] Notification creation failed:", err)
-  }
-
-  return { chatLogId: chatLog.id, callLogId }
+  return { chatLogId: chatLog.id, callLogId: null }
 }
 
 // ─── POST /api/webhooks/vapi ───────────────────────────────────────────────────
