@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   FileText, Search, ChevronLeft, ChevronRight, Eye, UserPlus,
-  Loader, Download, Trash2, RotateCcw, AlertTriangle, Trash,
+  Loader, Download, Trash2, RotateCcw, AlertTriangle, Trash, ScanEye,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -45,6 +45,9 @@ export default function IntakeFormsPage() {
   const [selectedFormType, setSelectedFormType] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
+  const [overviewForm, setOverviewForm] = useState<IntakeFormListItem | null>(null);
+  const [overviewFields, setOverviewFields] = useState<Array<{ fieldLabel: string; value: string }>>([]);
+  const [overviewLoading, setOverviewLoading] = useState(false);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [selectedForm, setSelectedForm] = useState<IntakeFormListItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -93,6 +96,28 @@ export default function IntakeFormsPage() {
   };
 
   // ── Single-form actions ──────────────────────────────────────────────────────
+  const openOverview = async (form: IntakeFormListItem) => {
+    setOverviewForm(form);
+    setOverviewLoading(true);
+    setOverviewFields([]);
+    try {
+      const res = await fetch(`/api/intake-forms/${form.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const KEY_LABELS = ["First Name", "Last Name", "Patient Date of Birth", "Age",
+          "City", "State / Province", "Relationship to Patient",
+          "Parent/Caregiver #1 Phone Number", "Parent/Caregiver #1 Email Address",
+          "Previous Pediatrician or Clinic Name", "Phone Number", "Where does your child reside?"];
+        const fields = (data.fieldValues || [])
+          .filter((f: any) => KEY_LABELS.includes(f.fieldLabel) && f.value)
+          .map((f: any) => ({ fieldLabel: f.fieldLabel, value: f.value }));
+        setOverviewFields(fields);
+      }
+    } finally {
+      setOverviewLoading(false);
+    }
+  };
+
   const openDeleteDialog = (form: IntakeFormListItem) => {
     setDeleteDialog({ open: true, ids: [form.id], label: `"${form.hippatizFormTitle}"` });
   };
@@ -409,6 +434,11 @@ export default function IntakeFormsPage() {
                                 </Button>
                               )}
 
+                              {/* Quick overview */}
+                              <Button variant="ghost" size="sm" title="Quick overview" onClick={() => openOverview(form)} className="text-slate-600 dark:text-slate-400">
+                                <ScanEye className="h-4 w-4" />
+                              </Button>
+
                               {/* Trash */}
                               <Button variant="ghost" size="sm" title="Move to trash" onClick={() => openDeleteDialog(form)}
                                 className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30">
@@ -485,6 +515,43 @@ export default function IntakeFormsPage() {
             <Button variant="ghost" className="w-full" onClick={() => setDeleteDialog({ open: false })} disabled={actionLoading}>
               Cancel
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick overview modal */}
+      <Dialog open={!!overviewForm} onOpenChange={(open) => !open && setOverviewForm(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ScanEye className="h-5 w-5 text-blue-500" />
+              {overviewForm?.hippatizFormTitle}
+            </DialogTitle>
+            <DialogDescription>
+              Submitted {overviewForm ? new Date(overviewForm.submittedAt).toLocaleDateString() : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {overviewLoading ? (
+            <div className="flex justify-center py-6"><Loader className="h-5 w-5 animate-spin text-slate-400" /></div>
+          ) : overviewFields.length === 0 ? (
+            <p className="text-sm text-slate-500 py-4 text-center">No key fields available for this form.</p>
+          ) : (
+            <div className="space-y-0 max-h-80 overflow-y-auto">
+              {overviewFields.map((f, i) => (
+                <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-1 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                  <span className="text-xs font-medium text-slate-500 sm:w-44 shrink-0">{f.fieldLabel}</span>
+                  <span className="text-sm text-slate-900 dark:text-slate-100">{f.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            {overviewForm && (
+              <Button size="sm" variant="outline" className="flex-1" onClick={() => { router.push(`/intake-forms/${overviewForm.id}`); setOverviewForm(null); }}>
+                View Full Form
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className="flex-1" onClick={() => setOverviewForm(null)}>Close</Button>
           </div>
         </DialogContent>
       </Dialog>

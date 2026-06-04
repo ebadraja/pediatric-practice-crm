@@ -218,34 +218,33 @@ export default function PatientsPage() {
     }
   }, [debouncedSearch, statusFilter, currentPage]);
 
-  // Fetch draft patients
+  // Fetch draft patients — from PatientDraft model (real names)
   const fetchDraftPatients = useCallback(async () => {
     setDraftLoading(true);
     setDraftError(null);
     try {
-      const params = new URLSearchParams({ page: String(draftCurrentPage), limit: "20" });
+      const params = new URLSearchParams({ page: String(draftCurrentPage), limit: "20", status: "PENDING" });
       if (debouncedDraftSearch) params.set("search", debouncedDraftSearch);
 
-      const res = await fetch(`/api/intake-forms/unmatched?${params}`);
+      const res = await fetch(`/api/patient-drafts?${params}`);
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const json = await res.json();
-      
-      // Map intake forms to draft patients
-      const drafts: DraftPatient[] = json.data.map((form: any) => ({
-        id: form.id,
-        formId: form.id,
-        firstName: form.extractedData?.firstName || "",
-        lastName: form.extractedData?.lastName || "",
-        dateOfBirth: form.extractedData?.dateOfBirth || "",
-        email: form.extractedData?.email || null,
-        phone: form.extractedData?.phone || null,
-        parentName: form.extractedData?.parentName || null,
-        parentPhone: form.extractedData?.parentPhone || null,
-        extractedData: form.extractedData || {},
-        submittedAt: form.createdAt,
-        matchConfidence: form.matchConfidence || 0,
+
+      const drafts: DraftPatient[] = json.data.map((d: any) => ({
+        id: d.id,
+        formId: d.intakeForms?.[0]?.id ?? d.id,
+        firstName: d.firstName || "Unknown",
+        lastName: d.lastName || "",
+        dateOfBirth: d.dateOfBirth || "",
+        email: d.email || null,
+        phone: d.phone || null,
+        parentName: null,
+        parentPhone: null,
+        extractedData: {},
+        submittedAt: d.createdAt,
+        matchConfidence: 0,
       }));
-      
+
       setDraftPatients(drafts);
       setDraftPagination(json.pagination);
     } catch (err) {
@@ -258,12 +257,13 @@ export default function PatientsPage() {
   useEffect(() => { fetchPatients(); }, [fetchPatients]);
   useEffect(() => { if (activeTab === "draft") fetchDraftPatients(); }, [activeTab, fetchDraftPatients]);
 
+  // Navigate to draft profile page (looks like full patient profile)
   const handleViewDraft = (draft: DraftPatient) => {
-    router.push(`/intake-forms/${draft.formId}`);
+    router.push(`/patient-drafts/${draft.id}`);
   };
 
   const handleConvertDraft = (draft: DraftPatient) => {
-    router.push(`/intake-forms/${draft.formId}`);
+    router.push(`/patient-drafts/${draft.id}`);
   };
 
   const handleDiscardDraft = async (draft: DraftPatient) => {

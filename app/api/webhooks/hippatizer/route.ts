@@ -224,7 +224,10 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
     },
   });
 
-  if (!bestMatch && intakeFormStatus === "RECEIVED") {
+  // Only pre-registration and intake forms create patient drafts
+  const DRAFT_CREATING_FORMS = ["NEW PATIENT PRE-REGISTRATION", "KiDS PATIENT INTAKE FORM"];
+
+  if (!bestMatch && intakeFormStatus === "RECEIVED" && DRAFT_CREATING_FORMS.includes(form_title)) {
     // Find the first admin user to satisfy the foreign key constraint
     const adminUser = await prisma.user.findFirst({
       where: { role: "ADMIN", isActive: true },
