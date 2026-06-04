@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     const status = sp.get("status");
     const search = sp.get("search") || "";
     const trash = sp.get("trash") === "true";
+    const linkedPatientId = sp.get("linkedPatientId");
 
     const filters: any = {};
 
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!trash && status) filters.status = status;
+    if (linkedPatientId) filters.patientId = linkedPatientId;
 
     if (search) {
       filters.OR = [
