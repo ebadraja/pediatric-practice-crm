@@ -146,6 +146,47 @@ enum DraftStatus {
   PUBLISHED
 }
 
+enum EmailTemplateType {
+  TRANSACTIONAL
+  BULK
+  AUTOMATED
+}
+
+enum EmailCampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+}
+
+enum EmailLogType {
+  REMINDER
+  CAMPAIGN
+  AUTOMATED
+}
+
+enum EmailLogStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  BOUNCED
+  FAILED
+  UNSUBSCRIBED
+}
+
+enum EmailTriggerEvent {
+  APPOINTMENT_CREATED
+  APPOINTMENT_UPDATED
+  APPOINTMENT_CANCELLED
+  X_DAYS_BEFORE
+  X_DAYS_AFTER
+  PATIENT_CREATED
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -174,6 +215,7 @@ model User {
   patientDraftsCreated          PatientDraft[] @relation("draftCreator")
   patientDraftsPublished        PatientDraft[] @relation("draftPublisher")
   notifications                 Notification[]
+  emailCampaigns                EmailCampaign[]
 
   @@map("users")
 }
@@ -231,6 +273,8 @@ model Patient {
   notes        PatientNote[]
   documents    Document[]
   intakeForms  IntakeForm[]
+  emailLogs    EmailLog[]
+  unsubscribe  Unsubscribe?
 
   @@index([phone])
   @@index([lastName, firstName])
@@ -709,4 +753,130 @@ model Notification {
   @@index([createdAt])
   @@index([entityType, entityId])
   @@map("notifications")
+}
+
+// ─── Email System ─────────────────────────────────────────────────────────────
+
+model EmailTemplate {
+  id        String            @id @default(cuid())
+  name      String
+  type      EmailTemplateType
+  subject   String
+  htmlBody  String            @map("html_body") @db.Text
+  plainBody String?           @map("plain_body") @db.Text
+
+  // Merge tag variable names e.g. ["patient_name", "appointment_date"]
+  variables Json?
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt     @map("updated_at")
+
+  campaigns      EmailCampaign[]
+  logs           EmailLog[]
+  automationRules EmailAutomationRule[]
+
+  @@index([type])
+  @@index([isActive])
+  @@map("email_templates")
+}
+
+model EmailCampaign {
+  id         String              @id @default(cuid())
+  name       String
+  templateId String              @map("template_id")
+  template   EmailTemplate       @relation(fields: [templateId], references: [id])
+
+  status          EmailCampaignStatus @default(DRAFT)
+  scheduledAt     DateTime?           @map("scheduled_at")
+  sentAt          DateTime?           @map("sent_at")
+
+  // Audience filter criteria e.g. {ageRange: [0,5], lastVisitBefore: "2025-01-01", provider: "Dr. Tamas"}
+  segmentFilters  Json?   @map("segment_filters")
+  recipientCount  Int     @default(0) @map("recipient_count")
+
+  createdById String @map("created_by_id")
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt     @map("updated_at")
+
+  logs EmailLog[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([createdById])
+  @@map("email_campaigns")
+}
+
+model EmailLog {
+  id         String  @id @default(cuid())
+  campaignId String? @map("campaign_id")
+  campaign   EmailCampaign? @relation(fields: [campaignId], references: [id])
+
+  patientId  String        @map("patient_id")
+  patient    Patient       @relation(fields: [patientId], references: [id])
+
+  templateId String        @map("template_id")
+  template   EmailTemplate @relation(fields: [templateId], references: [id])
+
+  type    EmailLogType
+  // Stored encrypted at application layer via lib/crypto.ts
+  toEmail String       @map("to_email")
+  subject String
+
+  status      EmailLogStatus @default(QUEUED)
+  sentAt      DateTime?      @map("sent_at")
+  openedAt    DateTime?      @map("opened_at")
+  clickedAt   DateTime?      @map("clicked_at")
+
+  errorMessage String? @map("error_message") @db.Text
+
+  // Tracking metadata e.g. {messageId, provider, ipAddress}
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([patientId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("email_logs")
+}
+
+model EmailAutomationRule {
+  id       String @id @default(cuid())
+  name     String
+  isActive Boolean @default(true) @map("is_active")
+
+  triggerEvent       EmailTriggerEvent @map("trigger_event")
+  // Negative = before event, positive = after. e.g. -48 = 48 hours before appointment
+  triggerOffsetHours Int?              @map("trigger_offset_hours")
+
+  // Filter conditions e.g. {visitType: "WELL_CHILD_VISIT", ageRange: [0, 12]}
+  conditions Json?
+
+  templateId String        @map("template_id")
+  template   EmailTemplate @relation(fields: [templateId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt     @map("updated_at")
+
+  @@index([isActive])
+  @@index([triggerEvent])
+  @@map("email_automation_rules")
+}
+
+model Unsubscribe {
+  id        String  @id @default(cuid())
+  patientId String  @map("patient_id")
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Stored encrypted at application layer via lib/crypto.ts
+  email          String
+  unsubscribedAt DateTime @default(now()) @map("unsubscribed_at")
+  reason         String?  @db.Text
+
+  @@unique([patientId])
+  @@index([unsubscribedAt])
+  @@map("unsubscribes")
 }
