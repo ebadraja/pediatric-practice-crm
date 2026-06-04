@@ -15,6 +15,7 @@ import nodemailer from 'nodemailer'
 import sgMail from '@sendgrid/mail'
 import { prisma } from '@/lib/prisma'
 import { decrypt } from '@/lib/crypto'
+import { resolveMergeTags } from '@/lib/email/mergeTags'
 
 // ─── Redis connection ─────────────────────────────────────────────────────────
 
@@ -81,10 +82,11 @@ async function sendEmail(to: string, subject: string, html: string, text: string
   }
 }
 
-// ─── Merge tag replacement ────────────────────────────────────────────────────
+// ─── Override any remaining {{tags}} with caller-supplied extras ──────────────
+// The engine resolves DB-driven tags; this fills in anything extra passed in the job payload.
 
-function applyMergeTags(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`)
+function overrideExtras(text: string, extras: Record<string, string>): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (match, key: string) => extras[key] ?? match)
 }
 
 // ─── Core job processor ───────────────────────────────────────────────────────
@@ -120,24 +122,33 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
     }
   }
 
-  // Fetch template
+  // Fetch full template
   const template = await prisma.emailTemplate.findUnique({ where: { id: templateId } })
-  if (!template) throw new Error(`template_not_found:${templateId}`)
+  if (!template)          throw new Error(`template_not_found:${templateId}`)
   if (!template.isActive) throw new Error(`template_inactive:${templateId}`)
 
-  // Apply merge tags
-  const subject = applyMergeTags(template.subject, variables)
-  const html    = applyMergeTags(template.htmlBody, variables)
-  const text    = template.plainBody ? applyMergeTags(template.plainBody, variables) : ''
+  // Resolve merge tags via the engine (DB fetch + sanitize + plain text)
+  const appointmentId = variables.appointmentId as string | undefined
+  const { subject, html, plain } = await resolveMergeTags(
+    template.htmlBody,
+    template.subject,
+    patientId,
+    appointmentId,
+  )
+
+  // Merge any caller-supplied extra variables not in DB (override only unresolved tags)
+  const finalSubject = overrideExtras(subject, variables)
+  const finalHtml    = overrideExtras(html,    variables)
+  const finalPlain   = overrideExtras(plain,   variables)
 
   // Send
-  await sendEmail(recipientEmail, subject, html, text)
+  await sendEmail(recipientEmail, finalSubject, finalHtml, finalPlain)
 
   // Update / create email_log — HIPAA: no body, no address stored here
   const logData = {
     status:    'SENT'  as const,
     sentAt:    new Date(),
-    metadata:  { provider: hasSendGrid ? 'sendgrid' : 'smtp', attemptsMade: job.attemptsMade + 1 },
+    metadata:  { provider: hasSendGrid ? 'sendgrid' : 'smtp', attemptsMade: job.attemptsMade + 1, appointmentId: variables.appointmentId ?? null },
   }
 
   if (emailLogId) {
