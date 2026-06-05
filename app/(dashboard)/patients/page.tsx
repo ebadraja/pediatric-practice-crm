@@ -49,6 +49,9 @@ import {
   Trash2,
   AlertCircle,
   FileText,
+  MailCheck,
+  MailX,
+  Mail,
 } from "lucide-react";
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
@@ -177,6 +180,9 @@ export default function PatientsPage() {
   const [draftSearchTerm, setDraftSearchTerm] = useState("");
   const [debouncedDraftSearch, setDebouncedDraftSearch] = useState("");
 
+  // Email status indicators
+  const [emailStatuses, setEmailStatuses] = useState<Record<string, { status: string; templateName: string; sentAt: string | null } | null>>({});
+
   // Debounce search 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -256,6 +262,16 @@ export default function PatientsPage() {
 
   useEffect(() => { fetchPatients(); }, [fetchPatients]);
   useEffect(() => { if (activeTab === "draft") fetchDraftPatients(); }, [activeTab, fetchDraftPatients]);
+
+  // Fetch email statuses for visible patients after each load
+  useEffect(() => {
+    if (patients.length === 0) return;
+    const ids = patients.map(p => p.id).join(',');
+    fetch(`/api/patients/email-status?ids=${ids}`)
+      .then(r => r.ok ? r.json() : {})
+      .then((data) => setEmailStatuses(prev => ({ ...prev, ...data })))
+      .catch(() => {});
+  }, [patients]);
 
   // Navigate to draft profile page (looks like full patient profile)
   const handleViewDraft = (draft: DraftPatient) => {
@@ -470,7 +486,20 @@ export default function PatientsPage() {
                                 {getInitials(patient.firstName, patient.lastName)}
                               </div>
                               <div>
-                                <p className="font-medium text-slate-900 dark:text-slate-100">{fullName}</p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-medium text-slate-900 dark:text-slate-100">{fullName}</p>
+                                  {(() => {
+                                    const es = emailStatuses[patient.id];
+                                    if (!es) return null;
+                                    const good = ["SENT","DELIVERED","OPENED","CLICKED"].includes(es.status);
+                                    const bad  = ["FAILED","BOUNCED"].includes(es.status);
+                                    const dateStr = es.sentAt ? format(new Date(es.sentAt), "MMM d, yyyy") : null;
+                                    const tip = `Last email: ${es.templateName} — ${es.status}${dateStr ? ` on ${dateStr}` : ""}`;
+                                    if (good) return <span title={tip} className="flex-shrink-0"><MailCheck className="h-3.5 w-3.5 text-emerald-500" /></span>;
+                                    if (bad)  return <span title={tip} className="flex-shrink-0"><MailX className="h-3.5 w-3.5 text-red-500" /></span>;
+                                    return <span title={tip} className="flex-shrink-0"><Mail className="h-3.5 w-3.5 text-amber-500" /></span>;
+                                  })()}
+                                </div>
                                 <p className="text-sm text-slate-500 dark:text-slate-400">{patient.parentName ?? "—"}</p>
                               </div>
                             </div>

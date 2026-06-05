@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   BarChart,
@@ -30,6 +31,11 @@ import {
   Target,
   DollarSign,
   Loader2,
+  Mail,
+  MailOpen,
+  MousePointerClick,
+  Zap,
+  TriangleAlert,
 } from 'lucide-react';
 
 const CALLS_OVER_TIME = [
@@ -121,6 +127,56 @@ const tableHeaderRow = "border-b border-slate-200 dark:border-slate-700 bg-slate
 const tableHeaderCell = "text-left py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider";
 const tableRow = "border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors";
 
+// ── Email analytics types ─────────────────────────────────────────────────────
+
+interface EmailKpis {
+  totalSent: number;
+  totalSentChange: number;
+  openRate: number;
+  clickRate: number;
+  bounceRate: number;
+}
+
+interface EmailDayStat {
+  date: string;
+  sent: number;
+  opened: number;
+  clicked: number;
+}
+
+interface EmailTemplate {
+  name: string;
+  sent: number;
+  openRate: number;
+  clickRate: number;
+}
+
+interface AutomationRule {
+  id: string;
+  name: string;
+  triggerEvent: string;
+  isActive: boolean;
+  fires: number;
+}
+
+interface EmailCampaignRow {
+  id: string;
+  name: string;
+  status: string;
+  sentDate: string | null;
+  recipients: number;
+  openRate: number;
+  clickRate: number;
+}
+
+interface EmailOverviewData {
+  kpis: EmailKpis;
+  dailyStats: EmailDayStat[];
+  topTemplates: EmailTemplate[];
+  automationActivity: AutomationRule[];
+  campaigns: EmailCampaignRow[];
+}
+
 interface MetricsData {
   summary: {
     totalForms: number;
@@ -167,12 +223,19 @@ function KPICard({ kpi }: { kpi: (typeof KPI_DATA)[number] }) {
 }
 
 export default function ReportsAnalyticsPage() {
+  const router = useRouter();
   const [timePeriod, setTimePeriod] = useState('30days');
   const [dateRange, setDateRange] = useState('Last 30 days');
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [metricsError, setMetricsError] = useState("");
+
+  // Email Analytics state
+  const [emailRange, setEmailRange] = useState('30d');
+  const [emailData, setEmailData] = useState<EmailOverviewData | null>(null);
+  const [emailLoading, setEmailLoading] = useState(true);
+  const [emailError, setEmailError] = useState('');
 
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 450);
@@ -199,6 +262,30 @@ export default function ReportsAnalyticsPage() {
 
     fetchMetrics();
   }, []);
+
+  const fetchEmailAnalytics = useCallback(async (range: string) => {
+    setEmailLoading(true);
+    setEmailError('');
+    const now = new Date();
+    const daysMap: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 };
+    const days = daysMap[range];
+    const dateFrom = days
+      ? new Date(now.getTime() - days * 86_400_000).toISOString()
+      : '2020-01-01T00:00:00.000Z';
+    const dateTo = now.toISOString();
+    try {
+      const res = await fetch(`/api/email/analytics/overview?dateFrom=${dateFrom}&dateTo=${dateTo}`);
+      if (!res.ok) throw new Error('Failed');
+      const data: EmailOverviewData = await res.json();
+      setEmailData(data);
+    } catch {
+      setEmailError('Failed to load email analytics.');
+    } finally {
+      setEmailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchEmailAnalytics(emailRange); }, [emailRange, fetchEmailAnalytics]);
 
   return (
     <div className="pt-4 pb-8 space-y-6 md:space-y-8">
@@ -466,6 +553,313 @@ export default function ReportsAnalyticsPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* ── Email Analytics Section ────────────────────────────────────────────── */}
+      <div className="pt-8 border-t border-slate-200 dark:border-slate-700">
+        {/* Section header + date range */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
+              <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50">Email Analytics</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Campaign and automation performance</p>
+            </div>
+          </div>
+          <select
+            value={emailRange}
+            onChange={(e) => setEmailRange(e.target.value)}
+            className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/30 self-start sm:self-auto"
+          >
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="90d">Last 90 days</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+
+        {emailLoading && (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-7 h-7 animate-spin text-blue-600 dark:text-blue-400" />
+          </div>
+        )}
+
+        {emailError && !emailLoading && (
+          <div className={`${card} border-red-200 dark:border-red-800 p-4 flex items-center gap-3 mb-6`}>
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+            <p className="text-red-700 dark:text-red-400">{emailError}</p>
+            <button onClick={() => fetchEmailAnalytics(emailRange)} className="ml-auto text-sm underline text-red-600 dark:text-red-400">Retry</button>
+          </div>
+        )}
+
+        {!emailLoading && emailData && (
+          <div className="space-y-6">
+            {/* Row 1 — KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Total Sent */}
+              <div className={`${card} p-4 md:p-6`}>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Emails Sent</p>
+                    <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1.5">
+                      {emailData.kpis.totalSent.toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-lg flex-shrink-0 bg-blue-50 dark:bg-blue-950/40">
+                    <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  {emailData.kpis.totalSentChange >= 0
+                    ? <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    : <TrendingDown className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />}
+                  <span className={`text-xs font-medium ${emailData.kpis.totalSentChange >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {emailData.kpis.totalSentChange >= 0 ? '+' : ''}{emailData.kpis.totalSentChange}% vs prior period
+                  </span>
+                </div>
+              </div>
+
+              {/* Open Rate */}
+              <div className={`${card} p-4 md:p-6`}>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Avg Open Rate</p>
+                    <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1.5">
+                      {emailData.kpis.openRate}%
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-lg flex-shrink-0 bg-emerald-50 dark:bg-emerald-950/40">
+                    <MailOpen className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Industry avg: 35% for healthcare</span>
+                </div>
+              </div>
+
+              {/* Click Rate */}
+              <div className={`${card} p-4 md:p-6`}>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Avg Click Rate</p>
+                    <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1.5">
+                      {emailData.kpis.clickRate}%
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-lg flex-shrink-0 bg-purple-50 dark:bg-purple-950/40">
+                    <MousePointerClick className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  {emailData.kpis.clickRate >= 3
+                    ? <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    : <TrendingDown className="w-3.5 h-3.5 text-slate-400" />}
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Industry avg: ~3%</span>
+                </div>
+              </div>
+
+              {/* Bounce Rate */}
+              <div className={`${card} p-4 md:p-6`}>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Bounce Rate</p>
+                    <p className={`text-2xl md:text-3xl font-semibold tracking-tight mt-1.5 ${emailData.kpis.bounceRate > 2 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-50'}`}>
+                      {emailData.kpis.bounceRate}%
+                    </p>
+                  </div>
+                  <div className={`p-2.5 rounded-lg flex-shrink-0 ${emailData.kpis.bounceRate > 2 ? 'bg-red-50 dark:bg-red-950/40' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                    <TriangleAlert className={`w-5 h-5 ${emailData.kpis.bounceRate > 2 ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`} />
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                  {emailData.kpis.bounceRate > 2 ? (
+                    <span className="text-xs font-medium text-red-600 dark:text-red-400">Above 2% threshold — review list health</span>
+                  ) : (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Good — below 2% threshold</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Row 2 — Emails Sent by Day */}
+            <div className={card}>
+              <div className={cardHeader}><h3 className={cardTitle}>Emails Sent by Day</h3></div>
+              <div className="p-4 md:p-6">
+                {emailData.dailyStats.every(d => d.sent === 0) ? (
+                  <div className="flex items-center justify-center h-[280px] text-slate-400 dark:text-slate-500 text-sm">
+                    No email activity in this period
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={emailData.dailyStats} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 11, fill: '#94a3b8' }}
+                        interval={emailData.dailyStats.length > 20 ? Math.floor(emailData.dailyStats.length / 10) : 0}
+                      />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: 12 }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="sent"    name="Sent"    fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="opened"  name="Opened"  fill="#10b981" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="clicked" name="Clicked" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+
+            {/* Row 3 — Top Templates + Automation Activity */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Top Performing Templates */}
+              <div className={card}>
+                <div className={cardHeader}><h3 className={cardTitle}>Top Performing Templates</h3></div>
+                {emailData.topTemplates.length === 0 ? (
+                  <div className="flex items-center justify-center py-12 text-slate-400 dark:text-slate-500 text-sm">
+                    No template data for this period
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className={tableHeaderRow}>
+                          <th className={tableHeaderCell}>Template</th>
+                          <th className={`${tableHeaderCell} text-center`}>Sent</th>
+                          <th className={`${tableHeaderCell} text-center`}>Open %</th>
+                          <th className={`${tableHeaderCell} text-center`}>Click %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {emailData.topTemplates.map((tmpl, i) => (
+                          <tr key={i} className={tableRow}>
+                            <td className="py-3 px-4 font-medium text-slate-900 dark:text-slate-100 max-w-[180px] truncate">{tmpl.name}</td>
+                            <td className="py-3 px-4 text-center text-slate-700 dark:text-slate-300">{tmpl.sent.toLocaleString()}</td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${tmpl.openRate >= 35 ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300' : tmpl.openRate >= 20 ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                {tmpl.openRate}%
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${tmpl.clickRate >= 3 ? 'bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                {tmpl.clickRate}%
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Automation Activity */}
+              <div className={card}>
+                <div className={cardHeader}><h3 className={cardTitle}>Automation Activity</h3></div>
+                {emailData.automationActivity.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 dark:text-slate-500 text-sm gap-2">
+                    <Zap className="w-8 h-8 opacity-30" />
+                    <span>No automation rules configured</span>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {emailData.automationActivity.map((rule) => (
+                      <div key={rule.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                        <div className={`p-1.5 rounded-lg flex-shrink-0 ${rule.isActive ? 'bg-amber-50 dark:bg-amber-950/40' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                          <Zap className={`w-4 h-4 ${rule.isActive ? 'text-amber-500 dark:text-amber-400' : 'text-slate-400'}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{rule.name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {rule.triggerEvent.replace(/_/g, ' ')}
+                            {!rule.isActive && <span className="ml-2 text-slate-400">(inactive)</span>}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className={`text-sm font-semibold ${rule.fires > 0 ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400'}`}>
+                            {rule.fires.toLocaleString()}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">fires</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Row 4 — Recent Campaign Performance */}
+            <div className={card}>
+              <div className={cardHeader}><h3 className={cardTitle}>Recent Campaign Performance</h3></div>
+              {emailData.campaigns.length === 0 ? (
+                <div className="flex items-center justify-center py-12 text-slate-400 dark:text-slate-500 text-sm">
+                  No campaigns found
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className={tableHeaderRow}>
+                        <th className={tableHeaderCell}>Campaign</th>
+                        <th className={`${tableHeaderCell} text-center`}>Sent Date</th>
+                        <th className={`${tableHeaderCell} text-center`}>Recipients</th>
+                        <th className={`${tableHeaderCell} text-center`}>Open %</th>
+                        <th className={`${tableHeaderCell} text-center`}>Click %</th>
+                        <th className={`${tableHeaderCell} text-center`}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {emailData.campaigns.map((c) => {
+                        const statusCls: Record<string, string> = {
+                          SENT:      'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300',
+                          SENDING:   'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300',
+                          SCHEDULED: 'bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300',
+                          PAUSED:    'bg-orange-100 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300',
+                          CANCELLED: 'bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300',
+                          DRAFT:     'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400',
+                        };
+                        return (
+                          <tr
+                            key={c.id}
+                            className={`${tableRow} cursor-pointer`}
+                            onClick={() => router.push(`/email/campaigns?detail=${c.id}`)}
+                          >
+                            <td className="py-3 px-4 font-medium text-slate-900 dark:text-slate-100 max-w-[200px] truncate">{c.name}</td>
+                            <td className="py-3 px-4 text-center text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                              {c.sentDate
+                                ? new Date(c.sentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-center text-slate-700 dark:text-slate-300">{c.recipients.toLocaleString()}</td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${c.openRate >= 35 ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300' : c.openRate > 0 ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
+                                {c.openRate}%
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${c.clickRate >= 3 ? 'bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
+                                {c.clickRate}%
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-md ${statusCls[c.status] ?? statusCls.DRAFT}`}>
+                                {c.status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Intake Form Metrics Section */}

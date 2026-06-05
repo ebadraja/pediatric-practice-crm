@@ -41,26 +41,30 @@ function verifySendGridSignature(
 // ── SendGrid event types ──────────────────────────────────────────────────────
 
 interface SendGridEvent {
-  event:      string   // delivered | open | click | bounce | unsubscribe | spamreport
+  event:         string   // delivered | open | click | bounce | dropped | unsubscribe | spamreport
   sg_message_id: string
-  email?:     string
-  timestamp?: number
-  url?:       string
-  reason?:    string
-  type?:      string   // bounce type: bounce | blocked
+  email?:        string
+  timestamp?:    number
+  url?:          string
+  reason?:       string
+  type?:         string   // bounce sub-type: bounce | blocked
+  // Set by us at send time via customArgs so the webhook can match back to our log row
+  custom_args?:  { email_log_id?: string; [k: string]: string | undefined }
 }
 
 // ── Status mapping ────────────────────────────────────────────────────────────
 
 const EVENT_TO_STATUS: Record<string, string> = {
-  delivered:   'DELIVERED',
-  open:        'OPENED',
-  click:       'CLICKED',
-  bounce:      'BOUNCED',
-  blocked:     'BOUNCED',
-  unsubscribe: 'UNSUBSCRIBED',
-  spamreport:  'UNSUBSCRIBED',
-  deferred:    'QUEUED',
+  delivered:         'DELIVERED',
+  open:              'OPENED',
+  click:             'CLICKED',
+  bounce:            'BOUNCED',
+  blocked:           'BOUNCED',
+  dropped:           'BOUNCED',
+  unsubscribe:       'UNSUBSCRIBED',
+  group_unsubscribe: 'UNSUBSCRIBED',
+  spamreport:        'UNSUBSCRIBED',
+  deferred:          'QUEUED',
 }
 
 // ── POST /api/email/webhook/sendgrid ─────────────────────────────────────────
@@ -101,18 +105,27 @@ export async function POST(req: NextRequest) {
   let skipped   = 0
 
   for (const event of events) {
-    const sgMessageId = event.sg_message_id?.split('.')[0] // strip suffix
-    const newStatus   = EVENT_TO_STATUS[event.event]
+    const newStatus = EVENT_TO_STATUS[event.event]
+    if (!newStatus) { skipped++; continue }
 
-    if (!sgMessageId || !newStatus) { skipped++; continue }
+    // Primary: match by email_log_id we stored in custom_args at send time (O(1) PK lookup)
+    // Fallback: match by sg_message_id we stored in metadata (legacy / SMTP path)
+    const emailLogId  = event.custom_args?.email_log_id
+    const sgMessageId = event.sg_message_id?.split('.')[0]
 
-    // Match email_log by sg_message_id stored in metadata
-    const log = await prisma.emailLog.findFirst({
-      where: {
-        metadata: { path: ['sg_message_id'], equals: sgMessageId },
-      },
-      select: { id: true, patientId: true, status: true },
-    })
+    let log: { id: string; patientId: string; status: string } | null = null
+
+    if (emailLogId) {
+      log = await prisma.emailLog.findUnique({
+        where:  { id: emailLogId },
+        select: { id: true, patientId: true, status: true },
+      })
+    } else if (sgMessageId) {
+      log = await prisma.emailLog.findFirst({
+        where:  { metadata: { path: ['sg_message_id'], equals: sgMessageId } },
+        select: { id: true, patientId: true, status: true },
+      })
+    }
 
     if (!log) { skipped++; continue }
 
@@ -138,19 +151,15 @@ export async function POST(req: NextRequest) {
 
     await prisma.emailLog.update({ where: { id: log.id }, data: updateData })
 
-    // Handle unsubscribes — create unsubscribe record
+    // Handle unsubscribes + spam reports — create unsubscribe record
     if (newStatus === 'UNSUBSCRIBED' && event.email) {
+      const reason = event.event === 'spamreport'
+        ? 'spam_report'
+        : (event.event === 'group_unsubscribe' ? 'group_unsubscribe' : 'user_unsubscribed')
       await prisma.unsubscribe.upsert({
         where:  { patientId: log.patientId },
-        create: {
-          patientId: log.patientId,
-          email:     encrypt(event.email),
-          reason:    event.event === 'spamreport' ? 'spam_report' : 'user_unsubscribed',
-        },
-        update: {
-          email:  encrypt(event.email),
-          reason: event.event === 'spamreport' ? 'spam_report' : 'user_unsubscribed',
-        },
+        create: { patientId: log.patientId, email: encrypt(event.email), reason },
+        update: { email: encrypt(event.email), reason },
       })
       // Notify admin of unsubscribe
       notifyAdminOfUnsubscribe(log.patientId).catch(() => {})

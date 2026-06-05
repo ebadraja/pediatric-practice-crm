@@ -12,7 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeft, Heart, Clock, Calendar, PhoneCall, MessageSquare,
   FileText, Edit, Plus, Upload, Save, X, CheckCircle2, AlertCircle,
-  Loader2, Eye,
+  Loader2, Eye, Mail, MailCheck, MailX, ChevronDown, ChevronUp,
+  RefreshCw, Ban, MailOpen,
 } from "lucide-react";
 import AddAppointmentModal from "@/components/add-appointment-modal";
 import AddNotesModal from "@/components/add-notes-modal";
@@ -56,6 +57,34 @@ interface Patient {
   chatLogs: Array<{ id: string; startTime: string; topic: string | null; outcome: string | null; }>;
   notes: Array<{ id: string; createdAt: string; text: string; author: { firstName: string; lastName: string; } | null; }>;
   documents: Array<{ id: string; name: string; fileSize: number | null; createdAt: string; }>;
+}
+
+interface EmailLogEntry {
+  id: string;
+  status: string;
+  type: string;
+  subject: string | null;
+  sentAt: string | null;
+  openedAt: string | null;
+  clickedAt: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  template: { name: string } | null;
+  campaign: { name: string } | null;
+}
+
+interface EmailAnalyticsResponse {
+  logs: EmailLogEntry[];
+  total: number;
+  page: number;
+  totalPages: number;
+  isUnsubscribed: boolean;
+  summary: {
+    sent: number;
+    opened: number;
+    clicked: number;
+    failed: number;
+  };
 }
 
 interface IntakeFormRow {
@@ -111,6 +140,21 @@ export default function PatientDetailPage() {
   const [addNotesOpen, setAddNotesOpen] = useState(false);
   const [uploadDocsOpen, setUploadDocsOpen] = useState(false);
 
+  // Email History tab state
+  const [emailHistory, setEmailHistory] = useState<EmailLogEntry[]>([]);
+  const [emailHistoryLoading, setEmailHistoryLoading] = useState(false);
+  const [emailHistoryError, setEmailHistoryError] = useState("");
+  const [emailIsUnsubscribed, setEmailIsUnsubscribed] = useState(false);
+  const [emailSummary, setEmailSummary] = useState({ sent: 0, opened: 0, clicked: 0, failed: 0 });
+  const [emailHistoryLoaded, setEmailHistoryLoaded] = useState(false);
+  const [emailPage, setEmailPage] = useState(1);
+  const [emailTotal, setEmailTotal] = useState(0);
+  const [emailTotalPages, setEmailTotalPages] = useState(1);
+  const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
+  const [unsubscribeConfirm, setUnsubscribeConfirm] = useState(false);
+  const [unsubscribing, setUnsubscribing] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+
   const fetchPatient = useCallback(async () => {
     try {
       const res = await fetch(`/api/patients/${patientId}`);
@@ -124,6 +168,58 @@ export default function PatientDetailPage() {
       setLoading(false);
     }
   }, [patientId]);
+
+  const fetchEmailHistory = useCallback(async (page = 1) => {
+    setEmailHistoryLoading(true);
+    setEmailHistoryError("");
+    try {
+      const res = await fetch(`/api/email/analytics/patient/${patientId}?page=${page}&limit=20`);
+      if (!res.ok) throw new Error("Failed to load email history");
+      const data: EmailAnalyticsResponse = await res.json();
+      setEmailHistory(data.logs ?? []);
+      setEmailTotal(data.total ?? 0);
+      setEmailTotalPages(data.totalPages ?? 1);
+      setEmailPage(data.page ?? 1);
+      setEmailIsUnsubscribed(data.isUnsubscribed ?? false);
+      setEmailSummary(data.summary ?? { sent: 0, opened: 0, clicked: 0, failed: 0 });
+      setEmailHistoryLoaded(true);
+    } catch {
+      setEmailHistoryError("Could not load email history.");
+    } finally {
+      setEmailHistoryLoading(false);
+    }
+  }, [patientId]);
+
+  const handleUnsubscribe = async () => {
+    setUnsubscribing(true);
+    try {
+      const res = await fetch(`/api/patients/${patientId}/unsubscribe`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      setEmailIsUnsubscribed(true);
+      setUnsubscribeConfirm(false);
+    } catch {}
+    setUnsubscribing(false);
+  };
+
+  const handleResubscribe = async () => {
+    setUnsubscribing(true);
+    try {
+      const res = await fetch(`/api/patients/${patientId}/unsubscribe`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed");
+      setEmailIsUnsubscribed(false);
+    } catch {}
+    setUnsubscribing(false);
+  };
+
+  const handleResend = async (logId: string) => {
+    setResendingId(logId);
+    try {
+      const res = await fetch(`/api/email/logs/${logId}/resend`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      setEmailHistory(prev => prev.map(e => e.id === logId ? { ...e, status: "QUEUED" } : e));
+    } catch {}
+    setResendingId(null);
+  };
 
   const fetchIntakeForms = useCallback(async () => {
     try {
@@ -371,7 +467,13 @@ export default function PatientDetailPage() {
 
           {/* Tabs */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm overflow-hidden">
-            <Tabs defaultValue="appointments" className="w-full">
+            <Tabs
+              defaultValue="appointments"
+              className="w-full"
+              onValueChange={(val) => {
+                if (val === "email-history" && !emailHistoryLoaded) fetchEmailHistory(1);
+              }}
+            >
               <div className="border-b border-slate-100 dark:border-slate-800 px-2 pt-2 overflow-x-auto">
                 <TabsList className="h-auto gap-0.5 bg-transparent p-0 flex flex-nowrap">
                   {[
@@ -381,6 +483,7 @@ export default function PatientDetailPage() {
                     ["chats", "Chats"],
                     ["notes", "Medical Notes"],
                     ["documents", "Documents"],
+                    ["email-history", "Email History"],
                   ].map(([val, label]) => (
                     <TabsTrigger key={val} value={val}
                       className="text-xs sm:text-sm px-3 py-2.5 rounded-t-lg font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 data-[state=active]:bg-blue-50 dark:data-[state=active]:bg-blue-950/30 data-[state=active]:border-b-2 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-500 data-[state=active]:text-blue-700 dark:data-[state=active]:text-blue-400 data-[state=active]:font-semibold whitespace-nowrap capitalize transition-all"
@@ -560,6 +663,216 @@ export default function PatientDetailPage() {
                       </div>
                     </div>
                   ))}
+                </TabsContent>
+
+                {/* Email History */}
+                <TabsContent value="email-history" className="mt-0">
+                  {/* Unsubscribed banner */}
+                  {emailIsUnsubscribed && (
+                    <div className="flex items-center gap-2 p-3 mb-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800/60 rounded-lg text-sm text-orange-800 dark:text-orange-300">
+                      <Ban className="h-4 w-4 flex-shrink-0" />
+                      <span className="flex-1">This patient is <strong>unsubscribed</strong> from all emails. No emails will be sent to them.</span>
+                      <button
+                        onClick={handleResubscribe}
+                        disabled={unsubscribing}
+                        className="ml-2 text-xs font-medium underline hover:no-underline disabled:opacity-50"
+                      >
+                        {unsubscribing ? "..." : "Re-subscribe"}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Header row: summary stats + unsubscribe button */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div className="flex gap-4">
+                      {[
+                        { label: "Sent", value: emailSummary.sent, color: "text-blue-600 dark:text-blue-400" },
+                        { label: "Opened", value: emailSummary.opened, color: "text-emerald-600 dark:text-emerald-400" },
+                        { label: "Clicked", value: emailSummary.clicked, color: "text-purple-600 dark:text-purple-400" },
+                        { label: "Failed", value: emailSummary.failed, color: "text-red-600 dark:text-red-400" },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} className="text-center">
+                          <p className={`text-lg font-bold ${color}`}>{value}</p>
+                          <p className="text-xs text-slate-500">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {!emailIsUnsubscribed && (
+                      <div>
+                        {unsubscribeConfirm ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">Unsubscribe this patient?</span>
+                            <button
+                              onClick={handleUnsubscribe}
+                              disabled={unsubscribing}
+                              className="text-xs px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium disabled:opacity-50"
+                            >
+                              {unsubscribing ? "..." : "Confirm"}
+                            </button>
+                            <button
+                              onClick={() => setUnsubscribeConfirm(false)}
+                              className="text-xs px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setUnsubscribeConfirm(true)}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                          >
+                            <Ban className="h-3.5 w-3.5" />Unsubscribe Patient
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Loading */}
+                  {emailHistoryLoading && (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {emailHistoryError && !emailHistoryLoading && (
+                    <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
+                      <AlertCircle className="h-4 w-4" />{emailHistoryError}
+                      <button onClick={() => fetchEmailHistory(emailPage)} className="ml-auto underline text-xs">Retry</button>
+                    </div>
+                  )}
+
+                  {/* Empty state */}
+                  {!emailHistoryLoading && !emailHistoryError && emailHistoryLoaded && emailHistory.length === 0 && (
+                    <div className="text-center py-10 text-slate-400 dark:text-slate-500">
+                      <Mail className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">No emails sent to this patient yet</p>
+                    </div>
+                  )}
+
+                  {/* Timeline */}
+                  {!emailHistoryLoading && emailHistory.length > 0 && (
+                    <div className="space-y-2">
+                      {emailHistory.map((entry) => {
+                        const isExpanded = expandedEmailId === entry.id;
+                        const statusConfig: Record<string, { icon: React.ReactNode; cls: string; label: string }> = {
+                          SENT:      { icon: <MailCheck className="h-4 w-4" />, cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300", label: "Sent" },
+                          DELIVERED: { icon: <MailCheck className="h-4 w-4" />, cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300", label: "Delivered" },
+                          OPENED:    { icon: <MailOpen className="h-4 w-4" />, cls: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300", label: "Opened" },
+                          CLICKED:   { icon: <MailOpen className="h-4 w-4" />, cls: "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300", label: "Clicked" },
+                          FAILED:    { icon: <MailX className="h-4 w-4" />, cls: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300", label: "Failed" },
+                          QUEUED:    { icon: <Mail className="h-4 w-4" />, cls: "bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300", label: "Queued" },
+                          BOUNCED:   { icon: <MailX className="h-4 w-4" />, cls: "bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300", label: "Bounced" },
+                        };
+                        const typeConfig: Record<string, string> = {
+                          REMINDER:  "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+                          CAMPAIGN:  "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300",
+                          AUTOMATED: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+                        };
+                        const sc = statusConfig[entry.status] ?? statusConfig.QUEUED;
+                        const canResend = entry.status === "FAILED" && entry.type === "REMINDER";
+
+                        return (
+                          <div key={entry.id} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                            <button
+                              onClick={() => setExpandedEmailId(isExpanded ? null : entry.id)}
+                              className="w-full flex items-center gap-3 p-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
+                            >
+                              <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${sc.cls}`}>
+                                {sc.icon}<span>{sc.label}</span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                                  {entry.template?.name ?? entry.subject ?? "—"}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  {entry.sentAt ? format(new Date(entry.sentAt), "MMM d, yyyy h:mm a") : format(new Date(entry.createdAt), "MMM d, yyyy")}
+                                </p>
+                              </div>
+                              <Badge className={`text-xs border-0 ${typeConfig[entry.type] ?? typeConfig.REMINDER}`}>
+                                {entry.type}
+                              </Badge>
+                              {isExpanded ? <ChevronUp className="h-4 w-4 text-slate-400 flex-shrink-0" /> : <ChevronDown className="h-4 w-4 text-slate-400 flex-shrink-0" />}
+                            </button>
+
+                            {isExpanded && (
+                              <div className="border-t border-slate-100 dark:border-slate-800 px-4 py-3 bg-slate-50 dark:bg-slate-800/30 space-y-2 text-sm">
+                                {entry.subject && (
+                                  <div className="flex gap-2">
+                                    <span className="text-slate-500 w-20 flex-shrink-0">Subject</span>
+                                    <span className="text-slate-800 dark:text-slate-200">{entry.subject}</span>
+                                  </div>
+                                )}
+                                {entry.campaign && (
+                                  <div className="flex gap-2">
+                                    <span className="text-slate-500 w-20 flex-shrink-0">Campaign</span>
+                                    <span className="text-slate-800 dark:text-slate-200">{entry.campaign.name}</span>
+                                  </div>
+                                )}
+                                {entry.openedAt && (
+                                  <div className="flex gap-2">
+                                    <span className="text-slate-500 w-20 flex-shrink-0">Opened</span>
+                                    <span className="text-slate-800 dark:text-slate-200">{format(new Date(entry.openedAt), "MMM d, yyyy h:mm a")}</span>
+                                  </div>
+                                )}
+                                {entry.clickedAt && (
+                                  <div className="flex gap-2">
+                                    <span className="text-slate-500 w-20 flex-shrink-0">Clicked</span>
+                                    <span className="text-slate-800 dark:text-slate-200">{format(new Date(entry.clickedAt), "MMM d, yyyy h:mm a")}</span>
+                                  </div>
+                                )}
+                                {entry.errorMessage && (
+                                  <div className="flex gap-2 text-red-600 dark:text-red-400">
+                                    <span className="w-20 flex-shrink-0">Error</span>
+                                    <span>{entry.errorMessage}</span>
+                                  </div>
+                                )}
+                                {canResend && (
+                                  <div className="pt-1">
+                                    <button
+                                      onClick={() => handleResend(entry.id)}
+                                      disabled={resendingId === entry.id}
+                                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50 transition-colors"
+                                    >
+                                      {resendingId === entry.id
+                                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        : <RefreshCw className="h-3.5 w-3.5" />}
+                                      {resendingId === entry.id ? "Queuing..." : "Resend"}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Pagination */}
+                  {emailTotalPages > 1 && (
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                      <span className="text-xs text-slate-500">{emailTotal} emails total</span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => fetchEmailHistory(emailPage - 1)}
+                          disabled={emailPage <= 1 || emailHistoryLoading}
+                          className="text-xs px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-xs text-slate-500 self-center">Page {emailPage} of {emailTotalPages}</span>
+                        <button
+                          onClick={() => fetchEmailHistory(emailPage + 1)}
+                          disabled={emailPage >= emailTotalPages || emailHistoryLoading}
+                          className="text-xs px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </TabsContent>
               </div>
             </Tabs>

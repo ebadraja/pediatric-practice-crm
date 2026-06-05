@@ -19,6 +19,8 @@ import {
   Sun,
   Bell,
   LogOut,
+  Mail,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -32,6 +34,8 @@ const navItems = [
   { name: "Call Logs", href: "/call-logs", icon: Phone },
   { name: "Chat Logs", href: "/chat-logs", icon: MessageSquare },
   { name: "Intake Forms", href: "/intake-forms", icon: FileText },
+  { name: "Email Campaigns", href: "/email/campaigns", icon: Mail },
+  { name: "Email Automation", href: "/email/automation", icon: Zap },
   { name: "Staff", href: "/staff", icon: UserCog },
   { name: "Reports", href: "/reports", icon: FileBarChart },
   { name: "Notifications", href: "/notifications", icon: Bell },

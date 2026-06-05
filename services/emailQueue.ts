@@ -74,11 +74,29 @@ const smtpTransport = nodemailer.createTransport({
 
 const FROM_ADDRESS = process.env.EMAIL_FROM ?? 'Kids 0-18 Pediatrics <noreply@kids018.com>'
 
-async function sendEmail(to: string, subject: string, html: string, text: string): Promise<void> {
+// Returns sg_message_id when SendGrid is used (stored in metadata for webhook fallback matching)
+async function sendEmail(
+  to:          string,
+  subject:     string,
+  html:        string,
+  text:        string,
+  emailLogId?: string,
+): Promise<{ sgMessageId?: string }> {
   if (hasSendGrid) {
-    await sgMail.send({ to, from: FROM_ADDRESS, subject, html, text })
+    const msg: Parameters<typeof sgMail.send>[0] = {
+      to, from: FROM_ADDRESS, subject, html, text,
+    }
+    // Attach email_log_id so the SendGrid webhook can match events back to this row
+    if (emailLogId) {
+      (msg as unknown as Record<string, unknown>).customArgs = { email_log_id: emailLogId }
+    }
+    const [response] = await sgMail.send(msg as sgMail.MailDataRequired)
+    // Capture the SendGrid message ID for legacy fallback matching
+    const sgMessageId = (response?.headers?.['x-message-id'] as string | undefined)?.split('.')[0]
+    return { sgMessageId }
   } else {
     await smtpTransport.sendMail({ from: FROM_ADDRESS, to, subject, html, text })
+    return {}
   }
 }
 
@@ -141,14 +159,20 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
   const finalHtml    = overrideExtras(html,    variables)
   const finalPlain   = overrideExtras(plain,   variables)
 
-  // Send
-  await sendEmail(recipientEmail, finalSubject, finalHtml, finalPlain)
+  // Send — pass emailLogId so SendGrid attaches it to custom_args for webhook matching
+  const { sgMessageId } = await sendEmail(recipientEmail, finalSubject, finalHtml, finalPlain, emailLogId)
 
   // Update / create email_log — HIPAA: no body, no address stored here
   const logData = {
-    status:    'SENT'  as const,
-    sentAt:    new Date(),
-    metadata:  { provider: hasSendGrid ? 'sendgrid' : 'smtp', attemptsMade: job.attemptsMade + 1, appointmentId: variables.appointmentId ?? null },
+    status:   'SENT' as const,
+    sentAt:   new Date(),
+    metadata: {
+      provider:      hasSendGrid ? 'sendgrid' : 'smtp',
+      attemptsMade:  job.attemptsMade + 1,
+      appointmentId: variables.appointmentId ?? null,
+      // sg_message_id stored as fallback for webhook matching (primary: custom_args.email_log_id)
+      ...(sgMessageId ? { sg_message_id: sgMessageId } : {}),
+    },
   }
 
   if (emailLogId) {
@@ -325,7 +349,22 @@ export async function queueCampaignBatch(
     r => !unsubSet.has(r.patientId) && !sentSet.has(r.patientId)
   )
 
-  // Bulk-create log rows and add jobs
+  // Pre-create log rows so each job carries emailLogId for custom_args attachment at send time
+  const logRows = await prisma.emailLog.createManyAndReturn({
+    data: eligible.map(r => ({
+      patientId:  r.patientId,
+      templateId,
+      campaignId,
+      type:       'CAMPAIGN' as const,
+      toEmail:    r.toEmail,
+      subject:    'queued',
+      status:     'QUEUED'  as const,
+    })),
+    select: { id: true, patientId: true },
+  })
+
+  const logIdByPatient = new Map(logRows.map(l => [l.patientId, l.id]))
+
   const jobs = eligible.map(r => ({
     name: 'send-email',
     data: {
@@ -334,6 +373,7 @@ export async function queueCampaignBatch(
       campaignId,
       variables:  r.variables,
       toEmail:    r.toEmail,
+      emailLogId: logIdByPatient.get(r.patientId),
     } satisfies EmailJobData,
   }))
 
