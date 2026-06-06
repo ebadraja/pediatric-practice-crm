@@ -88,28 +88,56 @@ function normalizePayload(raw: Record<string, string | null>): NormalizedPayload
   };
 }
 
+// Keys HIPPAtizer always sends that are not patient data
+const HIPPATIZER_SYSTEM_KEYS = new Set([
+  "Form Name", "Form Id", "Submission Id", "Increment",
+  "Submission Created Date (MM/dd/yyyy)", "View Submission Link", "Edit Submission Link",
+  "Download PDF Link", "Download Access Log Link", "Download Merged PDF Link",
+  "Download CSV Link", "Download Merged CSV Link", "Download Attachments Link",
+  "Next Step Link", "Notification Template Settings Link", "Show Pdf Password Link",
+  "Submissions Filtered Table Link", "Current Workflow Url", "Form Submission Limit",
+  "Location Title", "Location Address", "Location Email", "Location Phone",
+  "Profile Business Name", "Profile Business Address", "Profile Business Address 2",
+  "Profile Business City", "Profile Business State", "Profile Business Zip",
+  "Profile Business Phone", "Profile Business Fax", "Profile Business Email",
+  "Date Today (MM/dd/yyyy)", "Date Today (MM-dd-yyyy)", "Date Today (MM.dd.yyyy HH:mm)",
+  "Date Today (dd-MM-yyyy)", "Date Today (dd/MM/yyyy)", "Date Today (yyyy-MM-dd)",
+  "Date Today (yyyy/MM/dd)", "Date Today (yyMMddHHmmss)", "Date Today (MMddyyHHmmss)",
+  "Previous Year (MM/dd/yyyy)", "Time Now (hh:mm tt)",
+]);
+
+// Capture every meaningful field from the payload — no mapping required
+function getAllFields(
+  fieldValues: Record<string, string | boolean | null>
+): Array<{ fieldId: string; fieldLabel: string; fieldType: string; value: string }> {
+  const result = [];
+  for (const [key, value] of Object.entries(fieldValues)) {
+    if (HIPPATIZER_SYSTEM_KEYS.has(key)) continue;
+    if (key.startsWith("paragraph_")) continue;
+    if (key.endsWith(" (Strip Html)") || key.endsWith(" (Html)")) continue;
+    if (key.endsWith(" (Labels)") || key.endsWith(" (Values)")) continue;
+    if (value === null || value === undefined || value === "") continue;
+    result.push({ fieldId: key, fieldLabel: key, fieldType: "text", value: String(value) });
+  }
+  return result;
+}
+
+// Use field mappings only for extracting structured patient data (matching/drafts)
 function extractPatientData(
   formTitle: string,
   fieldValues: Record<string, string | boolean | null>
 ) {
   const mappings = getMappingForForm(formTitle);
   const extracted: Record<string, any> = {};
-  const rawFields: Array<{ fieldId: string; fieldLabel: string; fieldType: string; value: string | boolean | null }> = [];
 
   for (const mapping of mappings) {
     const value = fieldValues[mapping.hippatizFieldId];
     if (value !== undefined && value !== null && value !== "") {
-      rawFields.push({
-        fieldId: mapping.hippatizFieldId,
-        fieldLabel: mapping.fieldLabel,
-        fieldType: mapping.fieldType,
-        value,
-      });
       extracted[mapping.patientField] = mapping.transform ? mapping.transform(value) : value;
     }
   }
 
-  return { extracted, rawFields };
+  return { extracted };
 }
 
 function hasCriticalFields(fieldValues: Record<string, string | boolean | null>): boolean {
@@ -130,7 +158,8 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
     return { success: false, message: "Duplicate submission", formId: existingForm.id };
   }
 
-  const { extracted, rawFields } = extractPatientData(form_title, field_values);
+  const { extracted } = extractPatientData(form_title, field_values);
+  const allFields = getAllFields(field_values);
 
   if (!hasCriticalFields(field_values)) {
     const intakeForm = await prisma.intakeForm.create({
@@ -143,11 +172,11 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
         submittedAt: new Date(created_at),
         status: "RECEIVED",
         fieldValues: {
-          create: rawFields.map((f) => ({
+          create: allFields.map((f) => ({
             fieldId: f.fieldId,
             fieldLabel: f.fieldLabel,
             fieldType: f.fieldType,
-            value: String(f.value),
+            value: f.value,
           })),
         },
       },
@@ -212,7 +241,7 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
       matchConfidence: bestMatch?.confidence ?? null,
       matchNotes: bestMatch?.matchReasons.join(", ") ?? null,
       fieldValues: {
-        create: rawFields.map((f) => ({
+        create: allFields.map((f) => ({
           fieldId: f.fieldId,
           fieldLabel: f.fieldLabel,
           fieldType: f.fieldType,
