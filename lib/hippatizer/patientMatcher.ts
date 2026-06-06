@@ -63,22 +63,30 @@ function getEditDistance(s1: string, s2: string): number {
 }
 
 /**
- * Check if dates are the same (ignoring time)
+ * Check if dates are the same calendar day (UTC) to avoid timezone off-by-one.
  */
 function isSameDateOfBirth(date1: Date, date2: Date): boolean {
   const d1 = new Date(date1);
   const d2 = new Date(date2);
-
   return (
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate()
+    d1.getUTCFullYear() === d2.getUTCFullYear() &&
+    d1.getUTCMonth() === d2.getUTCMonth() &&
+    d1.getUTCDate() === d2.getUTCDate()
   );
 }
 
 /**
- * Main matching function
- * Returns list of potential matches sorted by confidence score
+ * Scoring weights (must sum to ≤ 1.0 for full match):
+ *   DOB exact        → +0.40  (heaviest — hard to forge coincidentally)
+ *   First name ≥80%  → +score × 0.25
+ *   Last name ≥80%   → +score × 0.25
+ *   Email exact      → +0.10
+ *   Phone exact      → +0.10
+ *
+ * Auto-link threshold (findBestPatientMatch):  0.85
+ * Potential-match threshold (shown for manual): 0.50
+ *   — 0.50 lets a perfect name match (0.25+0.25=0.50) surface even when DOB
+ *     is absent/unparsed, so staff can still manually assign.
  */
 export async function findPatientMatches(
   firstName: string,
@@ -87,16 +95,13 @@ export async function findPatientMatches(
   email?: string,
   phone?: string
 ): Promise<PatientMatch[]> {
-  if (!firstName || !lastName || !dateOfBirth) {
+  if (!firstName || !lastName) {
     return [];
   }
 
   try {
-    // Fetch all active patients
     const patients = await prisma.patient.findMany({
-      where: {
-        status: "ACTIVE",
-      },
+      where: { status: "ACTIVE" },
       select: {
         id: true,
         firstName: true,
@@ -113,48 +118,43 @@ export async function findPatientMatches(
       const matchReasons: string[] = [];
       let confidence = 0;
 
-      // DOB exact match (highest weight)
-      const dobMatch = isSameDateOfBirth(dateOfBirth, patient.dateOfBirth);
-      if (dobMatch) {
-        confidence += 0.4;
-        matchReasons.push("Date of birth match");
+      // DOB exact match — UTC comparison to avoid timezone off-by-one
+      if (dateOfBirth && !isNaN(dateOfBirth.getTime())) {
+        const dobMatch = isSameDateOfBirth(dateOfBirth, patient.dateOfBirth);
+        if (dobMatch) {
+          confidence += 0.4;
+          matchReasons.push("Date of birth match");
+        }
       }
 
-      // First name similarity
-      const firstNameScore = calculateStringSimilarity(
-        firstName,
-        patient.firstName
-      );
-      if (firstNameScore > 0.8) {
+      // First name fuzzy similarity (Levenshtein)
+      const firstNameScore = calculateStringSimilarity(firstName, patient.firstName);
+      if (firstNameScore >= 0.8) {
         confidence += firstNameScore * 0.25;
-        matchReasons.push(
-          `First name similar (${(firstNameScore * 100).toFixed(0)}%)`
-        );
+        matchReasons.push(`First name similar (${(firstNameScore * 100).toFixed(0)}%)`);
       }
 
-      // Last name similarity
+      // Last name fuzzy similarity
       const lastNameScore = calculateStringSimilarity(lastName, patient.lastName);
-      if (lastNameScore > 0.8) {
+      if (lastNameScore >= 0.8) {
         confidence += lastNameScore * 0.25;
-        matchReasons.push(
-          `Last name similar (${(lastNameScore * 100).toFixed(0)}%)`
-        );
+        matchReasons.push(`Last name similar (${(lastNameScore * 100).toFixed(0)}%)`);
       }
 
-      // Email exact match (if provided)
+      // Email exact match
       if (email && patient.email && email.toLowerCase() === patient.email.toLowerCase()) {
         confidence += 0.1;
         matchReasons.push("Email match");
       }
 
-      // Phone exact match (if provided)
+      // Phone exact match (digits only)
       if (phone && patient.phone && normalizePhone(phone) === normalizePhone(patient.phone)) {
         confidence += 0.1;
         matchReasons.push("Phone match");
       }
 
-      // Only include matches with confidence > 0.6 (60%)
-      if (confidence > 0.6) {
+      // Threshold 0.50 — surfaces perfect-name matches even without DOB
+      if (confidence >= 0.5) {
         matches.push({
           patientId: patient.id,
           firstName: patient.firstName,
@@ -162,13 +162,12 @@ export async function findPatientMatches(
           dateOfBirth: patient.dateOfBirth,
           email: patient.email || undefined,
           phone: patient.phone || undefined,
-          confidence: Math.min(confidence, 1), // Cap at 1.0
+          confidence: Math.min(confidence, 1),
           matchReasons,
         });
       }
     }
 
-    // Sort by confidence descending
     return matches.sort((a, b) => b.confidence - a.confidence);
   } catch (error) {
     console.error("Error finding patient matches:", error);

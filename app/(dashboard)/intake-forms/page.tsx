@@ -29,6 +29,14 @@ interface IntakeFormListItem {
   draftPatientName?: string;
 }
 
+interface PatientSearchResult {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  status: string;
+}
+
 interface PaginationMeta { page: number; limit: number; total: number; totalPages: number; }
 
 type DeleteDialogState = { open: false } | { open: true; ids: string[]; label: string };
@@ -51,6 +59,14 @@ export default function IntakeFormsPage() {
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [selectedForm, setSelectedForm] = useState<IntakeFormListItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Assign-patient modal state
+  const [assignSearch, setAssignSearch] = useState("");
+  const [assignResults, setAssignResults] = useState<PatientSearchResult[]>([]);
+  const [assignSearching, setAssignSearching] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignSuccess, setAssignSuccess] = useState(false);
+  const [assignError, setAssignError] = useState("");
 
   const fetchForms = useCallback(async () => {
     setLoading(true);
@@ -77,6 +93,74 @@ export default function IntakeFormsPage() {
   }, [currentPage, selectedStatus, searchTerm, showTrash]);
 
   useEffect(() => { fetchForms(); }, [fetchForms]);
+
+  // ── Assign-patient search ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!showMatchModal || assignSearch.length < 2) {
+      setAssignResults([]);
+      return;
+    }
+    setAssignSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/patients?search=${encodeURIComponent(assignSearch)}&limit=8&status=ACTIVE`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setAssignResults(data.data || []);
+        }
+      } catch {
+        /* silent */
+      } finally {
+        setAssignSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [assignSearch, showMatchModal]);
+
+  const openAssignModal = (form: IntakeFormListItem) => {
+    setSelectedForm(form);
+    setAssignSearch("");
+    setAssignResults([]);
+    setAssignSuccess(false);
+    setAssignError("");
+    setShowMatchModal(true);
+  };
+
+  const closeAssignModal = () => {
+    setShowMatchModal(false);
+    setAssignSearch("");
+    setAssignResults([]);
+    setAssignSuccess(false);
+    setAssignError("");
+  };
+
+  const handleAssignPatient = async (patient: PatientSearchResult) => {
+    if (!selectedForm) return;
+    setAssignLoading(true);
+    setAssignError("");
+    try {
+      const res = await fetch(`/api/intake-forms/${selectedForm.id}/match-patient`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientId: patient.id,
+          notes: "Manually assigned by staff",
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to assign");
+      setAssignSuccess(true);
+      setTimeout(() => {
+        closeAssignModal();
+        fetchForms();
+      }, 1200);
+    } catch {
+      setAssignError("Assignment failed — please try again.");
+    } finally {
+      setAssignLoading(false);
+    }
+  };
 
   // ── Selection helpers ────────────────────────────────────────────────────────
   const allSelected = forms.length > 0 && forms.every((f) => selectedIds.has(f.id));
@@ -409,10 +493,15 @@ export default function IntakeFormsPage() {
                                 </Button>
                               )}
 
-                              {/* Match — only for unmatched */}
-                              {form.status === "RECEIVED" && (
-                                <Button variant="ghost" size="sm" title="Match patient" className="text-slate-600 dark:text-slate-400"
-                                  onClick={() => { setSelectedForm(form); setShowMatchModal(true); }}>
+                              {/* Assign — for RECEIVED (unmatched) and MATCHED (re-assign) */}
+                              {(form.status === "RECEIVED" || form.status === "MATCHED") && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  title={form.status === "MATCHED" ? "Re-assign patient" : "Assign to patient"}
+                                  className="text-slate-600 dark:text-slate-400"
+                                  onClick={() => openAssignModal(form)}
+                                >
                                   <UserPlus className="h-4 w-4" />
                                 </Button>
                               )}
@@ -552,21 +641,94 @@ export default function IntakeFormsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Match modal */}
-      <Dialog open={showMatchModal} onOpenChange={setShowMatchModal}>
+      {/* Assign-patient modal */}
+      <Dialog open={showMatchModal} onOpenChange={(open) => !open && closeAssignModal()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Match Patient</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-blue-500" />
+              Assign to Patient
+            </DialogTitle>
+            <DialogDescription className="truncate text-xs">
+              {selectedForm?.hippatizFormTitle}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <Button className="w-full" onClick={() => { router.push(`/intake-forms/${selectedForm?.id}/match`); setShowMatchModal(false); }}>
-              View Matches & Link Patient
-            </Button>
-            <Button variant="outline" className="w-full" onClick={() => { router.push(`/patient-drafts/new?formId=${selectedForm?.id}`); setShowMatchModal(false); }}>
-              Create Draft Patient
-            </Button>
-            <Button variant="ghost" className="w-full" onClick={() => setShowMatchModal(false)}>Cancel</Button>
-          </div>
+
+          {assignSuccess ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-green-700 dark:text-green-400">
+              <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <Loader className="h-5 w-5 text-green-600" />
+              </div>
+              <p className="font-medium text-sm">Assigned successfully</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Search input */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search by patient name..."
+                  className="pl-10"
+                  value={assignSearch}
+                  onChange={(e) => setAssignSearch(e.target.value)}
+                  autoFocus
+                />
+                {assignSearching && (
+                  <Loader className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-slate-400" />
+                )}
+              </div>
+
+              {/* Results */}
+              {assignSearch.length >= 2 && (
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                  {assignResults.length === 0 && !assignSearching ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-6">
+                      No active patients found
+                    </p>
+                  ) : (
+                    assignResults.map((p) => (
+                      <button
+                        key={p.id}
+                        disabled={assignLoading}
+                        onClick={() => handleAssignPatient(p)}
+                        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-blue-50 dark:hover:bg-blue-950/30 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors disabled:opacity-50"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {p.firstName} {p.lastName}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            DOB: {p.dateOfBirth ? new Date(p.dateOfBirth).toLocaleDateString() : "—"}
+                          </p>
+                        </div>
+                        {assignLoading ? (
+                          <Loader className="h-4 w-4 animate-spin text-slate-400" />
+                        ) : (
+                          <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0 text-xs">
+                            Assign
+                          </Badge>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {assignSearch.length < 2 && (
+                <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-2">
+                  Type at least 2 characters to search
+                </p>
+              )}
+
+              {assignError && (
+                <p className="text-xs text-red-600 dark:text-red-400 text-center">{assignError}</p>
+              )}
+
+              <Button variant="ghost" className="w-full" onClick={closeAssignModal} disabled={assignLoading}>
+                Cancel
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

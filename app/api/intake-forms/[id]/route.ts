@@ -78,29 +78,41 @@ export async function GET(
       },
     });
 
-    // Get potential matches for manual review
+    // Get potential matches for manual review — field labels vary by form type
     let potentialMatches: PatientMatch[] = [];
-    const firstNameField = form.fieldValues.find(
-      (f) => f.fieldLabel?.includes("First Name") && f.fieldLabel?.includes("Patient")
-    );
-    const lastNameField = form.fieldValues.find(
-      (f) => f.fieldLabel?.includes("Last Name") && f.fieldLabel?.includes("Patient")
-    );
-    const dobField = form.fieldValues.find(
-      (f) => f.fieldLabel?.includes("Date of Birth")
-    );
+
+    const normalizeLabel = (s: string | null | undefined) =>
+      (s ?? "").toLowerCase().replace(/[*:]/g, "").trim();
+
+    const firstNameField = form.fieldValues.find((f) => {
+      const lbl = normalizeLabel(f.fieldLabel ?? f.fieldId);
+      // matches: "First", "First Name", "Child's First Name", etc.
+      return lbl === "first" || lbl.includes("first name");
+    });
+    const lastNameField = form.fieldValues.find((f) => {
+      const lbl = normalizeLabel(f.fieldLabel ?? f.fieldId);
+      return lbl === "last" || lbl.includes("last name");
+    });
+    const dobField = form.fieldValues.find((f) => {
+      const lbl = normalizeLabel(f.fieldLabel ?? f.fieldId);
+      return lbl.includes("date of birth") || lbl.includes("birth");
+    });
 
     if (firstNameField?.value && lastNameField?.value && dobField?.value) {
-      const [month, day, year] = dobField.value.split("/");
-      const dob = new Date(`${year}-${month}-${day}`);
+      const parts = dobField.value.split("/");
+      let dob: Date;
+      if (parts.length === 3) {
+        const [month, day, year] = parts;
+        dob = new Date(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`);
+      } else {
+        dob = new Date(dobField.value);
+      }
 
-      potentialMatches = (
-        await findPatientMatches(
-          firstNameField.value,
-          lastNameField.value,
-          dob
-        )
-      ).slice(0, 5); // Top 5 matches
+      if (!isNaN(dob.getTime())) {
+        potentialMatches = (
+          await findPatientMatches(firstNameField.value, lastNameField.value, dob)
+        ).slice(0, 5);
+      }
     }
 
     return NextResponse.json({
