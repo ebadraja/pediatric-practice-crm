@@ -461,7 +461,9 @@ export const formMappingsByTitle: Record<string, FieldMapping[]> = {
  * Get mapping for a specific form
  */
 export function getMappingForForm(formTitle: string): FieldMapping[] {
-  return formMappingsByTitle[formTitle] || [];
+  const upper = formTitle.trim().toUpperCase();
+  const key = Object.keys(formMappingsByTitle).find(k => k.toUpperCase() === upper);
+  return key ? formMappingsByTitle[key] : [];
 }
 
 /**
