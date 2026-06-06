@@ -104,13 +104,9 @@ export default function IntakeFormsPage() {
       const res = await fetch(`/api/intake-forms/${form.id}`);
       if (res.ok) {
         const data = await res.json();
-        const KEY_LABELS = ["First Name", "Last Name", "Patient Date of Birth", "Age",
-          "City", "State / Province", "Relationship to Patient",
-          "Parent/Caregiver #1 Phone Number", "Parent/Caregiver #1 Email Address",
-          "Previous Pediatrician or Clinic Name", "Phone Number", "Where does your child reside?"];
         const fields = (data.fieldValues || [])
-          .filter((f: any) => KEY_LABELS.includes(f.fieldLabel) && f.value)
-          .map((f: any) => ({ fieldLabel: f.fieldLabel, value: f.value }));
+          .filter((f: any) => f.value && f.value.trim() !== "")
+          .map((f: any) => ({ fieldLabel: f.fieldLabel || f.fieldId, value: f.value }));
         setOverviewFields(fields);
       }
     } finally {
