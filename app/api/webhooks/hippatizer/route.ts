@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getMappingForForm, CRITICAL_MATCHING_FIELDS } from "@/lib/hippatizer/fieldMappings";
+import { getMappingForForm } from "@/lib/hippatizer/fieldMappings";
 import { findBestPatientMatch, findPatientMatches, type PatientMatch } from "@/lib/hippatizer/patientMatcher";
 
 export const dynamic = "force-dynamic";
@@ -140,11 +140,8 @@ function extractPatientData(
   return { extracted };
 }
 
-function hasCriticalFields(fieldValues: Record<string, string | boolean | null>): boolean {
-  return CRITICAL_MATCHING_FIELDS.every((fieldId) => {
-    const value = fieldValues[fieldId];
-    return value !== undefined && value !== null && value !== "";
-  });
+function hasCriticalFields(extracted: Record<string, any>): boolean {
+  return !!(extracted.firstName && extracted.lastName) || !!extracted.patientFullName;
 }
 
 export async function processWebhookPayload(payload: NormalizedPayload) {
@@ -161,7 +158,7 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
   const { extracted } = extractPatientData(form_title, field_values);
   const allFields = getAllFields(field_values);
 
-  if (!hasCriticalFields(field_values)) {
+  if (!hasCriticalFields(extracted)) {
     const intakeForm = await prisma.intakeForm.create({
       data: {
         hippatizerId: submission_id,
@@ -361,7 +358,9 @@ async function createFormSubmissionNotifications(
       ...staffWithAccess.map((s) => s.id),
     ]);
 
-    const patientName = `${extractedData.firstName || "Unknown"} ${extractedData.lastName || ""}`.trim();
+    const patientName = `${extractedData.firstName || ""} ${extractedData.lastName || ""}`.trim()
+      || extractedData.patientFullName
+      || "Unknown";
 
     for (const userId of recipientIds) {
       await prisma.notification.create({
