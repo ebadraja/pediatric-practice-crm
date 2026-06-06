@@ -185,70 +185,96 @@ export const newPatientPreRegistrationMapping: FieldMapping[] = [
  */
 export const kidsPatientIntakeFormMapping: FieldMapping[] = [
   {
-    hippatizFieldId: "f57a0b8a-b8e3-469a-ab33-149bfe3fc8bb",
+    hippatizFieldId: "First Name",
+    fieldLabel: "First Name",
+    fieldType: "text",
+    patientField: "firstName",
+    required: true,
+  },
+  {
+    hippatizFieldId: "Last Name",
+    fieldLabel: "Last Name",
+    fieldType: "text",
+    patientField: "lastName",
+    required: true,
+  },
+  {
+    hippatizFieldId: "Patient Date of Birth",
+    fieldLabel: "Patient Date of Birth",
+    fieldType: "date",
+    patientField: "dateOfBirth",
+    required: true,
+    transform: (value) => {
+      if (!value) return null;
+      const [month, day, year] = (value as string).split("/");
+      return new Date(`${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`);
+    },
+  },
+  {
+    hippatizFieldId: "Pediatrician or PCP Name",
     fieldLabel: "Pediatrician or PCP Name",
     fieldType: "text",
     patientField: "pcpName",
   },
   {
-    hippatizFieldId: "11d0bbfa-6bc2-46bb-be91-72b6ef4baee8",
+    hippatizFieldId: "Pediatrician Clinic Name",
     fieldLabel: "Pediatrician Clinic Name",
     fieldType: "text",
     patientField: "pcpClinicName",
   },
   {
-    hippatizFieldId: "c309fca8-3dfd-4911-ab3a-8ef7dbb34fa3",
+    hippatizFieldId: "Pediatrician Phone",
     fieldLabel: "Pediatrician Phone",
     fieldType: "phone",
     patientField: "pcpPhone",
   },
   {
-    hippatizFieldId: "e9fa71be4-0804-45ea-aba5-c5bf2c353e28",
+    hippatizFieldId: "Vision Tested?",
     fieldLabel: "Vision Tested?",
     fieldType: "checkbox",
     patientField: "isVisionTested",
     transform: (value) => value === "Yes" || value === true,
   },
   {
-    hippatizFieldId: "0ba5cf47-b95d-4cbd-bf28-4baa4d95bb12",
+    hippatizFieldId: "If yes, specify where and when",
     fieldLabel: "If yes, specify where and when",
     fieldType: "textarea",
     patientField: "visionTestedDetails",
   },
   {
-    hippatizFieldId: "4fa8bc19-510e-4617-b95d-4cbdbf284b3e",
+    hippatizFieldId: "Hearing Tested?",
     fieldLabel: "Hearing Tested?",
     fieldType: "checkbox",
     patientField: "isHearingTested",
     transform: (value) => value === "Yes" || value === true,
   },
   {
-    hippatizFieldId: "c87df39f-0844-4141-87df-39f08a648079",
+    hippatizFieldId: "History of hospitalizations/surgeries",
     fieldLabel: "History of hospitalizations/surgeries",
     fieldType: "checkbox",
     patientField: "hasMedicalHistory",
     transform: (value) => value === "Yes" || value === true,
   },
   {
-    hippatizFieldId: "37996575-fcc2-4cb1-ab5b-0538539112eb",
+    hippatizFieldId: "Explain:",
     fieldLabel: "Explain:",
     fieldType: "textarea",
     patientField: "medicalHistoryExplanation",
   },
   {
-    hippatizFieldId: "337beb76-291a-4061-9c85-ba25026294df",
+    hippatizFieldId: "Name and location of Preschool",
     fieldLabel: "Name and location of Preschool",
     fieldType: "text",
     patientField: "preschoolNameLocation",
   },
   {
-    hippatizFieldId: "af627409-30ea-426d-b7ca-61efbe7b284a",
+    hippatizFieldId: "Point to show something",
     fieldLabel: "Point to show something",
     fieldType: "radio",
     patientField: "devPointToShow",
   },
   {
-    hippatizFieldId: "9ee00649-44d0-4439-adc4-9fbc305231b3",
+    hippatizFieldId: "Comments (Point to show something)",
     fieldLabel: "Comments (Point to show something)",
     fieldType: "textarea",
     patientField: "devPointToShowComments",
@@ -260,36 +286,36 @@ export const kidsPatientIntakeFormMapping: FieldMapping[] = [
  */
 export const diagnosticInterviewMapping: FieldMapping[] = [
   {
-    hippatizFieldId: "3dcc334a-7a10-4d59-b77f-c947ac68a05c",
+    hippatizFieldId: "Date:",
     fieldLabel: "Date:",
     fieldType: "date",
     patientField: "interviewDate",
     transform: (value) => {
       if (!value) return null;
-      const [month, day, year] = value.split("/");
+      const [month, day, year] = (value as string).split("/");
       return new Date(`${year}-${month}-${day}`);
     },
   },
   {
-    hippatizFieldId: "6de6b11c-e4e5-4242-950c-779f1c06cb25",
+    hippatizFieldId: "Use of nonverbal behaviors - Current",
     fieldLabel: "Use of nonverbal behaviors - Current",
     fieldType: "number",
     patientField: "nonverbalBehaviorsCurrentScore",
   },
   {
-    hippatizFieldId: "0c69cbb8-f3da-4b58-b482-9a1b51bd9007",
+    hippatizFieldId: "Use of nonverbal behaviors - Past",
     fieldLabel: "Use of nonverbal behaviors - Past",
     fieldType: "number",
     patientField: "nonverbalBehaviorsPastScore",
   },
   {
-    hippatizFieldId: "cbb86542-45da-4b58-b482-9a1b51bd9007",
+    hippatizFieldId: "Peer relationships - Current",
     fieldLabel: "Peer relationships - Current",
     fieldType: "number",
     patientField: "peerRelationshipsCurrentScore",
   },
   {
-    hippatizFieldId: "1bd9007a-45da-4b58-b482-9a1b51bd9007",
+    hippatizFieldId: "Peer relationships - Past",
     fieldLabel: "Peer relationships - Past",
     fieldType: "number",
     patientField: "peerRelationshipsPastScore",
@@ -301,36 +327,36 @@ export const diagnosticInterviewMapping: FieldMapping[] = [
  */
 export const sensoryAssessmentParentMapping: FieldMapping[] = [
   {
-    hippatizFieldId: "d12cbb5a-46bc-410c-99a2-fb4bbbe35f4a",
+    hippatizFieldId: "Child's Name",
     fieldLabel: "Child's Name",
     fieldType: "text",
     patientField: "childName",
   },
   {
-    hippatizFieldId: "fa13efca-a9c0-48df-9fbc-be4abde34ffc",
+    hippatizFieldId: "Parent/Caregiver Name",
     fieldLabel: "Parent/Caregiver Name",
     fieldType: "text",
     patientField: "caregiverName",
   },
   {
-    hippatizFieldId: "223cebfa-c4a0-4c07-b8fd-ef4bcbe35ea1",
+    hippatizFieldId: "Date",
     fieldLabel: "Date",
     fieldType: "date",
     patientField: "assessmentDate",
     transform: (value) => {
       if (!value) return null;
-      const [month, day, year] = value.split("/");
+      const [month, day, year] = (value as string).split("/");
       return new Date(`${year}-${month}-${day}`);
     },
   },
   {
-    hippatizFieldId: "b6807cc3-ef0b-410a-bde9-bf3beee56b00",
+    hippatizFieldId: "Sensory Seeking Total Score",
     fieldLabel: "Sensory Seeking Total Score",
     fieldType: "number",
     patientField: "sensorySeekingScore",
   },
   {
-    hippatizFieldId: "88c2cb5f-bc7a-4dd1-8fa1-7f897cb2debb",
+    hippatizFieldId: "Sensory Sensitivity Total Score",
     fieldLabel: "Sensory Sensitivity Total Score",
     fieldType: "number",
     patientField: "sensorySensitivityScore",
@@ -342,41 +368,41 @@ export const sensoryAssessmentParentMapping: FieldMapping[] = [
  */
 export const sensoryAssessmentAdolescentMapping: FieldMapping[] = [
   {
-    hippatizFieldId: "3a6df3a2-345f-4cd6-b4d2-f47dfbb354c0",
+    hippatizFieldId: "Adolescent's Name",
     fieldLabel: "Adolescent's Name",
     fieldType: "text",
     patientField: "adolescentName",
   },
   {
-    hippatizFieldId: "c409fb58-9cf0-4f10-b999-92f7dc3b4f62",
+    hippatizFieldId: "Date of Birth",
     fieldLabel: "Date of Birth",
     fieldType: "date",
     patientField: "adolescentDateOfBirth",
     transform: (value) => {
       if (!value) return null;
-      const [month, day, year] = value.split("/");
+      const [month, day, year] = (value as string).split("/");
       return new Date(`${year}-${month}-${day}`);
     },
   },
   {
-    hippatizFieldId: "d0a6c085-e1d4-4bb2-bd24-beea35c89ad0",
+    hippatizFieldId: "Date of Self-Evaluation",
     fieldLabel: "Date of Self-Evaluation",
     fieldType: "date",
     patientField: "evaluationDate",
     transform: (value) => {
       if (!value) return null;
-      const [month, day, year] = value.split("/");
+      const [month, day, year] = (value as string).split("/");
       return new Date(`${year}-${month}-${day}`);
     },
   },
   {
-    hippatizFieldId: "41fbbd0a-9ab8-46d8-9df2-5b9679dc6e88",
+    hippatizFieldId: "Low Registration Total",
     fieldLabel: "Low Registration Total",
     fieldType: "number",
     patientField: "lowRegistrationScore",
   },
   {
-    hippatizFieldId: "8fb86629-9e8c-4a30-81f1-ef2547b3beaa",
+    hippatizFieldId: "Sensation Avoiding Total",
     fieldLabel: "Sensation Avoiding Total",
     fieldType: "number",
     patientField: "sensationAvoidingScore",
@@ -388,25 +414,25 @@ export const sensoryAssessmentAdolescentMapping: FieldMapping[] = [
  */
 export const sensoryAssessmentTeacherMapping: FieldMapping[] = [
   {
-    hippatizFieldId: "b6807cc3-ef0b-410a-bde9-bf3beee56b00",
+    hippatizFieldId: "Student's Name",
     fieldLabel: "Student's Name",
     fieldType: "text",
     patientField: "studentName",
   },
   {
-    hippatizFieldId: "88c2cb5f-bc7a-4dd1-8fa1-7f897cb2debb",
+    hippatizFieldId: "Teacher's Name",
     fieldLabel: "Teacher's Name",
     fieldType: "text",
     patientField: "teacherName",
   },
   {
-    hippatizFieldId: "4fa0bb65-efc2-48bc-9f9b-6db35beeb6fa",
+    hippatizFieldId: "Grade/Class",
     fieldLabel: "Grade/Class",
     fieldType: "text",
     patientField: "gradeClass",
   },
   {
-    hippatizFieldId: "223cebfa-9ab3-4c07-b8fd-ef4bcbe35ea1",
+    hippatizFieldId: "Classroom Sensory Profile Score",
     fieldLabel: "Classroom Sensory Profile Score",
     fieldType: "number",
     patientField: "classroomSensoryScore",
@@ -418,25 +444,25 @@ export const sensoryAssessmentTeacherMapping: FieldMapping[] = [
  */
 export const previewInterviewMapping: FieldMapping[] = [
   {
-    hippatizFieldId: "bf2f909c-982b-4d2c-ba04-46dc11b1715b",
+    hippatizFieldId: "Preview Date",
     fieldLabel: "Preview Date",
     fieldType: "date",
     patientField: "previewDate",
     transform: (value) => {
       if (!value) return null;
-      const [month, day, year] = value.split("/");
+      const [month, day, year] = (value as string).split("/");
       return new Date(`${year}-${month}-${day}`);
     },
   },
   {
-    hippatizFieldId: "checkbox_group_j4p6",
+    hippatizFieldId: "Ever in the past - Hyperventilation",
     fieldLabel: "Ever in the past - Hyperventilation",
     fieldType: "checkbox",
     patientField: "hasHyperventilationHistory",
     transform: (value) => value === true || value === "true",
   },
   {
-    hippatizFieldId: "053ad7a6-31d8-47ab-806d-4677d8927492",
+    hippatizFieldId: "Language/Speech Loss Evaluation",
     fieldLabel: "Language/Speech Loss Evaluation",
     fieldType: "radio",
     patientField: "languageLossStatus",

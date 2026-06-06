@@ -154,6 +154,8 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
       include: { fieldValues: true },
     });
 
+    await createFormSubmissionNotifications(intakeForm.id, "RECEIVED", extracted);
+
     return {
       success: true,
       formId: intakeForm.id,
