@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useState, useEffect, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Phone,
   Calendar,
@@ -13,35 +12,196 @@ import {
   XCircle,
   ArrowUpRight,
   ArrowDownRight,
-  MessageSquare
+  MessageSquare,
+  RefreshCw,
 } from "lucide-react";
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface RecentCall {
+  id: string;
+  callerName: string | null;
+  callerPhone: string;
+  startTime: string;
+  duration: number | null;
+  outcome: string;
+  wasEscalated: boolean;
+  patient: { firstName: string; lastName: string } | null;
+}
+
+interface ScheduleItem {
+  id: string;
+  startTime: string;
+  type: string;
+  status: string;
+  patient: { firstName: string; lastName: string } | null;
+}
+
+interface DashboardData {
+  practiceName: string;
+  user: { firstName: string; lastName: string; role: string } | null;
+  stats: {
+    callsToday: number;
+    callsYesterday: number;
+    appointmentsToday: number;
+    appointmentsBookedToday: number;
+    appointmentsYesterday: number;
+    activePatients: number;
+    newPatientsThisWeek: number;
+    noShowRate: number;
+    chatbotsToday: number;
+    avgCallDurationSeconds: number;
+    escalatedToday: number;
+  };
+  recentCalls: RecentCall[];
+  todaySchedule: ScheduleItem[];
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function greeting(firstName: string | null | undefined) {
+  const h = new Date().getHours();
+  const salutation =
+    h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  return firstName ? `${salutation}, ${firstName}` : salutation;
+}
+
+function formatCallDuration(seconds: number) {
+  if (!seconds) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function formatRelativeTime(dateStr: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? "s" : ""} ago`;
+  if (diffHours < 24) return `${diffHours} hr${diffHours > 1 ? "s" : ""} ago`;
+  return date.toLocaleDateString();
+}
+
+function formatAppointmentTime(dateStr: string) {
+  return new Date(dateStr).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function formatAppointmentType(type: string) {
+  return type
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function callOutcomeStyle(outcome: string, wasEscalated: boolean) {
+  if (wasEscalated || outcome === "TRANSFERRED")
+    return "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60";
+  if (outcome === "BOOKED")
+    return "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60";
+  return "bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 border-slate-200/60 dark:border-slate-600/60";
+}
+
+function callOutcomeLabel(outcome: string, wasEscalated: boolean) {
+  if (wasEscalated) return "Escalated";
+  const map: Record<string, string> = {
+    BOOKED: "Booked",
+    INFO_PROVIDED: "Info Only",
+    TRANSFERRED: "Transferred",
+    HUNG_UP: "Hung Up",
+    VOICEMAIL: "Voicemail",
+    IN_PROGRESS: "In Progress",
+  };
+  return map[outcome] ?? outcome;
+}
+
+function percentChange(current: number, previous: number) {
+  if (previous === 0) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function DashboardPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const fetchDashboard = useCallback(async () => {
+    try {
+      const res = await fetch("/api/dashboard");
+      if (res.ok) {
+        const json = await res.json();
+        setData(json);
+        setLastUpdated(new Date());
+      }
+    } catch (e) {
+      console.error("Failed to load dashboard", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 350);
-    return () => clearTimeout(t);
-  }, []);
+    fetchDashboard();
+    // Refresh every 60 seconds
+    const interval = setInterval(fetchDashboard, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchDashboard]);
+
+  const s = data?.stats;
+
+  const callDelta = s ? percentChange(s.callsToday, s.callsYesterday) : 0;
+  const aptDelta  = s ? percentChange(s.appointmentsBookedToday, s.appointmentsYesterday) : 0;
+
+  const updatedText = lastUpdated
+    ? `Updated ${formatRelativeTime(lastUpdated.toISOString())}`
+    : "Loading…";
+
   return (
     <div className="pt-4 pb-8 space-y-6 md:space-y-8">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl lg:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Good afternoon, Dr. Tamas</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">Here's a summary of your practice today</p>
+          {loading ? (
+            <>
+              <div className="h-8 w-64 bg-slate-200 dark:bg-slate-700 rounded-lg animate-pulse" />
+              <div className="h-4 w-48 bg-slate-100 dark:bg-slate-800 rounded mt-2 animate-pulse" />
+            </>
+          ) : (
+            <>
+              <h1 className="text-xl md:text-2xl lg:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+                {greeting(data?.user?.firstName)}
+              </h1>
+              <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
+                {data?.practiceName
+                  ? `Here's your ${data.practiceName} summary for today`
+                  : "Here's a summary of your practice today"}
+              </p>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg self-start sm:self-auto whitespace-nowrap flex-shrink-0">
+        <button
+          onClick={fetchDashboard}
+          className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg self-start sm:self-auto whitespace-nowrap flex-shrink-0 transition-colors"
+        >
           <Clock className="h-3.5 w-3.5" />
-          <span>Updated just now</span>
-        </div>
+          <span>{updatedText}</span>
+          <RefreshCw className="h-3 w-3" />
+        </button>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-4 md:p-6 shadow-sm animate-pulse" />
+            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-4 md:p-6 shadow-sm animate-pulse h-32" />
           ))
         ) : (
           <>
@@ -50,15 +210,23 @@ export default function DashboardPage() {
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Total Calls Today</p>
-                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1 md:mt-2">23</p>
+                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1 md:mt-2">
+                    {s?.callsToday ?? 0}
+                  </p>
                 </div>
                 <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
                   <Phone className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 </div>
               </div>
               <div className="flex items-center gap-1.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">+12%</span>
+                {callDelta >= 0 ? (
+                  <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <ArrowDownRight className="h-3.5 w-3.5 text-red-500 dark:text-red-400" />
+                )}
+                <span className={`text-xs font-medium ${callDelta >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                  {callDelta >= 0 ? "+" : ""}{callDelta}%
+                </span>
                 <span className="text-xs text-slate-500 dark:text-slate-400">vs yesterday</span>
               </div>
             </div>
@@ -67,16 +235,24 @@ export default function DashboardPage() {
             <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-4 md:p-6 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3 md:mb-4">
                 <div>
-                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Appointments Booked</p>
-                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1 md:mt-2">18</p>
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Appointments Today</p>
+                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1 md:mt-2">
+                    {s?.appointmentsToday ?? 0}
+                  </p>
                 </div>
                 <div className="p-2.5 bg-green-50 dark:bg-green-950/40 rounded-lg">
                   <Calendar className="h-5 w-5 text-green-600 dark:text-green-400" />
                 </div>
               </div>
               <div className="flex items-center gap-1.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">78% conversion</span>
+                {aptDelta >= 0 ? (
+                  <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <ArrowDownRight className="h-3.5 w-3.5 text-red-500 dark:text-red-400" />
+                )}
+                <span className={`text-xs font-medium ${aptDelta >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                  {s?.appointmentsBookedToday ?? 0} booked today
+                </span>
               </div>
             </div>
 
@@ -85,7 +261,9 @@ export default function DashboardPage() {
               <div className="flex items-start justify-between mb-3 md:mb-4">
                 <div>
                   <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Active Patients</p>
-                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1 md:mt-2">1,247</p>
+                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1 md:mt-2">
+                    {s?.activePatients?.toLocaleString() ?? 0}
+                  </p>
                 </div>
                 <div className="p-2.5 bg-purple-50 dark:bg-purple-950/40 rounded-lg">
                   <Users className="h-5 w-5 text-purple-600 dark:text-purple-400" />
@@ -93,7 +271,9 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-center gap-1.5 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">+8 this week</span>
+                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                  +{s?.newPatientsThisWeek ?? 0} this week
+                </span>
               </div>
             </div>
 
@@ -102,124 +282,118 @@ export default function DashboardPage() {
               <div className="flex items-start justify-between mb-3 md:mb-4">
                 <div>
                   <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">No-Show Rate</p>
-                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1 md:mt-2">3.2%</p>
+                  <p className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mt-1 md:mt-2">
+                    {s?.noShowRate ?? 0}%
+                  </p>
                 </div>
                 <div className="p-2.5 bg-orange-50 dark:bg-orange-950/40 rounded-lg">
                   <TrendingUp className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                 </div>
               </div>
               <div className="flex items-center gap-1.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">-1.1% vs last week</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Last 30 days</span>
               </div>
             </div>
           </>
         )}
       </div>
 
-      {/* Recent Activity & Today's Schedule */}
+      {/* Recent Calls + Today's Schedule */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {loading ? (
-          Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm p-6 animate-pulse" />
+          Array.from({ length: 2 }).map((_, i) => (
+            <div
+              key={i}
+              className={`bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm p-6 animate-pulse h-72 ${i === 0 ? "lg:col-span-2" : ""}`}
+            />
           ))
         ) : (
           <>
-            {/* Recent Calls - Takes 2 columns */}
+            {/* Recent Calls – 2 columns */}
             <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-          <div className="border-b border-slate-200 dark:border-slate-700 px-4 md:px-6 py-4 md:py-5">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">Recent Calls</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">Latest interactions handled by the AI voice agent</p>
-          </div>
-          <div className="p-3 md:p-6">
-            <div className="space-y-1 md:space-y-3">
-              {[
-                { name: "Sarah Johnson", time: "2 min ago", duration: "3:24", outcome: "Booked", status: "success" },
-                { name: "Michael Chen", time: "15 min ago", duration: "2:18", outcome: "Booked", status: "success" },
-                { name: "Unknown Caller", time: "32 min ago", duration: "4:51", outcome: "Transferred", status: "warning" },
-                { name: "Emily Rodriguez", time: "1 hr ago", duration: "1:47", outcome: "Info Only", status: "neutral" },
-                { name: "David Patel", time: "1 hr ago", duration: "2:33", outcome: "Booked", status: "success" },
-              ].map((call, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center flex-shrink-0">
-                      <Phone className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{call.name}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{call.time} · {call.duration}</p>
-                    </div>
+              <div className="border-b border-slate-200 dark:border-slate-700 px-4 md:px-6 py-4 md:py-5">
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">Recent Calls</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+                  Latest interactions handled by the AI voice agent
+                </p>
+              </div>
+              <div className="p-3 md:p-6">
+                {data?.recentCalls.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">
+                    No calls recorded yet.
+                  </p>
+                ) : (
+                  <div className="space-y-1 md:space-y-3">
+                    {data?.recentCalls.map((call) => {
+                      const name =
+                        call.patient
+                          ? `${call.patient.firstName} ${call.patient.lastName}`
+                          : call.callerName ?? "Unknown Caller";
+                      return (
+                        <div
+                          key={call.id}
+                          className="flex items-center justify-between p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center flex-shrink-0">
+                              <Phone className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{name}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {formatRelativeTime(call.startTime)}
+                                {call.duration ? ` · ${formatCallDuration(call.duration)}` : ""}
+                              </p>
+                            </div>
+                          </div>
+                          <div
+                            className={`text-xs font-medium px-2.5 py-0.5 rounded-md border ${callOutcomeStyle(call.outcome, call.wasEscalated)}`}
+                          >
+                            {callOutcomeLabel(call.outcome, call.wasEscalated)}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className={`text-xs font-medium px-2.5 py-0.5 rounded-md border ${
-                    call.status === "success"
-                      ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-700/60"
-                      : call.status === "warning"
-                      ? "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-700/60"
-                      : "bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 border-slate-200/60 dark:border-slate-600/60"
-                  }`}>
-                    {call.outcome}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Today's Schedule */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-          <div className="border-b border-slate-200 dark:border-slate-700 px-4 md:px-6 py-4 md:py-5">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">Today's Schedule</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">Upcoming appointments</p>
-          </div>
-          <div className="p-3 md:p-6">
-            <div className="space-y-1 md:space-y-3">
-              {[
-                { time: "9:00 AM", patient: "Emma Wilson", type: "Well-child visit" },
-                { time: "10:30 AM", patient: "Lucas Brown", type: "Sick visit" },
-                { time: "11:15 AM", patient: "Olivia Davis", type: "Vaccination" },
-                { time: "2:00 PM", patient: "Noah Martinez", type: "Follow-up" },
-                { time: "3:30 PM", patient: "Ava Thompson", type: "Well-child visit" },
-              ].map((apt, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer">
-                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 rounded-md whitespace-nowrap flex-shrink-0">
-                    {apt.time}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{apt.patient}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{apt.type}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                )}
+              </div>
             </div>
 
-            {/* Today's Schedule */}
+            {/* Today's Schedule – 1 column */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm hover:shadow-md transition-shadow">
               <div className="border-b border-slate-200 dark:border-slate-700 px-4 md:px-6 py-4 md:py-5">
                 <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">Today's Schedule</h2>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">Upcoming appointments</p>
               </div>
               <div className="p-3 md:p-6">
-                <div className="space-y-1 md:space-y-3">
-                  {[
-                    { time: "9:00 AM", patient: "Emma Wilson", type: "Well-child visit" },
-                    { time: "10:30 AM", patient: "Lucas Brown", type: "Sick visit" },
-                    { time: "11:15 AM", patient: "Olivia Davis", type: "Vaccination" },
-                    { time: "2:00 PM", patient: "Noah Martinez", type: "Follow-up" },
-                    { time: "3:30 PM", patient: "Ava Thompson", type: "Well-child visit" },
-                  ].map((apt, i) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer">
-                      <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 rounded-md whitespace-nowrap flex-shrink-0">
-                        {apt.time}
+                {data?.todaySchedule.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">
+                    No appointments scheduled for today.
+                  </p>
+                ) : (
+                  <div className="space-y-1 md:space-y-3">
+                    {data?.todaySchedule.map((apt) => (
+                      <div
+                        key={apt.id}
+                        className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                      >
+                        <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 rounded-md whitespace-nowrap flex-shrink-0">
+                          {formatAppointmentTime(apt.startTime)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                            {apt.patient
+                              ? `${apt.patient.firstName} ${apt.patient.lastName}`
+                              : "Unknown Patient"}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {formatAppointmentType(apt.type)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{apt.patient}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{apt.type}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -230,7 +404,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-6">
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-4 md:p-6 shadow-sm animate-pulse" />
+            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-4 md:p-6 shadow-sm animate-pulse h-24" />
           ))
         ) : (
           <>
@@ -240,8 +414,12 @@ export default function DashboardPage() {
                   <MessageSquare className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Chatbot Conversations</p>
-                  <p className="text-xl md:text-2xl font-semibold text-slate-900 dark:text-slate-50 mt-1">47</p>
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    Chatbot Conversations
+                  </p>
+                  <p className="text-xl md:text-2xl font-semibold text-slate-900 dark:text-slate-50 mt-1">
+                    {s?.chatbotsToday ?? 0}
+                  </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">today</p>
                 </div>
               </div>
@@ -253,9 +431,15 @@ export default function DashboardPage() {
                   <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Avg Call Duration</p>
-                  <p className="text-xl md:text-2xl font-semibold text-slate-900 dark:text-slate-50 mt-1">2.4 min</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">per call</p>
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    Avg Call Duration
+                  </p>
+                  <p className="text-xl md:text-2xl font-semibold text-slate-900 dark:text-slate-50 mt-1">
+                    {s?.avgCallDurationSeconds
+                      ? `${Math.floor(s.avgCallDurationSeconds / 60)}:${String(s.avgCallDurationSeconds % 60).padStart(2, "0")}`
+                      : "—"}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">per call today</p>
                 </div>
               </div>
             </div>
@@ -266,8 +450,12 @@ export default function DashboardPage() {
                   <XCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Escalated to Staff</p>
-                  <p className="text-xl md:text-2xl font-semibold text-slate-900 dark:text-slate-50 mt-1">5</p>
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    Escalated to Staff
+                  </p>
+                  <p className="text-xl md:text-2xl font-semibold text-slate-900 dark:text-slate-50 mt-1">
+                    {s?.escalatedToday ?? 0}
+                  </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">today</p>
                 </div>
               </div>
