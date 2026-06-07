@@ -22,10 +22,14 @@ import {
   Mail,
   Zap,
 } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "@/components/theme-provider";
 import { useSession, signOut } from "next-auth/react";
+
+// Set to true to show the Email Automation page in the sidebar once it's ready.
+const ENABLE_EMAIL_AUTOMATION = false;
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -35,7 +39,7 @@ const navItems = [
   { name: "Chat Logs", href: "/chat-logs", icon: MessageSquare },
   { name: "Intake Forms", href: "/intake-forms", icon: FileText },
   { name: "Email Campaigns", href: "/email/campaigns", icon: Mail },
-  { name: "Email Automation", href: "/email/automation", icon: Zap },
+  ...(ENABLE_EMAIL_AUTOMATION ? [{ name: "Email Automation", href: "/email/automation", icon: Zap }] : []),
   { name: "Staff", href: "/staff", icon: UserCog },
   { name: "Reports", href: "/reports", icon: FileBarChart },
   { name: "Notifications", href: "/notifications", icon: Bell },
