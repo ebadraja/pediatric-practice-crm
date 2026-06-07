@@ -161,6 +161,34 @@ function mapMessages(vapiMessages: VapiMessage[]): MappedMessage[] {
     .filter(m => m.content.length > 0)
 }
 
+// ─── Name extractor ───────────────────────────────────────────────────────────
+
+function extractNameFromTranscript(transcript: string): string | null {
+  if (!transcript) return null
+
+  // "my name is John" / "my name's John Smith"
+  const selfIntro = transcript.match(/\bmy name(?:'s| is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i)
+  if (selfIntro) return selfIntro[1].trim()
+
+  // "I'm John" / "I am Sarah"
+  const iAm = transcript.match(/\bI(?:'m| am)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]+)?)\b/i)
+  if (iAm) {
+    const name = iAm[1].trim()
+    // Exclude common false positives
+    if (!/^(calling|here|good|fine|okay|not|looking|trying|wondering)/i.test(name)) return name
+  }
+
+  // AI confirmation: "Thank you, John" / "Got it, Sarah" / "Great, Michael"
+  const aiConfirm = transcript.match(/\b(?:Thank you|Got it|Great|Perfect|Wonderful|Of course),\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]+)?)[.!,]/i)
+  if (aiConfirm) return aiConfirm[1].trim()
+
+  // AI reads name back: "Is that E-b-a-d? ... Ebad" — grab the word after the question
+  const spelled = transcript.match(/Is that\s+[A-Z](?:\s*[-–]\s*[A-Za-z])+\?[^.]*?(\b[A-Z][a-z]{2,}\b)/i)
+  if (spelled) return spelled[1].trim()
+
+  return null
+}
+
 // ─── Core processor ────────────────────────────────────────────────────────────
 
 export async function processVapiEndOfCall(
@@ -255,8 +283,8 @@ export async function processVapiEndOfCall(
       : inferCallOutcome(summary, transcript, report.endedReason, mapped.length)
     const sentiment   = inferSentiment(transcript)
 
-    // Use caller name from structuredData if Vapi didn't send customer.name
-    const resolvedCallerName = visitorName ?? sd?.callerName ?? null
+    // Extract caller name: Vapi customer.name → structuredData → transcript patterns
+    const resolvedCallerName = visitorName ?? sd?.callerName ?? extractNameFromTranscript(transcript)
 
     let callLogId: string | null = null
     try {
@@ -414,7 +442,9 @@ export async function POST(request: NextRequest) {
 
     try {
       const ip          = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null
-      const isPhoneCall = type === "end-of-call-report"
+      // Route by call type: voice calls → CallLog, web chats → ChatLog
+      const callType    = (call as VapiCall).type ?? "webCall"
+      const isPhoneCall = callType === "inboundPhoneCall" || callType === "outboundPhoneCall"
       const result = await processVapiEndOfCall(report, ip, isPhoneCall)
       if (result.alreadyExists) {
         return NextResponse.json({ received: true, processed: false, reason: "duplicate", chatLogId: result.chatLogId, callLogId: result.callLogId })
