@@ -59,7 +59,8 @@ const UPDATABLE_FIELDS = [
   "firstName", "lastName", "dateOfBirth", "gender", "phone", "email",
   "address", "city", "state", "zipCode", "parentName", "parentRelation",
   "parentPhone", "parentEmail", "emergencyContact", "emergencyPhone",
-  "insuranceProvider", "insuranceId", "allergies", "medications",
+  "insuranceProvider", "insuranceId", "insurancePlanType", "insurancePlan",
+  "insuranceMemberId", "allergies", "medications",
   "medicalNotes", "preferredLanguage", "preferredProvider", "status",
 ] as const
 

@@ -253,9 +253,12 @@ model Patient {
   emergencyPhone   String? @map("emergency_phone")
 
   // Medical
-  insuranceProvider String? @map("insurance_provider")
-  insuranceId       String? @map("insurance_id")
-  allergies         String?
+  insuranceProvider  String? @map("insurance_provider")
+  insuranceId        String? @map("insurance_id")
+  insurancePlanType  String? @map("insurance_plan_type")
+  insurancePlan      String? @map("insurance_plan")
+  insuranceMemberId  String? @map("insurance_member_id")
+  allergies          String?
   medications       String?
   medicalNotes      String? @map("medical_notes")
 

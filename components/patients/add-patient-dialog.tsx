@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ChevronDown, ChevronUp, Loader2, Plus } from "lucide-react";
+import { ALL_PLANS, PLAN_TYPES } from "@/lib/insurance-plans";
 import {
   Dialog,
   DialogContent,
@@ -64,9 +65,12 @@ const patientSchema = z.object({
   parentEmail:     z.string().email("Invalid email").or(z.literal("")).optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone:  z.string().regex(US_PHONE, "Use format (555) 555-5555").or(z.literal("")).optional(),
-  insuranceProvider: z.string().optional(),
-  insuranceId:     z.string().optional(),
-  allergies:       z.string().optional(),
+  insuranceProvider:  z.string().optional(),
+  insuranceId:        z.string().optional(),
+  insurancePlanType:  z.string().optional(),
+  insurancePlan:      z.string().optional(),
+  insuranceMemberId:  z.string().optional(),
+  allergies:          z.string().optional(),
   medications:     z.string().optional(),
   medicalNotes:    z.string().optional(),
   preferredLanguage: z.string().default("English"),
@@ -107,10 +111,16 @@ export default function AddPatientDialog({ isOpen, onClose, onSuccess }: AddPati
       parentName: "", parentPhone: "", parentEmail: "",
       emergencyContact: "", emergencyPhone: "",
       insuranceProvider: "", insuranceId: "",
+      insurancePlanType: "", insurancePlan: "", insuranceMemberId: "",
       allergies: "", medications: "", medicalNotes: "",
       preferredLanguage: "English",
     },
   });
+
+  const selectedPlanType = form.watch("insurancePlanType");
+  const availablePlans = selectedPlanType && selectedPlanType in ALL_PLANS
+    ? ALL_PLANS[selectedPlanType as keyof typeof ALL_PLANS]
+    : [];
 
   async function onSubmit(values: PatientFormValues) {
     setIsSubmitting(true);
@@ -449,6 +459,63 @@ export default function AddPatientDialog({ isOpen, onClose, onSuccess }: AddPati
                       </FormItem>
                     )} />
                   </div>
+
+                  {/* insurancePlanType + insurancePlan */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField control={form.control} name="insurancePlanType" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Plan Type</FormLabel>
+                        <Select
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            form.setValue("insurancePlan", "");
+                          }}
+                          value={field.value ?? ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {PLAN_TYPES.map((t) => (
+                              <SelectItem key={t} value={t}>{t}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="insurancePlan" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Plan Name</FormLabel>
+                        <Select
+                          onValueChange={(value) => field.onChange(value)}
+                          value={field.value ?? ""}
+                          disabled={availablePlans.length === 0}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={availablePlans.length === 0 ? "Select type first" : "Select plan"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {availablePlans.map((p) => (
+                              <SelectItem key={p} value={p}>{p}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+
+                  {/* insuranceMemberId */}
+                  <FormField control={form.control} name="insuranceMemberId" render={({ field }) => (
+                    <FormItem className="w-1/2">
+                      <FormLabel>Insurance Member ID</FormLabel>
+                      <FormControl><Input placeholder="e.g. XYZ123456789" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
 
                   {/* allergies */}
                   <FormField control={form.control} name="allergies" render={({ field }) => (

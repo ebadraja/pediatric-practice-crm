@@ -67,6 +67,9 @@ interface Patient {
   totalVisits: number;
   lastVisitAt: string | null;
   insuranceProvider: string | null;
+  insurancePlanType: string | null;
+  insurancePlan: string | null;
+  insuranceMemberId: string | null;
   _count: { appointments: number };
 }
 
@@ -463,6 +466,7 @@ export default function PatientsPage() {
                       <TableHead>Patient</TableHead>
                       <TableHead>DOB</TableHead>
                       <TableHead>Phone</TableHead>
+                      <TableHead>Insurance</TableHead>
                       <TableHead>Last Visit</TableHead>
                       <TableHead className="text-center">Total Visits</TableHead>
                       <TableHead>Status</TableHead>
@@ -514,6 +518,22 @@ export default function PatientsPage() {
                           {/* Phone */}
                           <TableCell className="text-slate-700 dark:text-slate-300">
                             {patient.phone ?? "—"}
+                          </TableCell>
+
+                          {/* Insurance */}
+                          <TableCell className="text-slate-700 dark:text-slate-300 text-sm">
+                            {patient.insurancePlan ? (
+                              <div>
+                                <p className="font-medium leading-tight">{patient.insurancePlan}</p>
+                                {patient.insurancePlanType && (
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">{patient.insurancePlanType}</p>
+                                )}
+                              </div>
+                            ) : patient.insuranceProvider ? (
+                              <span>{patient.insuranceProvider}</span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-500">—</span>
+                            )}
                           </TableCell>
 
                           {/* Last visit */}
