@@ -929,9 +929,11 @@ function StaffActionsMenu({ user, onEdit, onChangeRole, onToggleActive, onResetP
         <MoreVertical className="w-4 h-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-xs text-slate-500 dark:text-slate-400 font-normal">
-          {user.firstName} {user.lastName}
-        </DropdownMenuLabel>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-xs text-slate-500 dark:text-slate-400 font-normal">
+            {user.firstName} {user.lastName}
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
 
         <DropdownMenuItem onClick={() => onEdit(user)}>
