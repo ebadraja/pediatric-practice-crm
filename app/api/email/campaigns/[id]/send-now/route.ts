@@ -53,6 +53,34 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
 async function buildRecipients(campaign: { segmentFilters: unknown }) {
   const filters = (campaign.segmentFilters ?? {}) as Record<string, unknown>
+
+  // Hand-picked patient list takes priority over segment filters
+  if (Array.isArray(filters.specificPatientIds) && (filters.specificPatientIds as string[]).length > 0) {
+    const patients = await prisma.patient.findMany({
+      where: {
+        id:          { in: filters.specificPatientIds as string[] },
+        status:      'ACTIVE',
+        unsubscribe: null,
+      },
+      select: {
+        id: true, firstName: true, lastName: true,
+        parentName: true, email: true, parentEmail: true,
+      },
+    })
+    return patients
+      .filter(p => p.parentEmail ?? p.email)
+      .map(p => ({
+        patientId: p.id,
+        toEmail:   encrypt(p.parentEmail ?? p.email!),
+        variables: {
+          patient_name:       `${p.firstName} ${p.lastName}`,
+          patient_first_name: p.firstName,
+          parent_name:        p.parentName ?? p.firstName,
+          practice_name:      'Kids 0-18 Integrated Pediatrics',
+        },
+      }))
+  }
+
   const where: Record<string, unknown> = { status: 'ACTIVE', unsubscribe: null }
 
   if (filters.provider) {

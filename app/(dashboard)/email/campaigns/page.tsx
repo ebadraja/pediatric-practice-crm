@@ -24,7 +24,7 @@ import {
   Plus, ArrowLeft, ChevronLeft, ChevronRight, MoreVertical,
   Mail, AlertCircle, Send, Clock, Users, BarChart2,
   CheckCircle2, XCircle, PauseCircle, Copy, Eye,
-  Loader2, Calendar, RefreshCw,
+  Loader2, Calendar, RefreshCw, Search, X, Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -70,6 +70,14 @@ interface Template {
   subject: string;
   isActive: boolean;
   _count: { logs: number; campaigns: number };
+}
+
+interface PickablePatient {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string | null;
+  parentName: string | null;
 }
 
 interface AudienceFilters {
@@ -120,6 +128,16 @@ const VISIT_TYPE_OPTIONS = [
 ];
 
 const WIZARD_STEPS = ["Select Template", "Define Audience", "Personalize", "Schedule & Send"];
+
+const MERGE_TAG_HINTS = [
+  "{{patient_first_name}}",
+  "{{parent_first_name}}",
+  "{{practice_name}}",
+  "{{practice_phone}}",
+  "{{unsubscribe_link}}",
+];
+
+const PICKER_PAGE_SIZE = 15;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -230,6 +248,23 @@ export default function EmailCampaignsPage() {
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [wizardSuccess, setWizardSuccess] = useState<string | null>(null);
 
+  // ── Template creator state ──
+  const [showCreateTemplate, setShowCreateTemplate] = useState(false);
+  const [newTplName, setNewTplName] = useState("");
+  const [newTplSubject, setNewTplSubject] = useState("");
+  const [newTplBody, setNewTplBody] = useState("");
+  const [tplCreateLoading, setTplCreateLoading] = useState(false);
+  const [tplCreateError, setTplCreateError] = useState<string | null>(null);
+
+  // ── Patient picker state ──
+  const [audienceMode, setAudienceMode] = useState<"segment" | "specific">("segment");
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerPatients, setPickerPatients] = useState<PickablePatient[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [selectedPatientIds, setSelectedPatientIds] = useState<string[]>([]);
+  const [pickerPage, setPickerPage] = useState(1);
+  const [pickerTotal, setPickerTotal] = useState(0);
+
   // ── Detail state ──
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [detailCampaign, setDetailCampaign] = useState<CampaignDetail | null>(null);
@@ -243,6 +278,7 @@ export default function EmailCampaignsPage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const recipientDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pickerDebounce    = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── List fetch ──────────────────────────────────────────────────────────────
 
@@ -270,12 +306,12 @@ export default function EmailCampaignsPage() {
   useEffect(() => { if (view === "list") fetchCampaigns(); }, [fetchCampaigns, view]);
   useEffect(() => { setCurrentPage(1); }, [statusFilter, dateFrom, dateTo]);
 
-  // ── Templates fetch ─────────────────────────────────────────────────────────
+  // ── Templates fetch (all active templates, not just BULK) ──────────────────
 
   const fetchTemplates = useCallback(async () => {
     setTemplatesLoading(true);
     try {
-      const res = await fetch("/api/email/templates?type=BULK&limit=50");
+      const res = await fetch("/api/email/templates?limit=50");
       if (!res.ok) throw new Error("Failed to load templates");
       const json = await res.json();
       setTemplates(json.data);
@@ -288,12 +324,11 @@ export default function EmailCampaignsPage() {
 
   useEffect(() => { if (view === "create") fetchTemplates(); }, [view, fetchTemplates]);
 
-  // ── Recipient count debounce ────────────────────────────────────────────────
+  // ── Recipient count (segment mode only) ────────────────────────────────────
 
   const fetchRecipientCount = useCallback(async (id: string, filters: AudienceFilters) => {
     setRecipientsLoading(true);
     try {
-      // Update segment filters on the campaign first
       const segmentFilters = {
         ageRange:            [filters.ageMin, filters.ageMax],
         lastVisitMonths:     filters.lastVisitMonths ? parseInt(filters.lastVisitMonths) : undefined,
@@ -319,13 +354,41 @@ export default function EmailCampaignsPage() {
   }, []);
 
   useEffect(() => {
-    if (!draftId || wizardStep !== 2) return;
+    if (!draftId || wizardStep !== 2 || audienceMode !== "segment") return;
     if (recipientDebounce.current) clearTimeout(recipientDebounce.current);
     recipientDebounce.current = setTimeout(() => {
       fetchRecipientCount(draftId, audienceFilters);
     }, 600);
     return () => { if (recipientDebounce.current) clearTimeout(recipientDebounce.current); };
-  }, [audienceFilters, draftId, wizardStep, fetchRecipientCount]);
+  }, [audienceFilters, draftId, wizardStep, audienceMode, fetchRecipientCount]);
+
+  // ── Patient picker fetch ────────────────────────────────────────────────────
+
+  const fetchPickerPatients = useCallback(async (search: string, page: number) => {
+    setPickerLoading(true);
+    try {
+      const p = new URLSearchParams({ page: String(page), limit: String(PICKER_PAGE_SIZE), status: "ACTIVE" });
+      if (search.trim()) p.set("search", search.trim());
+      const res = await fetch(`/api/patients?${p}`);
+      if (!res.ok) throw new Error("Failed");
+      const json = await res.json();
+      setPickerPatients(json.patients ?? json.data ?? []);
+      setPickerTotal(json.total ?? json.pagination?.total ?? 0);
+    } catch {
+      setPickerPatients([]);
+    } finally {
+      setPickerLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (wizardStep !== 2 || audienceMode !== "specific") return;
+    if (pickerDebounce.current) clearTimeout(pickerDebounce.current);
+    pickerDebounce.current = setTimeout(() => {
+      fetchPickerPatients(pickerSearch, pickerPage);
+    }, 300);
+    return () => { if (pickerDebounce.current) clearTimeout(pickerDebounce.current); };
+  }, [pickerSearch, pickerPage, wizardStep, audienceMode, fetchPickerPatients]);
 
   // ── Detail fetch ────────────────────────────────────────────────────────────
 
@@ -365,7 +428,7 @@ export default function EmailCampaignsPage() {
 
   const handleWizardStep1Continue = async () => {
     if (!campaignName.trim()) { setWizardError("Campaign name is required."); return; }
-    if (!selectedTemplateId) { setWizardError("Please select a template."); return; }
+    if (!selectedTemplateId)  { setWizardError("Please select a template."); return; }
     setWizardError(null);
     setWizardLoading(true);
     try {
@@ -386,6 +449,64 @@ export default function EmailCampaignsPage() {
     } finally {
       setWizardLoading(false);
     }
+  };
+
+  const handleCreateTemplate = async () => {
+    if (!newTplName.trim() || !newTplSubject.trim() || !newTplBody.trim()) {
+      setTplCreateError("Name, subject line, and email body are all required.");
+      return;
+    }
+    setTplCreateLoading(true);
+    setTplCreateError(null);
+    try {
+      const res = await fetch("/api/email/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name:     newTplName.trim(),
+          type:     "BULK",
+          subject:  newTplSubject.trim(),
+          htmlBody: newTplBody.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to create template");
+      // Prepend to list and auto-select the new template
+      setTemplates(prev => [{ ...json, _count: { logs: 0, campaigns: 0 } }, ...prev]);
+      setSelectedTemplateId(json.id);
+      setShowCreateTemplate(false);
+      setNewTplName("");
+      setNewTplSubject("");
+      setNewTplBody("");
+    } catch (err) {
+      setTplCreateError(err instanceof Error ? err.message : "Failed to create template.");
+    } finally {
+      setTplCreateLoading(false);
+    }
+  };
+
+  const handleStep2Continue = async () => {
+    if (audienceMode === "specific" && selectedPatientIds.length === 0) {
+      setWizardError("Please select at least one patient.");
+      return;
+    }
+    setWizardError(null);
+
+    // For specific mode — save patient IDs into the campaign's segment filters
+    if (audienceMode === "specific" && draftId) {
+      try {
+        await fetch(`/api/email/campaigns/${draftId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ segmentFilters: { specificPatientIds: selectedPatientIds } }),
+        });
+        setRecipientCount(selectedPatientIds.length);
+      } catch {
+        // Non-fatal — the send-now route will still use the IDs stored here
+      }
+    }
+
+    setWizardStep(3);
   };
 
   const handleSendNow = async () => {
@@ -448,6 +569,14 @@ export default function EmailCampaignsPage() {
     setWizardError(null);
     setWizardSuccess(null);
     setWizardLoading(false);
+    // Template creator
+    setShowCreateTemplate(false);
+    setNewTplName(""); setNewTplSubject(""); setNewTplBody("");
+    setTplCreateError(null); setTplCreateLoading(false);
+    // Patient picker
+    setAudienceMode("segment");
+    setPickerSearch(""); setPickerPatients([]); setPickerLoading(false);
+    setSelectedPatientIds([]); setPickerPage(1); setPickerTotal(0);
   };
 
   // ── Detail action handlers ───────────────────────────────────────────────────
@@ -474,8 +603,8 @@ export default function EmailCampaignsPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name:           `${detailCampaign.name} (Copy)`,
-            templateId:     detailCampaign.template.id,
+            name:       `${detailCampaign.name} (Copy)`,
+            templateId: detailCampaign.template.id,
           }),
         });
         const json = await res.json();
@@ -508,7 +637,6 @@ export default function EmailCampaignsPage() {
   if (view === "detail") {
     return (
       <div className="pt-4 pb-8 space-y-6">
-        {/* Back + Title */}
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" className="gap-2 text-slate-600 dark:text-slate-400" onClick={() => { setView("list"); setDetailCampaign(null); }}>
             <ArrowLeft className="h-4 w-4" /> Back to Campaigns
@@ -533,7 +661,6 @@ export default function EmailCampaignsPage() {
           </Card>
         ) : detailCampaign ? (
           <>
-            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <div className="flex items-center gap-3 flex-wrap">
@@ -573,15 +700,14 @@ export default function EmailCampaignsPage() {
               </div>
             </div>
 
-            {/* Stats cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               {[
-                { label: "Total Sent",   value: detailCampaign.stats.sent,      icon: Send,       color: "text-slate-600 dark:text-slate-400",    bg: "bg-slate-50 dark:bg-slate-800" },
-                { label: "Delivered",    value: detailCampaign.stats.delivered,  icon: CheckCircle2, color: "text-green-600 dark:text-green-400",  bg: "bg-green-50 dark:bg-green-950/40" },
-                { label: "Opened",       value: `${detailCampaign.stats.openRate}%`, icon: Eye,    color: "text-blue-600 dark:text-blue-400",      bg: "bg-blue-50 dark:bg-blue-950/40" },
-                { label: "Clicked",      value: `${detailCampaign.stats.clickRate}%`, icon: BarChart2, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-50 dark:bg-purple-950/40" },
-                { label: "Bounced",      value: detailCampaign.stats.bounced,    icon: AlertCircle, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-950/40" },
-                { label: "Unsubscribed", value: "—",                             icon: XCircle,    color: "text-red-600 dark:text-red-400",        bg: "bg-red-50 dark:bg-red-950/40" },
+                { label: "Total Sent",   value: detailCampaign.stats.sent,               icon: Send,        color: "text-slate-600 dark:text-slate-400",    bg: "bg-slate-50 dark:bg-slate-800" },
+                { label: "Delivered",    value: detailCampaign.stats.delivered,           icon: CheckCircle2, color: "text-green-600 dark:text-green-400",   bg: "bg-green-50 dark:bg-green-950/40" },
+                { label: "Opened",       value: `${detailCampaign.stats.openRate}%`,      icon: Eye,         color: "text-blue-600 dark:text-blue-400",      bg: "bg-blue-50 dark:bg-blue-950/40" },
+                { label: "Clicked",      value: `${detailCampaign.stats.clickRate}%`,     icon: BarChart2,   color: "text-purple-600 dark:text-purple-400",  bg: "bg-purple-50 dark:bg-purple-950/40" },
+                { label: "Bounced",      value: detailCampaign.stats.bounced,             icon: AlertCircle, color: "text-orange-600 dark:text-orange-400",  bg: "bg-orange-50 dark:bg-orange-950/40" },
+                { label: "Unsubscribed", value: "—",                                      icon: XCircle,     color: "text-red-600 dark:text-red-400",        bg: "bg-red-50 dark:bg-red-950/40" },
               ].map(({ label, value, icon: Icon, color, bg }) => (
                 <div key={label} className={cn(card, "p-4")}>
                   <div className="flex items-start justify-between mb-2">
@@ -595,7 +721,6 @@ export default function EmailCampaignsPage() {
               ))}
             </div>
 
-            {/* Timeline chart */}
             <div className={card}>
               <div className={cardHeader}>
                 <h2 className={cardTitle}>Emails Sent Over Time</h2>
@@ -622,7 +747,6 @@ export default function EmailCampaignsPage() {
               </div>
             </div>
 
-            {/* Recipient log table */}
             <div className={card}>
               <div className={cn(cardHeader, "flex items-center justify-between")}>
                 <h2 className={cardTitle}>Recipients ({detailLogsTotal})</h2>
@@ -700,9 +824,11 @@ export default function EmailCampaignsPage() {
   if (view === "create") {
     const selectedTemplate = templates.find(t => t.id === selectedTemplateId) ?? null;
 
+    // Patient picker helpers
+    const allOnPage = pickerPatients.length > 0 && pickerPatients.every(p => selectedPatientIds.includes(p.id));
+
     return (
       <div className="pt-4 pb-8 space-y-6 max-w-3xl">
-        {/* Back */}
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" className="gap-2 text-slate-600 dark:text-slate-400" onClick={() => { resetWizard(); setView("list"); }}>
             <ArrowLeft className="h-4 w-4" /> Back to Campaigns
@@ -732,6 +858,7 @@ export default function EmailCampaignsPage() {
         {/* ── Step 1: Select Template ── */}
         {wizardStep === 1 && (
           <div className="space-y-6">
+            {/* Campaign name */}
             <div className={cn(card, "p-6 space-y-4")}>
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Campaign Name</label>
@@ -743,16 +870,12 @@ export default function EmailCampaignsPage() {
               </div>
             </div>
 
+            {/* Template picker */}
             <div>
-              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-3">Choose a Bulk Template</h2>
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-3">Choose a Template</h2>
               {templatesLoading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
-                </div>
-              ) : templates.length === 0 ? (
-                <div className={cn(card, "flex flex-col items-center justify-center py-12 gap-3")}>
-                  <Mail className="h-10 w-10 text-slate-300 dark:text-slate-600" />
-                  <p className="text-sm text-slate-500 dark:text-slate-400">No bulk templates found. Create one in Settings first.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -760,7 +883,7 @@ export default function EmailCampaignsPage() {
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => { setSelectedTemplateId(t.id); setWizardError(null); }}
+                      onClick={() => { setSelectedTemplateId(t.id); setWizardError(null); setShowCreateTemplate(false); }}
                       className={cn(
                         "text-left p-5 rounded-xl border-2 transition-all",
                         selectedTemplateId === t.id
@@ -776,7 +899,7 @@ export default function EmailCampaignsPage() {
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mb-3">{t.subject}</p>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">BULK</span>
+                        <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">{t.type}</span>
                         <span className="text-xs text-slate-400 dark:text-slate-500">{t._count.campaigns} campaign{t._count.campaigns !== 1 ? "s" : ""}</span>
                       </div>
                     </button>
@@ -784,6 +907,108 @@ export default function EmailCampaignsPage() {
                 </div>
               )}
             </div>
+
+            {/* Inline template creator */}
+            {showCreateTemplate ? (
+              <div className={cn(card, "p-6 space-y-5 border-blue-200 dark:border-blue-800")}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/40">
+                      <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <h3 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">New Bulk Template</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setShowCreateTemplate(false); setTplCreateError(null); }}
+                    className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {tplCreateError && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" /> {tplCreateError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Template Name</label>
+                    <Input
+                      placeholder="e.g. Spring Newsletter"
+                      value={newTplName}
+                      onChange={e => { setNewTplName(e.target.value); setTplCreateError(null); }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Subject Line</label>
+                    <Input
+                      placeholder="e.g. A message for {{patient_first_name}}'s family"
+                      value={newTplSubject}
+                      onChange={e => { setNewTplSubject(e.target.value); setTplCreateError(null); }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Email Body <span className="text-slate-400 font-normal">(HTML supported)</span></label>
+                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                      <span className="text-xs text-slate-400 mr-1">Insert:</span>
+                      {MERGE_TAG_HINTS.map(tag => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setNewTplBody(b => b + tag)}
+                          className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950/40 dark:hover:text-blue-400 font-mono transition-colors"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <textarea
+                    rows={10}
+                    placeholder={"<p>Dear {{parent_first_name}},</p>\n\n<p>We wanted to reach out regarding {{patient_first_name}}'s upcoming care at {{practice_name}}.</p>\n\n<p><a href=\"{{unsubscribe_link}}\">Unsubscribe</a></p>"}
+                    value={newTplBody}
+                    onChange={e => { setNewTplBody(e.target.value); setTplCreateError(null); }}
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                  />
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                    Include <span className="font-mono">{"{{unsubscribe_link}}"}</span> in all bulk emails — required for compliance.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setShowCreateTemplate(false); setTplCreateError(null); }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="gap-2 bg-blue-600 hover:bg-blue-700"
+                    disabled={tplCreateLoading}
+                    onClick={handleCreateTemplate}
+                  >
+                    {tplCreateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Create & Select
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setShowCreateTemplate(true); setSelectedTemplateId(null); }}
+                className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all text-sm font-medium"
+              >
+                <Plus className="h-4 w-4" /> Create new template
+              </button>
+            )}
 
             <div className="flex justify-end">
               <Button className="gap-2 bg-blue-600 hover:bg-blue-700" disabled={wizardLoading} onClick={handleWizardStep1Continue}>
@@ -798,127 +1023,303 @@ export default function EmailCampaignsPage() {
         {/* ── Step 2: Define Audience ── */}
         {wizardStep === 2 && (
           <div className="space-y-6">
-            <div className={cn(card, "p-6 space-y-6")}>
 
-              {/* Age range */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
-                  Age Range: <span className="text-blue-600 dark:text-blue-400">{audienceFilters.ageMin} – {audienceFilters.ageMax} years</span>
-                </label>
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <span className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Min age</span>
-                    <input
-                      type="range" min={0} max={18} step={1}
-                      value={audienceFilters.ageMin}
-                      onChange={e => setAudienceFilters(f => ({ ...f, ageMin: Math.min(parseInt(e.target.value), f.ageMax) }))}
-                      className="w-full accent-blue-600"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <span className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Max age</span>
-                    <input
-                      type="range" min={0} max={18} step={1}
-                      value={audienceFilters.ageMax}
-                      onChange={e => setAudienceFilters(f => ({ ...f, ageMax: Math.max(parseInt(e.target.value), f.ageMin) }))}
-                      className="w-full accent-blue-600"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  <span>0</span><span>18</span>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 dark:border-slate-800" />
-
-              {/* Last visit */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Last Visit More Than</label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number" min={1} placeholder="e.g. 12"
-                      className="w-24"
-                      value={audienceFilters.lastVisitMonths}
-                      onChange={e => setAudienceFilters(f => ({ ...f, lastVisitMonths: e.target.value }))}
-                    />
-                    <span className="text-sm text-slate-600 dark:text-slate-400">months ago</span>
-                  </div>
-                </div>
-
-                {/* Upcoming appointment */}
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Upcoming Appointment</label>
-                  <div className="flex gap-2">
-                    {[["Any", ""], ["Yes", "yes"], ["No", "no"]].map(([label, val]) => (
-                      <button key={val} type="button"
-                        onClick={() => setAudienceFilters(f => ({ ...f, upcomingAppointment: val }))}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors",
-                          audienceFilters.upcomingAppointment === val
-                            ? "bg-blue-600 border-blue-600 text-white"
-                            : "border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-slate-400"
-                        )}
-                      >{label}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 dark:border-slate-800" />
-
-              {/* Provider + visit types */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Specific Doctor</label>
-                  <Input
-                    placeholder="e.g. Dr. Tamas"
-                    value={audienceFilters.provider}
-                    onChange={e => setAudienceFilters(f => ({ ...f, provider: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Visit Type History</label>
-                  <div className="space-y-2">
-                    {VISIT_TYPE_OPTIONS.map(opt => (
-                      <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={audienceFilters.visitTypes.includes(opt.value)}
-                          onChange={e => setAudienceFilters(f => ({
-                            ...f,
-                            visitTypes: e.target.checked
-                              ? [...f.visitTypes, opt.value]
-                              : f.visitTypes.filter(v => v !== opt.value),
-                          }))}
-                          className="accent-blue-600 w-4 h-4"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">{opt.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            {/* Mode toggle */}
+            <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+              {(["segment", "specific"] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => { setAudienceMode(mode); setWizardError(null); }}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors",
+                    audienceMode === mode
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+                  )}
+                >
+                  {mode === "segment" ? (
+                    <><Filter className="h-4 w-4" /> By Segment Filters</>
+                  ) : (
+                    <><Users className="h-4 w-4" /> Pick Specific Patients</>
+                  )}
+                </button>
+              ))}
             </div>
 
-            {/* Estimated recipients */}
+            {/* ── Segment filters (existing) ── */}
+            {audienceMode === "segment" && (
+              <div className={cn(card, "p-6 space-y-6")}>
+                {/* Age range */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+                    Age Range: <span className="text-blue-600 dark:text-blue-400">{audienceFilters.ageMin} – {audienceFilters.ageMax} years</span>
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Min age</span>
+                      <input
+                        type="range" min={0} max={18} step={1}
+                        value={audienceFilters.ageMin}
+                        onChange={e => setAudienceFilters(f => ({ ...f, ageMin: Math.min(parseInt(e.target.value), f.ageMax) }))}
+                        className="w-full accent-blue-600"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Max age</span>
+                      <input
+                        type="range" min={0} max={18} step={1}
+                        value={audienceFilters.ageMax}
+                        onChange={e => setAudienceFilters(f => ({ ...f, ageMax: Math.max(parseInt(e.target.value), f.ageMin) }))}
+                        className="w-full accent-blue-600"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500 mt-1">
+                    <span>0</span><span>18</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 dark:border-slate-800" />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Last Visit More Than</label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number" min={1} placeholder="e.g. 12"
+                        className="w-24"
+                        value={audienceFilters.lastVisitMonths}
+                        onChange={e => setAudienceFilters(f => ({ ...f, lastVisitMonths: e.target.value }))}
+                      />
+                      <span className="text-sm text-slate-600 dark:text-slate-400">months ago</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Upcoming Appointment</label>
+                    <div className="flex gap-2">
+                      {[["Any", ""], ["Yes", "yes"], ["No", "no"]].map(([label, val]) => (
+                        <button key={val} type="button"
+                          onClick={() => setAudienceFilters(f => ({ ...f, upcomingAppointment: val }))}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors",
+                            audienceFilters.upcomingAppointment === val
+                              ? "bg-blue-600 border-blue-600 text-white"
+                              : "border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-slate-400"
+                          )}
+                        >{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 dark:border-slate-800" />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Specific Doctor</label>
+                    <Input
+                      placeholder="e.g. Dr. Tamas"
+                      value={audienceFilters.provider}
+                      onChange={e => setAudienceFilters(f => ({ ...f, provider: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Visit Type History</label>
+                    <div className="space-y-2">
+                      {VISIT_TYPE_OPTIONS.map(opt => (
+                        <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={audienceFilters.visitTypes.includes(opt.value)}
+                            onChange={e => setAudienceFilters(f => ({
+                              ...f,
+                              visitTypes: e.target.checked
+                                ? [...f.visitTypes, opt.value]
+                                : f.visitTypes.filter(v => v !== opt.value),
+                            }))}
+                            className="accent-blue-600 w-4 h-4"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Patient picker ── */}
+            {audienceMode === "specific" && (
+              <div className={cn(card, "p-5 space-y-4")}>
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <Input
+                    placeholder="Search by patient or parent name…"
+                    value={pickerSearch}
+                    onChange={e => { setPickerSearch(e.target.value); setPickerPage(1); }}
+                    className="pl-9"
+                  />
+                </div>
+
+                {/* Selection controls */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className={cn(
+                    "font-semibold",
+                    selectedPatientIds.length > 0
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-slate-500 dark:text-slate-400"
+                  )}>
+                    {selectedPatientIds.length} patient{selectedPatientIds.length !== 1 ? "s" : ""} selected
+                  </span>
+                  <div className="flex gap-3 text-xs">
+                    {pickerPatients.length > 0 && (
+                      <button
+                        type="button"
+                        className="text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                        onClick={() => {
+                          const pageIds = pickerPatients.map(p => p.id);
+                          if (allOnPage) {
+                            setSelectedPatientIds(ids => ids.filter(id => !pageIds.includes(id)));
+                          } else {
+                            setSelectedPatientIds(ids => [...new Set([...ids, ...pageIds])]);
+                          }
+                        }}
+                      >
+                        {allOnPage ? "Deselect page" : "Select page"}
+                      </button>
+                    )}
+                    {selectedPatientIds.length > 0 && (
+                      <button
+                        type="button"
+                        className="text-slate-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                        onClick={() => setSelectedPatientIds([])}
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Patient list */}
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                  {pickerLoading ? (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className="flex items-center gap-3 px-4 py-3">
+                          <Skeleton className="h-4 w-4 rounded flex-shrink-0" />
+                          <div className="flex-1 space-y-1.5">
+                            <Skeleton className="h-3.5 w-40" />
+                            <Skeleton className="h-3 w-24" />
+                          </div>
+                          <Skeleton className="h-3 w-12 flex-shrink-0" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : pickerPatients.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-400">
+                      <Users className="h-8 w-8" />
+                      <p className="text-sm">{pickerSearch ? "No patients match your search" : "No active patients found"}</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto">
+                      {pickerPatients.map(p => {
+                        const checked = selectedPatientIds.includes(p.id);
+                        const age = p.dateOfBirth
+                          ? Math.floor((Date.now() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000))
+                          : null;
+                        return (
+                          <label
+                            key={p.id}
+                            className={cn(
+                              "flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors select-none",
+                              checked
+                                ? "bg-blue-50 dark:bg-blue-950/20"
+                                : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setSelectedPatientIds(ids =>
+                                  checked ? ids.filter(id => id !== p.id) : [...ids, p.id]
+                                )
+                              }
+                              className="accent-blue-600 h-4 w-4 flex-shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                                {p.firstName} {p.lastName}
+                              </p>
+                              {p.parentName && (
+                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                  Parent: {p.parentName}
+                                </p>
+                              )}
+                            </div>
+                            {age !== null && (
+                              <span className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">
+                                {age} yr{age !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Picker pagination */}
+                {pickerTotal > PICKER_PAGE_SIZE && (
+                  <div className="flex items-center justify-between pt-1">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {(pickerPage - 1) * PICKER_PAGE_SIZE + 1}–{Math.min(pickerPage * PICKER_PAGE_SIZE, pickerTotal)} of {pickerTotal}
+                    </p>
+                    <div className="flex gap-1.5">
+                      <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={pickerPage === 1} onClick={() => setPickerPage(p => p - 1)}>
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={pickerPage * PICKER_PAGE_SIZE >= pickerTotal} onClick={() => setPickerPage(p => p + 1)}>
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Estimated / selected recipients */}
             <div className={cn(card, "p-4 flex items-center gap-4")}>
               <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/40">
                 <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div className="flex-1">
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Estimated Recipients</p>
-                {recipientsLoading ? (
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  {audienceMode === "specific" ? "Selected Patients" : "Estimated Recipients"}
+                </p>
+                {audienceMode === "specific" ? (
+                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                    {selectedPatientIds.length}{" "}
+                    <span className="text-sm font-normal text-slate-500 dark:text-slate-400">patients</span>
+                  </p>
+                ) : recipientsLoading ? (
                   <Skeleton className="h-7 w-24 mt-1" />
                 ) : recipientCount !== null ? (
-                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-50">{recipientCount} <span className="text-sm font-normal text-slate-500 dark:text-slate-400">patients</span></p>
+                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                    {recipientCount}{" "}
+                    <span className="text-sm font-normal text-slate-500 dark:text-slate-400">patients</span>
+                  </p>
                 ) : (
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Calculating…</p>
                 )}
               </div>
-              {recipientCount === 0 && !recipientsLoading && (
+              {audienceMode === "segment" && recipientCount === 0 && !recipientsLoading && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">No matching patients — adjust your filters.</p>
+              )}
+              {audienceMode === "specific" && selectedPatientIds.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">No patients selected yet.</p>
               )}
             </div>
 
@@ -926,7 +1327,7 @@ export default function EmailCampaignsPage() {
               <Button variant="outline" onClick={() => setWizardStep(1)}>
                 <ChevronLeft className="h-4 w-4 mr-1" /> Back
               </Button>
-              <Button className="gap-2 bg-blue-600 hover:bg-blue-700" onClick={() => { setWizardError(null); setWizardStep(3); }}>
+              <Button className="gap-2 bg-blue-600 hover:bg-blue-700" onClick={handleStep2Continue}>
                 Continue <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -937,7 +1338,6 @@ export default function EmailCampaignsPage() {
         {wizardStep === 3 && (
           <div className="space-y-6">
             <div className={cn(card, "p-6 space-y-5")}>
-              {/* Subject line */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Subject Line</label>
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 text-sm">
@@ -947,7 +1347,6 @@ export default function EmailCampaignsPage() {
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Subject comes from the template. Edit the template to change it.</p>
               </div>
 
-              {/* Campaign name review */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Campaign Name</label>
                 <Input
@@ -958,7 +1357,6 @@ export default function EmailCampaignsPage() {
 
               <div className="border-t border-slate-100 dark:border-slate-800" />
 
-              {/* Send test email */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Send Test Email</label>
                 <div className="flex gap-2">
@@ -998,7 +1396,6 @@ export default function EmailCampaignsPage() {
         {/* ── Step 4: Schedule or Send ── */}
         {wizardStep === 4 && (
           <div className="space-y-6">
-            {/* Summary card */}
             <div className={cn(card, "p-5")}>
               <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4">Campaign Summary</h3>
               <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1011,20 +1408,23 @@ export default function EmailCampaignsPage() {
                   <p className="font-medium text-slate-900 dark:text-slate-100 mt-0.5">{selectedTemplate?.name ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 dark:text-slate-400">Est. Recipients</p>
+                  <p className="text-slate-500 dark:text-slate-400">Recipients</p>
                   <p className="font-medium text-slate-900 dark:text-slate-100 mt-0.5">
-                    {recipientCount !== null ? `${recipientCount} patients` : "—"}
+                    {audienceMode === "specific"
+                      ? `${selectedPatientIds.length} hand-picked patients`
+                      : recipientCount !== null ? `~${recipientCount} patients (segment)` : "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-slate-500 dark:text-slate-400">Age Range</p>
-                  <p className="font-medium text-slate-900 dark:text-slate-100 mt-0.5">{audienceFilters.ageMin}–{audienceFilters.ageMax} yrs</p>
+                  <p className="text-slate-500 dark:text-slate-400">Audience</p>
+                  <p className="font-medium text-slate-900 dark:text-slate-100 mt-0.5">
+                    {audienceMode === "specific" ? "Specific patients" : `Ages ${audienceFilters.ageMin}–${audienceFilters.ageMax} yrs`}
+                  </p>
                 </div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Send now */}
               <div className={cn(card, "p-5 flex flex-col gap-4")}>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -1039,7 +1439,6 @@ export default function EmailCampaignsPage() {
                 </Button>
               </div>
 
-              {/* Schedule */}
               <div className={cn(card, "p-5 flex flex-col gap-4")}>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -1086,7 +1485,6 @@ export default function EmailCampaignsPage() {
   return (
     <div className="pt-4 pb-8 space-y-6">
 
-      {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Email Campaigns</h1>
@@ -1100,7 +1498,6 @@ export default function EmailCampaignsPage() {
         </Button>
       </div>
 
-      {/* Filter bar */}
       <Card>
         <CardContent className="pt-4 space-y-4">
           <div className="flex gap-2 flex-wrap">
@@ -1131,7 +1528,6 @@ export default function EmailCampaignsPage() {
         </CardContent>
       </Card>
 
-      {/* Loading skeleton */}
       {listLoading ? (
         <Card>
           <CardContent className="p-0">
@@ -1208,15 +1604,11 @@ export default function EmailCampaignsPage() {
                       onClick={() => openDetail(c.id)}
                     >
                       <TableCell className="font-medium text-slate-900 dark:text-slate-100">{c.name}</TableCell>
-                      <TableCell>
-                        <CampaignStatusBadge status={c.status} />
-                      </TableCell>
+                      <TableCell><CampaignStatusBadge status={c.status} /></TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400 text-sm">{c.template.name}</TableCell>
                       <TableCell className="text-right text-slate-700 dark:text-slate-300">{c.recipientCount}</TableCell>
                       <TableCell className="text-right text-slate-700 dark:text-slate-300">{c._count.logs}</TableCell>
-                      <TableCell className="text-center text-slate-500 dark:text-slate-400">
-                        {c.status === "SENT" ? "—" : "—"}
-                      </TableCell>
+                      <TableCell className="text-center text-slate-500 dark:text-slate-400">—</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400 text-sm">{dateLabel}</TableCell>
                       <TableCell onClick={e => e.stopPropagation()}>
                         <DropdownMenu>
