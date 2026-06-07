@@ -5,28 +5,48 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+} from '@/components/ui/dropdown-menu';
 import InviteStaffModal from '@/components/invite-staff-modal';
 import {
   Users,
   UserPlus,
-  Clock,
   Shield,
   Search,
   MoreVertical,
   CheckCircle,
   AlertCircle,
   User,
-  Lock,
   Eye,
   Mail,
-  Calendar,
   Activity,
-  Phone,
-  BarChart3,
   Check,
   X,
   Loader2,
+  Pencil,
+  KeyRound,
+  UserX,
+  UserCheck,
+  Trash2,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface StaffUser {
@@ -102,6 +122,24 @@ export default function StaffManagementPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('staff');
 
+  // Edit dialog
+  const [editUser, setEditUser] = useState<StaffUser | null>(null);
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', jobTitle: '', role: 'STAFF' as StaffUser['role'] });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  // Delete confirm dialog
+  const [deleteUser, setDeleteUser] = useState<StaffUser | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Toast-style feedback
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
   const fetchStaff = useCallback(async () => {
     try {
       const res = await fetch('/api/staff');
@@ -157,9 +195,95 @@ export default function StaffManagementPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'reject' }),
       });
-      if (res.ok) await fetchStaff();
+      if (res.ok) { await fetchStaff(); showToast('Staff member rejected.', 'error'); }
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const openEdit = (u: StaffUser) => {
+    setEditUser(u);
+    setEditForm({ firstName: u.firstName, lastName: u.lastName, jobTitle: u.jobTitle ?? '', role: u.role });
+    setEditError('');
+  };
+
+  const handleEditSave = async () => {
+    if (!editUser) return;
+    if (!editForm.firstName.trim() || !editForm.lastName.trim()) {
+      setEditError('First and last name are required.');
+      return;
+    }
+    setEditSaving(true);
+    setEditError('');
+    try {
+      const res = await fetch(`/api/staff/${editUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: editForm.firstName.trim(),
+          lastName: editForm.lastName.trim(),
+          jobTitle: editForm.jobTitle.trim() || null,
+          role: editForm.role,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setEditError(data.error || 'Failed to save.'); return; }
+      setEditUser(null);
+      await fetchStaff();
+      showToast('Profile updated successfully.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleChangeRole = async (userId: string, role: StaffUser['role']) => {
+    const res = await fetch(`/api/staff/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    if (res.ok) { await fetchStaff(); showToast(`Role updated to ${role}.`); }
+    else showToast('Failed to change role.', 'error');
+  };
+
+  const handleToggleActive = async (u: StaffUser) => {
+    const res = await fetch(`/api/staff/${u.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'toggle_active' }),
+    });
+    if (res.ok) {
+      await fetchStaff();
+      showToast(`${u.firstName} ${u.lastName} ${u.isActive ? 'deactivated' : 'reactivated'}.`);
+    } else showToast('Failed to update status.', 'error');
+  };
+
+  const handleResetPassword = async (u: StaffUser) => {
+    const res = await fetch(`/api/staff/${u.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reset_password' }),
+    });
+    if (res.ok) showToast(`Password reset to default for ${u.firstName} ${u.lastName}.`);
+    else showToast('Failed to reset password.', 'error');
+  };
+
+  const handleDelete = async () => {
+    if (!deleteUser) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/staff/${deleteUser.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDeleteUser(null);
+        setDeleteConfirmText('');
+        await fetchStaff();
+        showToast(`${deleteUser.firstName} ${deleteUser.lastName} removed from team.`);
+      } else {
+        const data = await res.json();
+        showToast(data.error || 'Failed to remove.', 'error');
+      }
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -314,7 +438,17 @@ export default function StaffManagementPage() {
                               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{u.email}</p>
                             </div>
                           </div>
-                          <Badge className={getRoleColor(u.role)}>{u.role}</Badge>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Badge className={getRoleColor(u.role)}>{u.role}</Badge>
+                            <StaffActionsMenu
+                              user={u}
+                              onEdit={openEdit}
+                              onChangeRole={handleChangeRole}
+                              onToggleActive={handleToggleActive}
+                              onResetPassword={handleResetPassword}
+                              onDelete={setDeleteUser}
+                            />
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div>
@@ -382,9 +516,14 @@ export default function StaffManagementPage() {
                               {new Date(u.createdAt).toLocaleDateString()}
                             </td>
                             <td className="py-3 px-4 text-right">
-                              <button className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-                                <MoreVertical className="w-4 h-4" />
-                              </button>
+                              <StaffActionsMenu
+                                user={u}
+                                onEdit={openEdit}
+                                onChangeRole={handleChangeRole}
+                                onToggleActive={handleToggleActive}
+                                onResetPassword={handleResetPassword}
+                                onDelete={setDeleteUser}
+                              />
                             </td>
                           </tr>
                         ))}
@@ -654,6 +793,209 @@ export default function StaffManagementPage() {
           setActiveTab('invites');
         }}
       />
+
+      {/* Edit Staff Dialog */}
+      <Dialog open={!!editUser} onOpenChange={(open) => { if (!open) setEditUser(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="w-4 h-4" /> Edit Staff Profile
+            </DialogTitle>
+            <DialogDescription>
+              Update {editUser?.firstName} {editUser?.lastName}&apos;s details.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-first">First Name</Label>
+                <Input
+                  id="edit-first"
+                  value={editForm.firstName}
+                  onChange={(e) => setEditForm((p) => ({ ...p, firstName: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-last">Last Name</Label>
+                <Input
+                  id="edit-last"
+                  value={editForm.lastName}
+                  onChange={(e) => setEditForm((p) => ({ ...p, lastName: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-title">Job Title</Label>
+              <Input
+                id="edit-title"
+                placeholder="e.g. Registered Nurse"
+                value={editForm.jobTitle}
+                onChange={(e) => setEditForm((p) => ({ ...p, jobTitle: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-role">Role</Label>
+              <select
+                id="edit-role"
+                value={editForm.role}
+                onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value as StaffUser['role'] }))}
+                className="w-full h-9 px-3 border border-slate-200 dark:border-slate-700 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+              >
+                <option value="ADMIN">Admin</option>
+                <option value="STAFF">Staff</option>
+                <option value="VIEWER">Viewer</option>
+              </select>
+            </div>
+            {editError && (
+              <p className="text-sm text-red-600 flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />{editError}
+              </p>
+            )}
+            <div className="flex gap-2 justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+              <Button variant="outline" onClick={() => setEditUser(null)} disabled={editSaving}>Cancel</Button>
+              <Button onClick={handleEditSave} disabled={editSaving} className="gap-2">
+                {editSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm Dialog */}
+      <Dialog open={!!deleteUser} onOpenChange={(open) => { if (!open) { setDeleteUser(null); setDeleteConfirmText(''); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="w-4 h-4" /> Remove from Team
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently delete {deleteUser?.firstName} {deleteUser?.lastName}&apos;s account and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-3 text-sm text-red-800 dark:text-red-300">
+              Type <strong>{deleteUser?.email}</strong> to confirm deletion.
+            </div>
+            <Input
+              placeholder={deleteUser?.email}
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+            />
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setDeleteUser(null); setDeleteConfirmText(''); }} disabled={deleteLoading}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={deleteConfirmText !== deleteUser?.email || deleteLoading}
+                onClick={handleDelete}
+                className="gap-2"
+              >
+                {deleteLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Remove from Team
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium animate-in slide-in-from-bottom-4 fade-in-0 ${
+          toast.type === 'success'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-600 text-white'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          {toast.msg}
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Actions Dropdown ──────────────────────────────────────────────────────────
+
+interface StaffActionsMenuProps {
+  user: StaffUser;
+  onEdit: (u: StaffUser) => void;
+  onChangeRole: (id: string, role: StaffUser['role']) => void;
+  onToggleActive: (u: StaffUser) => void;
+  onResetPassword: (u: StaffUser) => void;
+  onDelete: (u: StaffUser) => void;
+}
+
+function StaffActionsMenu({ user, onEdit, onChangeRole, onToggleActive, onResetPassword, onDelete }: StaffActionsMenuProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors outline-none">
+        <MoreVertical className="w-4 h-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel className="text-xs text-slate-500 dark:text-slate-400 font-normal">
+          {user.firstName} {user.lastName}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem onClick={() => onEdit(user)}>
+          <Pencil className="w-4 h-4 mr-2 text-slate-500" />
+          Edit Profile
+        </DropdownMenuItem>
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ShieldCheck className="w-4 h-4 mr-2 text-slate-500" />
+            Change Role
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuItem
+              disabled={user.role === 'ADMIN'}
+              onClick={() => onChangeRole(user.id, 'ADMIN')}
+            >
+              <Shield className="w-4 h-4 mr-2 text-purple-500" />
+              Admin
+              {user.role === 'ADMIN' && <span className="ml-auto text-xs text-slate-400">Current</span>}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={user.role === 'STAFF'}
+              onClick={() => onChangeRole(user.id, 'STAFF')}
+            >
+              <User className="w-4 h-4 mr-2 text-blue-500" />
+              Staff
+              {user.role === 'STAFF' && <span className="ml-auto text-xs text-slate-400">Current</span>}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={user.role === 'VIEWER'}
+              onClick={() => onChangeRole(user.id, 'VIEWER')}
+            >
+              <Eye className="w-4 h-4 mr-2 text-slate-500" />
+              Viewer
+              {user.role === 'VIEWER' && <span className="ml-auto text-xs text-slate-400">Current</span>}
+            </DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuItem onClick={() => onToggleActive(user)}>
+          {user.isActive ? (
+            <><UserX className="w-4 h-4 mr-2 text-amber-500" />Deactivate Account</>
+          ) : (
+            <><UserCheck className="w-4 h-4 mr-2 text-green-500" />Reactivate Account</>
+          )}
+        </DropdownMenuItem>
+
+        <DropdownMenuItem onClick={() => onResetPassword(user)}>
+          <KeyRound className="w-4 h-4 mr-2 text-slate-500" />
+          Reset Password
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem variant="destructive" onClick={() => onDelete(user)}>
+          <Trash2 className="w-4 h-4 mr-2" />
+          Remove from Team
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

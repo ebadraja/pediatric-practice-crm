@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 
 export async function PUT(
   req: NextRequest,
@@ -82,11 +83,45 @@ export async function PUT(
       return NextResponse.json({ success: true, message: `${target.firstName} ${target.lastName} has been rejected` });
     }
 
-    // Generic update (role, jobTitle, isActive)
-    const { role, jobTitle, isActive } = body;
+    if (action === 'reset_password') {
+      const newHash = await bcrypt.hash('Kid0-18CRM', 12);
+      await prisma.user.update({ where: { id }, data: { passwordHash: newHash } });
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: 'UPDATE',
+          entity: 'user',
+          entityId: id,
+          changes: { action: 'password_reset', resetBy: session.user.email },
+        },
+      });
+      return NextResponse.json({ success: true, message: `Password reset to default for ${target.firstName} ${target.lastName}` });
+    }
+
+    if (action === 'toggle_active') {
+      const updated = await prisma.user.update({
+        where: { id },
+        data: { isActive: !target.isActive },
+      });
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: 'UPDATE',
+          entity: 'user',
+          entityId: id,
+          changes: { isActive: updated.isActive, changedBy: session.user.email },
+        },
+      });
+      return NextResponse.json({ success: true, user: updated });
+    }
+
+    // Generic update (role, jobTitle, isActive, firstName, lastName)
+    const { role, jobTitle, isActive, firstName, lastName } = body;
     const updated = await prisma.user.update({
       where: { id },
       data: {
+        ...(firstName && { firstName }),
+        ...(lastName && { lastName }),
         ...(role && { role: role.toUpperCase() }),
         ...(jobTitle !== undefined && { jobTitle }),
         ...(isActive !== undefined && { isActive }),
