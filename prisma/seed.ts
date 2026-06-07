@@ -10,7 +10,12 @@ async function main() {
   console.log("🌱 Seeding database...")
 
   // ── 1. CLEAN existing data (order respects FK constraints) ──────────────────
+  await prisma.notification.deleteMany()
   await prisma.auditLog.deleteMany()
+  await prisma.intakeFormAccessControl.deleteMany()
+  await prisma.intakeFormFieldValue.deleteMany()
+  await prisma.intakeForm.deleteMany()
+  await prisma.patientDraft.deleteMany()
   await prisma.knowledgeItem.deleteMany()
   await prisma.document.deleteMany()
   await prisma.patientNote.deleteMany()
@@ -22,66 +27,40 @@ async function main() {
   await prisma.user.deleteMany()
 
   // ── 2. USERS ────────────────────────────────────────────────────────────────
-  const passwordHash = await bcrypt.hash("Practice@2024!", 12)
+  const passwordHash = await bcrypt.hash("Kid0-18CRM", 12)
 
   const admin = await prisma.user.create({
     data: {
-      email: "dr.johnson@kids018.com",
+      email: "jonathan@kids0218.com",
       passwordHash,
-      firstName: "Sarah",
-      lastName: "Johnson",
+      firstName: "Jonathan",
+      lastName: "Tomás",
       role: "ADMIN",
-      jobTitle: "Pediatrician / Practice Owner",
-      phone: "(555) 200-0001",
+      jobTitle: "APRN, MSN, NNP-BC, CPNP-PC/AC — Owner, Neonatal & Pediatric Nurse Practitioner",
       isActive: true,
+      approvalStatus: "APPROVED",
       twoFactorEnabled: false,
-      lastLoginAt: new Date("2024-05-18T08:30:00Z"),
     },
   })
 
-  const receptionist = await prisma.user.create({
+  const admin2 = await prisma.user.create({
     data: {
-      email: "maria.garcia@kids018.com",
+      email: "ebadraja1402@gmail.com",
       passwordHash,
-      firstName: "Maria",
-      lastName: "Garcia",
-      role: "STAFF",
-      jobTitle: "Front Desk Receptionist",
-      phone: "(555) 200-0002",
+      firstName: "Ebad",
+      lastName: "Raja",
+      role: "ADMIN",
+      jobTitle: "CRM Administrator",
       isActive: true,
-      lastLoginAt: new Date("2024-05-18T07:55:00Z"),
+      approvalStatus: "APPROVED",
+      twoFactorEnabled: false,
     },
   })
 
-  const nurse = await prisma.user.create({
-    data: {
-      email: "james.wilson@kids018.com",
-      passwordHash,
-      firstName: "James",
-      lastName: "Wilson",
-      role: "STAFF",
-      jobTitle: "Registered Nurse",
-      phone: "(555) 200-0003",
-      isActive: true,
-      lastLoginAt: new Date("2024-05-17T16:45:00Z"),
-    },
-  })
+  const receptionist = admin2
+  const nurse = admin
 
-  await prisma.user.create({
-    data: {
-      email: "emily.chen@kids018.com",
-      passwordHash,
-      firstName: "Emily",
-      lastName: "Chen",
-      role: "VIEWER",
-      jobTitle: "Billing Coordinator",
-      phone: "(555) 200-0004",
-      isActive: true,
-      lastLoginAt: new Date("2024-05-16T14:20:00Z"),
-    },
-  })
-
-  console.log("  ✓ Users (4)")
+  console.log("  ✓ Users (2 — real admin accounts)")
 
   // ── 3. PATIENTS ─────────────────────────────────────────────────────────────
   const patients = await Promise.all([
@@ -107,7 +86,7 @@ async function main() {
         insuranceId: "BCBS-TX-884412",
         allergies: "Penicillin",
         preferredLanguage: "English",
-        preferredProvider: "Dr. Sarah Johnson",
+        preferredProvider: "P. Jonathan Tomás, APRN",
         status: "ACTIVE",
         totalVisits: 8,
         lastVisitAt: new Date("2024-04-22T10:00:00Z"),
@@ -139,7 +118,7 @@ async function main() {
         allergies: "Sulfa drugs, Tree nuts",
         medications: "Zyrtec 5mg daily",
         preferredLanguage: "English",
-        preferredProvider: "Dr. Sarah Johnson",
+        preferredProvider: "P. Jonathan Tomás, APRN",
         status: "ACTIVE",
         totalVisits: 14,
         lastVisitAt: new Date("2024-05-10T09:30:00Z"),
@@ -344,7 +323,7 @@ async function main() {
         duration: 30,
         type: "WELL_CHILD_VISIT",
         status: "COMPLETED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "3-year well child visit",
         notes: "Growth on track. Vaccines up to date. No concerns.",
         bookedVia: "STAFF",
@@ -362,7 +341,7 @@ async function main() {
         duration: 30,
         type: "SICK_VISIT",
         status: "COMPLETED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "Fever and sore throat for 2 days",
         notes: "Strep test positive. Prescribed amoxicillin 400mg BID x 10 days.",
         bookedVia: "VOICE_AGENT",
@@ -380,7 +359,7 @@ async function main() {
         duration: 20,
         type: "FOLLOW_UP",
         status: "COMPLETED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "Asthma follow-up",
         notes: "Good control on current regimen. Continue Albuterol PRN.",
         bookedVia: "STAFF",
@@ -396,7 +375,7 @@ async function main() {
         duration: 30,
         type: "CONSULTATION",
         status: "COMPLETED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "ADHD medication review",
         notes: "Concerta dose appropriate. Teacher reports improvement. Recheck in 6 months.",
         bookedVia: "STAFF",
@@ -413,7 +392,7 @@ async function main() {
         duration: 30,
         type: "VACCINATION",
         status: "CONFIRMED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "18-month immunizations (DTaP, IPV, Hib, PCV)",
         bookedVia: "CHATBOT",
         confirmedAt: new Date("2024-05-19T10:00:00Z"),
@@ -431,7 +410,7 @@ async function main() {
         duration: 30,
         type: "WELL_CHILD_VISIT",
         status: "SCHEDULED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "6-year well child visit",
         bookedVia: "VOICE_AGENT",
         remindersSent: 0,
@@ -447,7 +426,7 @@ async function main() {
         duration: 30,
         type: "WELL_CHILD_VISIT",
         status: "SCHEDULED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "Annual physical — 17-year-old",
         bookedVia: "WEBSITE",
         remindersSent: 1,
@@ -463,7 +442,7 @@ async function main() {
         duration: 30,
         type: "WELL_CHILD_VISIT",
         status: "CONFIRMED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "9-month well child visit",
         bookedVia: "STAFF",
         confirmedAt: new Date("2024-05-20T08:30:00Z"),
@@ -482,7 +461,7 @@ async function main() {
         duration: 30,
         type: "SICK_VISIT",
         status: "NO_SHOW",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "Cough and runny nose",
         bookedVia: "VOICE_AGENT",
         createdById: receptionist.id,
@@ -497,7 +476,7 @@ async function main() {
         duration: 20,
         type: "VACCINATION",
         status: "CANCELLED",
-        provider: "Dr. Sarah Johnson",
+        provider: "P. Jonathan Tomás, APRN",
         reason: "Flu vaccine",
         bookedVia: "STAFF",
         cancelledAt: new Date("2024-05-13T16:00:00Z"),
@@ -959,11 +938,11 @@ async function main() {
       twoFactorRequired: false,
       sessionTimeout: 60,
       appointmentTypes: [
-        { id: "well-child", name: "Well Child Visit", duration: 30, color: "#10b981", providers: ["Dr. Sarah Johnson"], buffer: 5 },
-        { id: "sick-visit", name: "Sick Visit", duration: 20, color: "#f59e0b", providers: ["Dr. Sarah Johnson"], buffer: 5 },
-        { id: "vaccination", name: "Vaccination", duration: 15, color: "#3b82f6", providers: ["Dr. Sarah Johnson", "James Wilson"], buffer: 5 },
-        { id: "follow-up", name: "Follow-Up", duration: 20, color: "#8b5cf6", providers: ["Dr. Sarah Johnson"], buffer: 5 },
-        { id: "consultation", name: "Consultation", duration: 45, color: "#06b6d4", providers: ["Dr. Sarah Johnson"], buffer: 10 },
+        { id: "well-child", name: "Well Child Visit", duration: 30, color: "#10b981", providers: ["P. Jonathan Tomás, APRN"], buffer: 5 },
+        { id: "sick-visit", name: "Sick Visit", duration: 20, color: "#f59e0b", providers: ["P. Jonathan Tomás, APRN"], buffer: 5 },
+        { id: "vaccination", name: "Vaccination", duration: 15, color: "#3b82f6", providers: ["P. Jonathan Tomás, APRN"], buffer: 5 },
+        { id: "follow-up", name: "Follow-Up", duration: 20, color: "#8b5cf6", providers: ["P. Jonathan Tomás, APRN"], buffer: 5 },
+        { id: "consultation", name: "Consultation", duration: 45, color: "#06b6d4", providers: ["P. Jonathan Tomás, APRN"], buffer: 10 },
       ],
       integrations: [
         { name: "Twilio", service: "SMS / Voice", status: "connected", lastSync: "2024-05-18T08:00:00Z" },
@@ -1020,10 +999,11 @@ async function main() {
   console.log("  ✓ Audit logs (7)")
 
   console.log("\n✅ Seed complete!")
-  console.log("   4 staff users  |  8 patients  |  10 appointments")
+  console.log("   2 admin users  |  8 patients  |  10 appointments")
   console.log("   7 call logs    |  4 chat logs  |  6 patient notes")
   console.log("   5 documents    |  10 FAQs      |  7 audit logs")
-  console.log("\n   Login: dr.johnson@kids018.com / Practice@2024!")
+  console.log("\n   Login: jonathan@kids0218.com / Kid0-18CRM")
+  console.log("   Login: ebadraja1402@gmail.com / Kid0-18CRM")
 }
 
 main()

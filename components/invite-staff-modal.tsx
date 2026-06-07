@@ -22,7 +22,7 @@ import {
 interface InviteStaffModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onStaffInvited?: (invite: InviteData) => void;
+  onStaffInvited?: () => void;
 }
 
 interface InviteData {
@@ -90,6 +90,7 @@ export default function InviteStaffModal({
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const validateField = (fieldName: string, value: string): string | null => {
     switch (fieldName) {
@@ -174,35 +175,49 @@ export default function InviteStaffModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
+    setServerError(null);
 
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    setIsLoading(false);
-    setSubmitted(true);
-
-    if (onStaffInvited) {
-      onStaffInvited({
-        ...formData,
-        invitedAt: new Date().toISOString(),
-        inviteToken: Math.random().toString(36).substr(2, 32),
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          role: formData.role,
+          jobTitle: formData.department,
+          department: formData.department,
+        }),
       });
-    }
 
-    setTimeout(() => {
-      handleReset();
-    }, 2000);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setServerError(data.error || 'Failed to send invitation');
+        setIsLoading(false);
+        return;
+      }
+
+      setSubmitted(true);
+      if (onStaffInvited) onStaffInvited();
+
+      setTimeout(() => handleReset(), 2500);
+    } catch {
+      setServerError('Network error. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleReset = () => {
     setFormData(INITIAL_INVITE);
     setErrors({});
     setSubmitted(false);
+    setServerError(null);
     onOpenChange(false);
   };
 
@@ -246,9 +261,9 @@ export default function InviteStaffModal({
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">
-                An invitation email has been sent. They will need to accept the invitation to gain access.
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm text-amber-800">
+                Their account is <strong>pending approval</strong>. An admin must approve it from the Staff Management page before they can log in.
               </p>
             </div>
 
@@ -476,13 +491,19 @@ export default function InviteStaffModal({
             </div>
           )}
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-2">
-            <Mail className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-blue-800">
-              <p className="font-medium mb-1">Invitation Email</p>
+          {serverError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-2">
+              <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-800 font-medium">{serverError}</p>
+            </div>
+          )}
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-amber-800">
+              <p className="font-medium mb-1">Pending Approval Required</p>
               <p>
-                An invitation email will be sent to {formData.email || "the provided email address"} with a
-                secure link to set up their account.
+                The account will be created with <strong>PENDING</strong> status. An admin must approve it before the staff member can log in. Default password: <code className="bg-amber-100 px-1 rounded font-mono">Kid0-18CRM</code>
               </p>
             </div>
           </div>
