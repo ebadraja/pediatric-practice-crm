@@ -21,9 +21,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuLabel,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import InviteStaffModal from '@/components/invite-staff-modal';
 import {
@@ -46,7 +43,6 @@ import {
   UserX,
   UserCheck,
   Trash2,
-  ShieldCheck,
 } from 'lucide-react';
 
 interface StaffUser {
@@ -932,7 +928,7 @@ function StaffActionsMenu({ user, onEdit, onChangeRole, onToggleActive, onResetP
       <DropdownMenuTrigger className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors outline-none">
         <MoreVertical className="w-4 h-4" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="text-xs text-slate-500 dark:text-slate-400 font-normal">
           {user.firstName} {user.lastName}
         </DropdownMenuLabel>
@@ -943,38 +939,26 @@ function StaffActionsMenu({ user, onEdit, onChangeRole, onToggleActive, onResetP
           Edit Profile
         </DropdownMenuItem>
 
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <ShieldCheck className="w-4 h-4 mr-2 text-slate-500" />
-            Change Role
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuItem
-              disabled={user.role === 'ADMIN'}
-              onClick={() => onChangeRole(user.id, 'ADMIN')}
-            >
-              <Shield className="w-4 h-4 mr-2 text-purple-500" />
-              Admin
-              {user.role === 'ADMIN' && <span className="ml-auto text-xs text-slate-400">Current</span>}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={user.role === 'STAFF'}
-              onClick={() => onChangeRole(user.id, 'STAFF')}
-            >
-              <User className="w-4 h-4 mr-2 text-blue-500" />
-              Staff
-              {user.role === 'STAFF' && <span className="ml-auto text-xs text-slate-400">Current</span>}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={user.role === 'VIEWER'}
-              onClick={() => onChangeRole(user.id, 'VIEWER')}
-            >
-              <Eye className="w-4 h-4 mr-2 text-slate-500" />
-              Viewer
-              {user.role === 'VIEWER' && <span className="ml-auto text-xs text-slate-400">Current</span>}
-            </DropdownMenuItem>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        {user.role !== 'ADMIN' && (
+          <DropdownMenuItem onClick={() => onChangeRole(user.id, 'ADMIN')}>
+            <Shield className="w-4 h-4 mr-2 text-purple-500" />
+            Make Admin
+          </DropdownMenuItem>
+        )}
+        {user.role !== 'STAFF' && (
+          <DropdownMenuItem onClick={() => onChangeRole(user.id, 'STAFF')}>
+            <User className="w-4 h-4 mr-2 text-blue-500" />
+            Make Staff
+          </DropdownMenuItem>
+        )}
+        {user.role !== 'VIEWER' && (
+          <DropdownMenuItem onClick={() => onChangeRole(user.id, 'VIEWER')}>
+            <Eye className="w-4 h-4 mr-2 text-slate-400" />
+            Make Viewer
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuSeparator />
 
         <DropdownMenuItem onClick={() => onToggleActive(user)}>
           {user.isActive ? (
