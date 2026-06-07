@@ -442,9 +442,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const ip          = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null
-      // Route by call type: voice calls → CallLog, web chats → ChatLog
-      const callType    = (call as VapiCall).type ?? "webCall"
-      const isPhoneCall = callType === "inboundPhoneCall" || callType === "outboundPhoneCall"
+      const isPhoneCall = type === "end-of-call-report"
       const result = await processVapiEndOfCall(report, ip, isPhoneCall)
       if (result.alreadyExists) {
         return NextResponse.json({ received: true, processed: false, reason: "duplicate", chatLogId: result.chatLogId, callLogId: result.callLogId })
