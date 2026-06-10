@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
+import { APPLE_HEALTH_PLANS } from "@/lib/insurance-plans"
 
 export const dynamic = "force-dynamic"
 
@@ -187,6 +188,464 @@ function extractNameFromTranscript(transcript: string): string | null {
   if (spelled) return spelled[1].trim()
 
   return null
+}
+
+// ─── Insurance plan keyword map ───────────────────────────────────────────────
+
+const PLAN_KEYWORDS: { keywords: string[]; plan: string; planType: "Commercial" | "Apple Health" }[] = [
+  { keywords: ["aetna"],                                        plan: "Aetna",                      planType: "Commercial"   },
+  { keywords: ["ambetter"],                                     plan: "Ambetter",                   planType: "Commercial"   },
+  { keywords: ["asuris"],                                       plan: "Asuris Northwest",           planType: "Commercial"   },
+  { keywords: ["premera"],                                      plan: "Premera Blue Cross",         planType: "Commercial"   },
+  { keywords: ["blue cross blue shield", "bcbs", "blue cross"], plan: "Blue Cross Blue Shield FEP", planType: "Commercial"   },
+  { keywords: ["cigna"],                                        plan: "Cigna",                      planType: "Commercial"   },
+  { keywords: ["first health"],                                 plan: "First Health Network",       planType: "Commercial"   },
+  { keywords: ["first choice"],                                 plan: "First Choice Health Network",planType: "Commercial"   },
+  { keywords: ["lifewise"],                                     plan: "LifeWise",                   planType: "Commercial"   },
+  { keywords: ["regence", "blue shield"],                       plan: "Regence Blue Shield",        planType: "Commercial"   },
+  { keywords: ["tricare", "triwest", "tri care", "tri west"],   plan: "Tricare/TriWest",            planType: "Commercial"   },
+  { keywords: ["united healthcare", "united health", "uhc"],    plan: "United Healthcare",          planType: "Commercial"   },
+  { keywords: ["coordinated care"],                             plan: "Coordinated Care",           planType: "Apple Health" },
+  { keywords: ["molina"],                                       plan: "Molina",                     planType: "Apple Health" },
+  { keywords: ["wellpoint"],                                    plan: "Wellpoint",                  planType: "Apple Health" },
+]
+
+// ─── Shared tool helpers ──────────────────────────────────────────────────────
+
+function to12Hour(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number)
+  const suffix = h >= 12 ? "pm" : "am"
+  const hour   = h % 12 || 12
+  return `${hour}:${String(m).padStart(2, "0")}${suffix}`
+}
+
+type AppointmentTypeStr =
+  | "WELL_CHILD_VISIT" | "SICK_VISIT" | "VACCINATION"
+  | "FOLLOW_UP" | "CONSULTATION" | "PROCEDURE" | "OTHER"
+
+function mapVisitType(raw: string): AppointmentTypeStr {
+  const t = raw.toLowerCase()
+  if (/well.child|wellness|checkup|annual|physical/.test(t)) return "WELL_CHILD_VISIT"
+  if (/sick|illness|cold|fever/.test(t))                     return "SICK_VISIT"
+  if (/vacc|immun/.test(t))                                  return "VACCINATION"
+  if (/follow/.test(t))                                      return "FOLLOW_UP"
+  if (/consult/.test(t))                                     return "CONSULTATION"
+  if (/procedure/.test(t))                                   return "PROCEDURE"
+  return "OTHER"
+}
+
+async function getAvailableSlots(
+  dateParam: string,
+  duration = 30
+): Promise<{ startTime: string; endTime: string }[]> {
+  const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
+  const [year, month, day] = dateParam.split("-").map(Number)
+  const dayStart  = new Date(year, month - 1, day,  0,  0,  0,   0)
+  const dayEnd    = new Date(year, month - 1, day, 23, 59, 59, 999)
+  const dayOfWeek = DAY_NAMES[dayStart.getDay()]
+
+  type BHEntry = { day: string; open: string; close: string; enabled: boolean }
+  type LB      = { start: string; end: string; enabled: boolean }
+
+  const [settings, booked] = await Promise.all([
+    prisma.settings.findFirst({ select: { businessHours: true, lunchBreak: true } }),
+    prisma.appointment.findMany({
+      where:  { startTime: { gte: dayStart, lte: dayEnd }, status: { notIn: ["CANCELLED", "NO_SHOW"] } },
+      select: { startTime: true, endTime: true },
+    }),
+  ])
+
+  const hours = (settings?.businessHours as BHEntry[] | null)
+    ?.find(h => h.day.toLowerCase() === dayOfWeek.toLowerCase())
+  if (!hours?.enabled) return []
+
+  const toMin  = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m }
+  const toHHMM = (n: number) =>
+    `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`
+
+  const openMin    = toMin(hours.open)
+  const closeMin   = toMin(hours.close)
+  const rawLunch   = settings?.lunchBreak as LB | null
+  const lunch      = rawLunch ?? { start: "12:30", end: "13:00", enabled: true }
+  const lunchStart = lunch.enabled ? toMin(lunch.start) : -1
+  const lunchEnd   = lunch.enabled ? toMin(lunch.end)   : -1
+
+  const now     = new Date()
+  const isToday = now.getFullYear() === year && now.getMonth() === month - 1 && now.getDate() === day
+  const nowMin  = isToday ? now.getHours() * 60 + now.getMinutes() : -1
+
+  const slots: { startTime: string; endTime: string }[] = []
+  for (let s = openMin; s + duration <= closeMin; s += duration) {
+    const e = s + duration
+    if (isToday && s <= nowMin) continue
+    if (lunch.enabled && s < lunchEnd && e > lunchStart) continue
+    const sDate = new Date(year, month - 1, day, Math.floor(s / 60), s % 60)
+    const eDate = new Date(year, month - 1, day, Math.floor(e / 60), e % 60)
+    if (booked.some(a => a.startTime < eDate && a.endTime > sDate)) continue
+    slots.push({ startTime: toHHMM(s), endTime: toHHMM(e) })
+  }
+  return slots
+}
+
+// ─── Tool: lookup_patient ─────────────────────────────────────────────────────
+
+async function toolLookupPatient(args: Record<string, unknown>): Promise<string> {
+  const childName = String(args.child_name ?? "").trim()
+  if (!childName) return "Please provide the child's name."
+
+  const parts     = childName.split(/\s+/)
+  const firstName = parts[0]
+  const lastName  = parts.length > 1 ? parts.slice(1).join(" ") : undefined
+
+  const patients = await prisma.patient.findMany({
+    where:   lastName
+      ? { firstName: { contains: firstName, mode: "insensitive" }, lastName: { contains: lastName, mode: "insensitive" } }
+      : { firstName: { contains: firstName, mode: "insensitive" } },
+    take:    5,
+    orderBy: { lastName: "asc" },
+  })
+
+  if (!patients.length) return "No patient found matching that name. They may be a new patient."
+
+  let match = patients[0]
+  if (args.date_of_birth && patients.length > 1) {
+    const dobTarget = new Date(String(args.date_of_birth))
+    const byDob = patients.find(p => Math.abs(p.dateOfBirth.getTime() - dobTarget.getTime()) < 86_400_000)
+    if (byDob) match = byDob
+  }
+
+  const name      = `${match.firstName} ${match.lastName}`
+  const dob       = match.dateOfBirth.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+  const insurance = match.insurancePlan ?? match.insuranceProvider ?? "not on file"
+  const lastVisit = match.lastVisitAt
+    ? match.lastVisitAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    : "no prior visits on record"
+
+  return `Found: ${name}, DOB: ${dob}, Insurance: ${insurance}. Last visit: ${lastVisit}.`
+}
+
+// ─── Tool: check_availability ─────────────────────────────────────────────────
+
+async function toolCheckAvailability(args: Record<string, unknown>): Promise<string> {
+  const date = String(args.date ?? "").trim()
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return "Please provide a date in YYYY-MM-DD format."
+
+  const duration  = typeof args.duration === "number" ? args.duration : 30
+  const slots     = await getAvailableSlots(date, duration)
+  const dateLabel = (d: string) =>
+    new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+
+  if (slots.length > 0) {
+    const shown = slots.slice(0, 3).map(s => to12Hour(s.startTime)).join(", ")
+    return `Available on ${dateLabel(date)}: ${shown}.`
+  }
+
+  for (let i = 1; i <= 7; i++) {
+    const next      = new Date(date + "T00:00:00")
+    next.setDate(next.getDate() + i)
+    const nextDate  = next.toISOString().split("T")[0]
+    const nextSlots = await getAvailableSlots(nextDate, duration)
+    if (nextSlots.length > 0) {
+      return `No availability on ${dateLabel(date)}. The next available day is ${dateLabel(nextDate)}.`
+    }
+  }
+
+  return "No availability found in the next week. Please call us to find a suitable time."
+}
+
+// ─── Tool: book_appointment ───────────────────────────────────────────────────
+
+async function toolBookAppointment(args: Record<string, unknown>): Promise<string> {
+  const patientName = String(args.patient_name ?? "").trim()
+  const date        = String(args.date ?? "").trim()
+  const time        = String(args.time ?? "").trim()
+  const visitType   = String(args.visit_type ?? "other").trim()
+  const duration    = typeof args.duration === "number" ? args.duration : 30
+
+  if (!patientName || !date || !time) {
+    return "I need the patient name, date, and time to book an appointment."
+  }
+
+  const parts     = patientName.split(/\s+/)
+  const firstName = parts[0]
+  const lastName  = parts.length > 1 ? parts.slice(1).join(" ") : undefined
+
+  const patient = await prisma.patient.findFirst({
+    where: lastName
+      ? { firstName: { contains: firstName, mode: "insensitive" }, lastName: { contains: lastName, mode: "insensitive" } }
+      : { firstName: { contains: firstName, mode: "insensitive" } },
+  })
+  if (!patient) return `No patient record found for ${patientName}. They may need to register first.`
+
+  const timeMatch = time.replace(/\s+/g, "").match(/^(\d{1,2}):(\d{2})(am|pm)?$/i)
+  if (!timeMatch) {
+    return `I couldn't understand the time "${time}". Please use a format like 9:15am or 14:30.`
+  }
+
+  let hours  = parseInt(timeMatch[1])
+  const mins = parseInt(timeMatch[2])
+  const ampm = timeMatch[3]?.toLowerCase()
+  if (ampm === "pm" && hours !== 12) hours += 12
+  if (ampm === "am" && hours === 12) hours  = 0
+
+  const [yr, mo, dy] = date.split("-").map(Number)
+  const startTime    = new Date(yr, mo - 1, dy, hours, mins, 0)
+  const endTime      = new Date(startTime.getTime() + duration * 60_000)
+
+  await prisma.appointment.create({
+    data: {
+      patientId: patient.id,
+      startTime,
+      endTime,
+      duration,
+      type:      mapVisitType(visitType),
+      status:    "SCHEDULED",
+      provider:  patient.preferredProvider ?? null,
+      reason:    visitType,
+      notes:     args.notes ? String(args.notes) : null,
+      bookedVia: "VOICE_AGENT",
+    },
+  })
+
+  const timeDisplay = to12Hour(`${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`)
+  const dateDisplay = startTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+  return `Appointment booked: ${visitType} for ${patient.firstName} ${patient.lastName} on ${dateDisplay} at ${timeDisplay}. Confirmation will be sent.`
+}
+
+// ─── Tool: cancel_appointment ─────────────────────────────────────────────────
+
+async function toolCancelAppointment(args: Record<string, unknown>): Promise<string> {
+  const patientName = String(args.patient_name ?? "").trim()
+  const apptDate    = String(args.appointment_date ?? "").trim()
+  const reason      = args.reason ? String(args.reason) : "Cancelled via voice agent"
+
+  if (!patientName || !apptDate) return "I need the patient name and appointment date to cancel."
+
+  const parts     = patientName.split(/\s+/)
+  const firstName = parts[0]
+  const lastName  = parts.length > 1 ? parts.slice(1).join(" ") : undefined
+
+  const patient = await prisma.patient.findFirst({
+    where: lastName
+      ? { firstName: { contains: firstName, mode: "insensitive" }, lastName: { contains: lastName, mode: "insensitive" } }
+      : { firstName: { contains: firstName, mode: "insensitive" } },
+  })
+  if (!patient) return `No patient record found for ${patientName}.`
+
+  const [yr, mo, dy] = apptDate.split("-").map(Number)
+  const dayStart = new Date(yr, mo - 1, dy,  0,  0,  0,   0)
+  const dayEnd   = new Date(yr, mo - 1, dy, 23, 59, 59, 999)
+
+  const appointment = await prisma.appointment.findFirst({
+    where:   {
+      patientId: patient.id,
+      startTime: { gte: dayStart, lte: dayEnd },
+      status:    { notIn: ["CANCELLED", "NO_SHOW"] },
+    },
+    orderBy: { startTime: "asc" },
+  })
+  if (!appointment) {
+    const label = new Date(apptDate + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" })
+    return `No active appointment found for ${patientName} on ${label}.`
+  }
+
+  await prisma.appointment.update({
+    where: { id: appointment.id },
+    data:  { status: "CANCELLED", cancelledAt: new Date(), cancelReason: reason },
+  })
+
+  const dateDisplay = appointment.startTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+  return `Cancelled ${patient.firstName} ${patient.lastName}'s appointment on ${dateDisplay}. Would they like to reschedule?`
+}
+
+// ─── Tool: verify_insurance ───────────────────────────────────────────────────
+
+function toolVerifyInsurance(args: Record<string, unknown>): string {
+  const rawInput = String(args.plan_name ?? "").trim()
+  if (!rawInput) return "Please provide the insurance plan name."
+  const input = rawInput.toLowerCase().replace(/[-–]/g, " ").replace(/\s+/g, " ")
+
+  // Generic Apple Health / Medicaid inquiry — no specific plan named
+  if (
+    /\b(apple health|medicaid|chip|wa apple)\b/.test(input) &&
+    !APPLE_HEALTH_PLANS.some(p => input.includes(p.toLowerCase()))
+  ) {
+    return "We accept these Apple Health plans: Coordinated Care, Molina, United Healthcare, and Wellpoint."
+  }
+
+  // Plans we do NOT accept
+  if (input.includes("kaiser")) {
+    return "Kaiser is not currently accepted. Accepted Apple Health plans are: Coordinated Care, Molina, United Healthcare, and Wellpoint."
+  }
+  if (input.includes("community health plan")) {
+    return "Community Health Plan of Washington is not currently accepted. Accepted Apple Health plans are: Coordinated Care, Molina, United Healthcare, and Wellpoint."
+  }
+  if (/blue cross.+illinois|illinois.+blue cross/.test(input)) {
+    return "Blue Cross of Illinois is not currently accepted. Accepted Apple Health plans are: Coordinated Care, Molina, United Healthcare, and Wellpoint."
+  }
+
+  // Fuzzy match accepted plans (order matters — Premera before generic "blue cross")
+  for (const entry of PLAN_KEYWORDS) {
+    if (entry.keywords.some(k => input.includes(k))) {
+      return `Yes, we accept ${entry.plan}. Plan type: ${entry.planType}.`
+    }
+  }
+
+  return "I'm not sure about that plan. The billing team can verify during business hours."
+}
+
+// ─── Tool: submit_refill_request ──────────────────────────────────────────────
+
+async function toolSubmitRefillRequest(args: Record<string, unknown>): Promise<string> {
+  const patientName = String(args.patient_name ?? "").trim()
+  const medication  = String(args.medication_name ?? "").trim()
+  const pharmacy    = String(args.pharmacy_name ?? "").trim()
+  const isUrgent    = Boolean(args.is_urgent)
+
+  const title   = `${isUrgent ? "[URGENT] " : ""}Refill Request: ${medication}`
+  const message = `Patient: ${patientName}${args.patient_dob ? ` (DOB: ${args.patient_dob})` : ""}. Medication: ${medication}. Pharmacy: ${pharmacy || "not specified"}. Urgent: ${isUrgent ? "yes" : "no"}.`
+
+  const admins = await prisma.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } })
+  prisma.$transaction(
+    admins.map(admin =>
+      prisma.notification.create({
+        data: {
+          userId:    admin.id,
+          type:      "refill_request",
+          title,
+          message,
+          icon:      isUrgent ? "alert" : "info",
+          actionUrl: "/patients",
+        },
+      })
+    )
+  ).catch(err => console.error("[VAPI TOOL] refill notification failed:", err))
+
+  return `Refill request submitted for ${medication} at ${pharmacy || "the specified pharmacy"}. Our clinical team will process it.`
+}
+
+// ─── Tool: send_intake_forms ──────────────────────────────────────────────────
+
+async function toolSendIntakeForms(args: Record<string, unknown>): Promise<string> {
+  const childName  = String(args.child_name ?? "").trim()
+  const phone      = String(args.phone ?? "").trim()
+  const parentName = args.parent_name ? String(args.parent_name).trim() : null
+  const formType   = args.form_type   ? String(args.form_type).trim()   : "new patient intake"
+
+  const message = `Intake form request for ${childName}${parentName ? ` (parent: ${parentName})` : ""}. Phone: ${phone}${args.email ? `, Email: ${args.email}` : ""}. Form type: ${formType}.`
+
+  const admins = await prisma.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } })
+  prisma.$transaction(
+    admins.map(admin =>
+      prisma.notification.create({
+        data: {
+          userId:    admin.id,
+          type:      "intake_forms_requested",
+          title:     `Intake Form Request: ${childName}`,
+          message,
+          icon:      "form",
+          actionUrl: "/intake-forms",
+        },
+      })
+    )
+  ).catch(err => console.error("[VAPI TOOL] intake notification failed:", err))
+
+  return `Intake forms request noted for ${childName}. Our team will send the forms to ${phone}.`
+}
+
+// ─── Tool: create_callback_request ───────────────────────────────────────────
+
+async function toolCreateCallbackRequest(args: Record<string, unknown>): Promise<string> {
+  const callerName = String(args.caller_name ?? "").trim()
+  const phone      = String(args.phone ?? "").trim()
+  const reason     = String(args.reason ?? "").trim()
+  const urgency    = args.urgency    ? String(args.urgency).trim()    : "normal"
+  const childName  = args.child_name ? String(args.child_name).trim() : null
+
+  const message = `Callback request from ${callerName} at ${phone}.${childName ? ` Child: ${childName}.` : ""} Reason: ${reason}. Urgency: ${urgency}.`
+
+  const admins = await prisma.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } })
+  prisma.$transaction(
+    admins.map(admin =>
+      prisma.notification.create({
+        data: {
+          userId:    admin.id,
+          type:      "callback_request",
+          title:     `Callback Request: ${callerName}`,
+          message,
+          icon:      urgency === "urgent" ? "alert" : "phone",
+          actionUrl: "/call-logs",
+        },
+      })
+    )
+  ).catch(err => console.error("[VAPI TOOL] callback notification failed:", err))
+
+  return `Callback request created. Our team will call ${callerName} at ${phone}.`
+}
+
+// ─── Tool: transfer_to_human ──────────────────────────────────────────────────
+
+async function toolTransferToHuman(args: Record<string, unknown>): Promise<string> {
+  const reason      = String(args.reason ?? "Transfer requested").trim()
+  const notes       = args.notes        ? String(args.notes).trim()        : null
+  const patientName = args.patient_name ? String(args.patient_name).trim() : null
+
+  const message = `Transfer context: ${reason}.${patientName ? ` Patient: ${patientName}.` : ""}${notes ? ` Notes: ${notes}.` : ""}`
+
+  const admins = await prisma.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } })
+  prisma.$transaction(
+    admins.map(admin =>
+      prisma.notification.create({
+        data: {
+          userId:    admin.id,
+          type:      "transfer_context",
+          title:     `Incoming Transfer${patientName ? `: ${patientName}` : ""}`,
+          message,
+          icon:      "alert",
+          actionUrl: "/call-logs",
+        },
+      })
+    )
+  ).catch(err => console.error("[VAPI TOOL] transfer notification failed:", err))
+
+  return `Transferring now. Reason: ${reason}.${notes ? ` Context: ${notes}.` : ""}`
+}
+
+// ─── Vapi tool call dispatcher ────────────────────────────────────────────────
+
+interface VapiToolCall {
+  id:        string
+  name:      string
+  arguments: Record<string, unknown>
+}
+
+async function dispatchToolCalls(
+  toolCallList: VapiToolCall[]
+): Promise<{ toolCallId: string; result: string }[]> {
+  return Promise.all(
+    toolCallList.map(async (tc) => {
+      try {
+        let result: string
+        switch (tc.name) {
+          case "lookup_patient":          result = await toolLookupPatient(tc.arguments);          break
+          case "check_availability":      result = await toolCheckAvailability(tc.arguments);      break
+          case "book_appointment":        result = await toolBookAppointment(tc.arguments);        break
+          case "cancel_appointment":      result = await toolCancelAppointment(tc.arguments);      break
+          case "verify_insurance":        result = toolVerifyInsurance(tc.arguments);              break
+          case "submit_refill_request":   result = await toolSubmitRefillRequest(tc.arguments);    break
+          case "send_intake_forms":       result = await toolSendIntakeForms(tc.arguments);        break
+          case "create_callback_request": result = await toolCreateCallbackRequest(tc.arguments);  break
+          case "transfer_to_human":       result = await toolTransferToHuman(tc.arguments);        break
+          default:
+            result = `Unknown tool: ${tc.name}. Please try again.`
+        }
+        return { toolCallId: tc.id, result }
+      } catch (err) {
+        console.error(`[VAPI TOOL] ${tc.name} failed:`, err)
+        return { toolCallId: tc.id, result: "Something went wrong. Please try again or call us directly." }
+      }
+    })
+  )
 }
 
 // ─── Core processor ────────────────────────────────────────────────────────────
@@ -400,6 +859,15 @@ export async function processVapiEndOfCall(
 // ─── POST /api/webhooks/vapi ───────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  // ── Secret verification ────────────────────────────────────────────────────
+  const vapiSecret = process.env.VAPI_WEBHOOK_SECRET
+  if (vapiSecret) {
+    const incoming = request.headers.get("x-vapi-secret")
+    if (incoming !== vapiSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+  }
+
   let body: Record<string, unknown>
   try {
     body = await request.json()
@@ -451,6 +919,24 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       console.error("[POST /api/webhooks/vapi]", err)
       return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 })
+    }
+  }
+
+  // ── tool-calls: Vapi is invoking a server-side tool mid-call ─────────────────
+  if (type === "tool-calls") {
+    const rawList      = payload?.toolCallList
+    const toolCallList = Array.isArray(rawList) ? (rawList as VapiToolCall[]) : []
+    try {
+      const results = await dispatchToolCalls(toolCallList)
+      return NextResponse.json({ results })
+    } catch (err) {
+      console.error("[VAPI WEBHOOK] tool-calls dispatch error:", err)
+      return NextResponse.json({
+        results: toolCallList.map(tc => ({
+          toolCallId: tc.id,
+          result:     "Something went wrong. Please try again or call us directly.",
+        })),
+      })
     }
   }
 
