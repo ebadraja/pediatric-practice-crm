@@ -158,6 +158,10 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
   const { extracted } = extractPatientData(form_title, field_values);
   const allFields = getAllFields(field_values);
 
+  const DRAFT_FORM_TITLES = ["NEW PATIENT PRE-REGISTRATION", "KIDS PATIENT INTAKE FORM"];
+  const titleUpperEarly = form_title.trim().toUpperCase();
+  const isDraftForm = DRAFT_FORM_TITLES.some(t => titleUpperEarly.includes(t) || t.includes(titleUpperEarly));
+
   if (!hasCriticalFields(extracted)) {
     const intakeForm = await prisma.intakeForm.create({
       data: {
@@ -180,13 +184,47 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
       include: { fieldValues: true },
     });
 
-    await createFormSubmissionNotifications(intakeForm.id, "RECEIVED", extracted);
+    // For pre-reg/intake forms, still create a draft even when field extraction fails
+    // (staff can fill in the details manually)
+    if (isDraftForm) {
+      const adminUser = await prisma.user.findFirst({
+        where: { role: "ADMIN", isActive: true },
+        select: { id: true },
+      });
+      if (adminUser) {
+        const draft = await prisma.patientDraft.create({
+          data: {
+            firstName: extracted.firstName || extracted.childName || "Unknown",
+            lastName: extracted.lastName || "Unknown",
+            dateOfBirth: extracted.dateOfBirth || new Date(),
+            email: extracted.email,
+            phone: extracted.phone,
+            gender: extracted.gender,
+            preferredLanguage: extracted.preferredLanguage,
+            streetAddress: extracted.streetAddress,
+            city: extracted.city,
+            state: extracted.state,
+            zipCode: extracted.zipCode,
+            status: "PENDING",
+            createdById: adminUser.id,
+          },
+        });
+        await prisma.intakeForm.update({
+          where: { id: intakeForm.id },
+          data: { patientDraftId: draft.id, status: "DRAFT" },
+        });
+      }
+    }
+
+    await createFormSubmissionNotifications(intakeForm.id, isDraftForm ? "DRAFT" : "RECEIVED", extracted);
 
     return {
       success: true,
       formId: intakeForm.id,
-      status: "RECEIVED",
-      message: "Form received but missing critical fields for matching",
+      status: isDraftForm ? "DRAFT" : "RECEIVED",
+      message: isDraftForm
+        ? "Form received. Draft created with partial data — please complete manually."
+        : "Form received but missing critical fields for matching",
     };
   }
 
@@ -253,11 +291,7 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
   });
 
   // Only pre-registration and intake forms create patient drafts
-  const DRAFT_CREATING_FORMS = ["NEW PATIENT PRE-REGISTRATION", "KiDS Patient Intake Form"];
-  const titleUpper = form_title.trim().toUpperCase();
-
-  if (!bestMatch && intakeFormStatus === "RECEIVED" &&
-      DRAFT_CREATING_FORMS.some(f => f.toUpperCase() === titleUpper)) {
+  if (!bestMatch && intakeFormStatus === "RECEIVED" && isDraftForm) {
     // Find the first admin user to satisfy the foreign key constraint
     const adminUser = await prisma.user.findFirst({
       where: { role: "ADMIN", isActive: true },

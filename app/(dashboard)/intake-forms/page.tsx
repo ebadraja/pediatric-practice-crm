@@ -90,7 +90,7 @@ export default function IntakeFormsPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, selectedStatus, searchTerm, showTrash]);
+  }, [currentPage, selectedStatus, searchTerm, showTrash, selectedFormType]);
 
   useEffect(() => { fetchForms(); }, [fetchForms]);
 

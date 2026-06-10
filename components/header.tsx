@@ -94,6 +94,7 @@ export function Header() {
     }
     if (notification.actionUrl) {
       router.push(notification.actionUrl);
+      router.refresh();
     }
   };
 
