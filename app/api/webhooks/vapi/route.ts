@@ -613,10 +613,15 @@ async function toolTransferToHuman(args: Record<string, unknown>): Promise<strin
 
 // ─── Vapi tool call dispatcher ────────────────────────────────────────────────
 
+// Vapi uses OpenAI-compatible format: name + arguments are nested under "function",
+// and arguments is a JSON-encoded string (not a parsed object).
 interface VapiToolCall {
-  id:        string
-  name:      string
-  arguments: Record<string, unknown>
+  id:       string
+  type?:    string
+  function: {
+    name:      string
+    arguments: string  // JSON-encoded string
+  }
 }
 
 async function dispatchToolCalls(
@@ -624,24 +629,34 @@ async function dispatchToolCalls(
 ): Promise<{ toolCallId: string; result: string }[]> {
   return Promise.all(
     toolCallList.map(async (tc) => {
+      const toolName = tc.function?.name
+      let args: Record<string, unknown> = {}
+      try {
+        args = JSON.parse(tc.function?.arguments ?? "{}")
+      } catch {
+        // malformed arguments — keep empty object
+      }
+
+      console.log(`[VAPI TOOL] dispatch — name: ${toolName}, id: ${tc.id}, args:`, JSON.stringify(args))
+
       try {
         let result: string
-        switch (tc.name) {
-          case "lookup_patient":          result = await toolLookupPatient(tc.arguments);          break
-          case "check_availability":      result = await toolCheckAvailability(tc.arguments);      break
-          case "book_appointment":        result = await toolBookAppointment(tc.arguments);        break
-          case "cancel_appointment":      result = await toolCancelAppointment(tc.arguments);      break
-          case "verify_insurance":        result = toolVerifyInsurance(tc.arguments);              break
-          case "submit_refill_request":   result = await toolSubmitRefillRequest(tc.arguments);    break
-          case "send_intake_forms":       result = await toolSendIntakeForms(tc.arguments);        break
-          case "create_callback_request": result = await toolCreateCallbackRequest(tc.arguments);  break
-          case "transfer_to_human":       result = await toolTransferToHuman(tc.arguments);        break
+        switch (toolName) {
+          case "lookup_patient":          result = await toolLookupPatient(args);          break
+          case "check_availability":      result = await toolCheckAvailability(args);      break
+          case "book_appointment":        result = await toolBookAppointment(args);        break
+          case "cancel_appointment":      result = await toolCancelAppointment(args);      break
+          case "verify_insurance":        result = toolVerifyInsurance(args);              break
+          case "submit_refill_request":   result = await toolSubmitRefillRequest(args);    break
+          case "send_intake_forms":       result = await toolSendIntakeForms(args);        break
+          case "create_callback_request": result = await toolCreateCallbackRequest(args);  break
+          case "transfer_to_human":       result = await toolTransferToHuman(args);        break
           default:
-            result = `Unknown tool: ${tc.name}. Please try again.`
+            result = `Unknown tool: ${toolName}. Please try again.`
         }
         return { toolCallId: tc.id, result }
       } catch (err) {
-        console.error(`[VAPI TOOL] ${tc.name} failed:`, err)
+        console.error(`[VAPI TOOL] ${toolName} failed:`, err)
         return { toolCallId: tc.id, result: "Something went wrong. Please try again or call us directly." }
       }
     })
@@ -924,8 +939,14 @@ export async function POST(request: NextRequest) {
 
   // ── tool-calls: Vapi is invoking a server-side tool mid-call ─────────────────
   if (type === "tool-calls") {
+    console.log("[VAPI TOOL-CALLS] raw body:", JSON.stringify(body, null, 2))
+    console.log("[VAPI TOOL-CALLS] extracted type:", type)
     const rawList      = payload?.toolCallList
+    console.log("[VAPI TOOL-CALLS] toolCallList:", JSON.stringify(rawList, null, 2))
     const toolCallList = Array.isArray(rawList) ? (rawList as VapiToolCall[]) : []
+    toolCallList.forEach(tc => {
+      console.log(`[VAPI TOOL-CALLS] tool — name: ${tc.function?.name}, id: ${tc.id}`)
+    })
     try {
       const results = await dispatchToolCalls(toolCallList)
       return NextResponse.json({ results })
