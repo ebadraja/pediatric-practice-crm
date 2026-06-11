@@ -27,6 +27,36 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const body = await req.json();
+    const { status } = body;
+    const allowed = new Set(["pending", "acknowledged", "completed"]);
+    if (!status || !allowed.has(status)) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    }
+
+    const result: { id: string }[] = await prisma.$queryRaw`
+      UPDATE notifications SET notif_status = ${status}
+      WHERE id = ${id} AND user_id = ${session.user.id}
+      RETURNING id
+    `;
+
+    if (result.length === 0) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[NOTIFICATION_STATUS]', error);
+    return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;

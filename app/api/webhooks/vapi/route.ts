@@ -409,6 +409,25 @@ async function toolBookAppointment(args: Record<string, unknown>): Promise<strin
 
   const timeDisplay = to12Hour(`${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`)
   const dateDisplay = startTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+
+  prisma.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } })
+    .then(admins =>
+      prisma.$transaction(
+        admins.map(admin =>
+          prisma.notification.create({
+            data: {
+              userId:    admin.id,
+              type:      "appointment_booked",
+              title:     "Voice Agent Booked Appointment",
+              message:   `Voice Agent booked a ${visitType} for ${patient.firstName} ${patient.lastName} on ${dateDisplay} at ${timeDisplay}.`,
+              icon:      "check",
+              actionUrl: `/patients/${patient.id}`,
+            },
+          })
+        )
+      )
+    ).catch(err => console.error("[VAPI TOOL] book appointment notification failed:", err))
+
   return `Appointment booked: ${visitType} for ${patient.firstName} ${patient.lastName} on ${dateDisplay} at ${timeDisplay}. Confirmation will be sent.`
 }
 
@@ -455,6 +474,25 @@ async function toolCancelAppointment(args: Record<string, unknown>): Promise<str
   })
 
   const dateDisplay = appointment.startTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+
+  prisma.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } })
+    .then(admins =>
+      prisma.$transaction(
+        admins.map(admin =>
+          prisma.notification.create({
+            data: {
+              userId:    admin.id,
+              type:      "appointment_cancelled",
+              title:     "Voice Agent Cancelled Appointment",
+              message:   `Voice Agent cancelled ${patient.firstName} ${patient.lastName}'s appointment on ${dateDisplay}. Reason: ${reason}`,
+              icon:      "alert",
+              actionUrl: `/patients/${patient.id}`,
+            },
+          })
+        )
+      )
+    ).catch(err => console.error("[VAPI TOOL] cancel appointment notification failed:", err))
+
   return `Cancelled ${patient.firstName} ${patient.lastName}'s appointment on ${dateDisplay}. Would they like to reschedule?`
 }
 
@@ -505,6 +543,19 @@ async function toolSubmitRefillRequest(args: Record<string, unknown>): Promise<s
   const title   = `${isUrgent ? "[URGENT] " : ""}Refill Request: ${medication}`
   const message = `Patient: ${patientName}${args.patient_dob ? ` (DOB: ${args.patient_dob})` : ""}. Medication: ${medication}. Pharmacy: ${pharmacy || "not specified"}. Urgent: ${isUrgent ? "yes" : "no"}.`
 
+  const parts     = patientName.split(/\s+/)
+  const firstName = parts[0]
+  const lastName  = parts.length > 1 ? parts.slice(1).join(" ") : undefined
+  const pt = await prisma.patient.findFirst({
+    where: lastName
+      ? { firstName: { contains: firstName, mode: "insensitive" }, lastName: { contains: lastName, mode: "insensitive" } }
+      : { firstName: { contains: firstName, mode: "insensitive" } },
+    select: { id: true },
+  })
+  const refillActionUrl = pt
+    ? `/patients/${pt.id}`
+    : `/patients?search=${encodeURIComponent(patientName)}`
+
   const admins = await prisma.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } })
   prisma.$transaction(
     admins.map(admin =>
@@ -515,7 +566,7 @@ async function toolSubmitRefillRequest(args: Record<string, unknown>): Promise<s
           title,
           message,
           icon:      isUrgent ? "alert" : "info",
-          actionUrl: "/patients",
+          actionUrl: refillActionUrl,
         },
       })
     )
@@ -574,7 +625,7 @@ async function toolCreateCallbackRequest(args: Record<string, unknown>): Promise
           title:     `Callback Request: ${callerName}`,
           message,
           icon:      urgency === "urgent" ? "alert" : "phone",
-          actionUrl: "/call-logs",
+          actionUrl: "/notifications",
         },
       })
     )

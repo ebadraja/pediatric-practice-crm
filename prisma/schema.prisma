@@ -753,6 +753,7 @@ model Notification {
   // Status
   isRead            Boolean  @default(false) @map("is_read")
   readAt            DateTime? @map("read_at")
+  notifStatus       String   @default("pending") @map("notif_status") // "pending" | "acknowledged" | "completed"
 
   actionUrl         String?  @map("action_url") // URL to navigate to when clicked
 
