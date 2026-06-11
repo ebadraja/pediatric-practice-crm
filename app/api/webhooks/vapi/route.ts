@@ -632,7 +632,8 @@ async function dispatchToolCalls(
       const toolName = tc.function?.name
       let args: Record<string, unknown> = {}
       try {
-        args = JSON.parse(tc.function?.arguments ?? "{}")
+        const raw = tc.function?.arguments ?? "{}"
+        args = typeof raw === "string" ? JSON.parse(raw) : (raw as Record<string, unknown>)
       } catch {
         // malformed arguments — keep empty object
       }
