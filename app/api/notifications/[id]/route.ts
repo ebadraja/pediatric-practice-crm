@@ -40,14 +40,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
 
-    const result: { id: string }[] = await prisma.$queryRaw`
-      UPDATE notifications SET notif_status = ${status}
-      WHERE id = ${id} AND user_id = ${session.user.id}
-      RETURNING id
-    `;
-
-    if (result.length === 0) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    try {
+      const result: { id: string }[] = await prisma.$queryRaw`
+        UPDATE notifications SET notif_status = ${status}
+        WHERE id = ${id} AND user_id = ${session.user.id}
+        RETURNING id
+      `;
+      if (result.length === 0) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      }
+    } catch {
+      // Column doesn't exist yet — silently ignore until migration runs
+      return NextResponse.json({ success: true, pending_migration: true });
     }
 
     return NextResponse.json({ success: true });

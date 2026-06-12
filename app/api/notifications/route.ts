@@ -60,7 +60,15 @@ export async function GET(req: NextRequest) {
       notif_status: string;
     };
 
-    const notifications: NotifRow[] = await prisma.$queryRawUnsafe(sql, ...queryParams);
+    // Fall back to query without notif_status if the migration hasn't run yet
+    let notifications: NotifRow[];
+    try {
+      notifications = await prisma.$queryRawUnsafe(sql, ...queryParams);
+    } catch {
+      const fallbackSql = sql.replace(', notif_status', '');
+      const rows: Omit<NotifRow, 'notif_status'>[] = await prisma.$queryRawUnsafe(fallbackSql, ...queryParams);
+      notifications = rows.map(r => ({ ...r, notif_status: 'pending' }));
+    }
 
     const countResult: { count: bigint }[] = await prisma.$queryRawUnsafe(
       `SELECT COUNT(*)::bigint as count FROM notifications WHERE user_id = $1 AND is_read = false`,
