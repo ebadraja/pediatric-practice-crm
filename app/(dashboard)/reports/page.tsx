@@ -29,7 +29,6 @@ import {
   Clock,
   AlertCircle,
   Target,
-  DollarSign,
   Loader2,
   Mail,
   MailOpen,
@@ -38,86 +37,60 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 
-const CALLS_OVER_TIME = [
-  { day: 'Jan 1', aiHandled: 24, escalated: 8 },
-  { day: 'Jan 2', aiHandled: 28, escalated: 6 },
-  { day: 'Jan 3', aiHandled: 31, escalated: 9 },
-  { day: 'Jan 4', aiHandled: 25, escalated: 7 },
-  { day: 'Jan 5', aiHandled: 35, escalated: 5 },
-  { day: 'Jan 6', aiHandled: 32, escalated: 8 },
-  { day: 'Jan 7', aiHandled: 28, escalated: 6 },
-  { day: 'Jan 8', aiHandled: 29, escalated: 7 },
-  { day: 'Jan 9', aiHandled: 34, escalated: 9 },
-  { day: 'Jan 10', aiHandled: 31, escalated: 5 },
-];
+// ── Appointment analytics (real data from /api/reports/overview) ─────────────
 
-const CALL_OUTCOMES = [
-  { name: 'Booked', value: 521, color: '#10b981' },
-  { name: 'Transferred', value: 89, color: '#f97316' },
-  { name: 'Info Only', value: 52, color: '#3b82f6' },
-  { name: 'Hung Up', value: 25, color: '#9ca3af' },
-];
+const TYPE_COLORS: Record<string, string> = {
+  'Well Visit':        '#3b82f6',
+  'Sick Visit':        '#22c55e',
+  'Behavioral Health': '#d946ef',
+  'New Patient':       '#14b8a6',
+  'Nurse Visit':       '#f97316',
+  'Virtual':           '#6366f1',
+  'Vaccination':       '#a855f7',
+  'Follow-up':         '#f59e0b',
+  'Consultation':      '#06b6d4',
+  'Procedure':         '#f43f5e',
+  'Other':             '#38bdf8',
+};
 
-const APPOINTMENT_TYPES = [
-  { name: 'Well-child visits', value: 245 },
-  { name: 'Sick visits', value: 167 },
-  { name: 'Vaccinations', value: 78 },
-  { name: 'Follow-ups', value: 31 },
-];
+const OUTCOME_COLORS: Record<string, string> = {
+  'Booked':      '#10b981',
+  'Transferred': '#f97316',
+  'Info Only':   '#3b82f6',
+  'Hung Up':     '#9ca3af',
+  'Voicemail':   '#8b5cf6',
+  'In Progress': '#64748b',
+};
 
-const PEAK_HOURS = [
-  { hour: '8 AM', calls: 8 },
-  { hour: '9 AM', calls: 24 },
-  { hour: '10 AM', calls: 32 },
-  { hour: '11 AM', calls: 28 },
-  { hour: '12 PM', calls: 15 },
-  { hour: '1 PM', calls: 18 },
-  { hour: '2 PM', calls: 26 },
-  { hour: '3 PM', calls: 31 },
-  { hour: '4 PM', calls: 22 },
-  { hour: '5 PM', calls: 9 },
-];
+interface OverviewData {
+  rangeDays: number;
+  gcalConnected: boolean;
+  kpis: {
+    totalAppointments: number;
+    noShowCount: number;
+    noShowRate: number;
+    totalCalls: number;
+    escalatedCalls: number;
+    avgCallDurationSeconds: number;
+    activePatients: number;
+    newPatients: number;
+    chatSessions: number;
+    emailsSent: number;
+  };
+  apptsOverTime: Array<{ label: string; appts: number; noShows: number }>;
+  callsOverTime: Array<{ label: string; calls: number; escalated: number }>;
+  apptTypes: Array<{ name: string; value: number }>;
+  peakHours: Array<{ hour: string; count: number }>;
+  callOutcomes: Array<{ name: string; value: number }>;
+  engagement: { calls: number; chats: number; emails: number };
+}
 
-const TOP_FAQS = [
-  { question: "What are your hours?", count: 89, percentage: 12 },
-  { question: "Do you accept [insurance]?", count: 67, percentage: 9 },
-  { question: "When can I book?", count: 54, percentage: 7 },
-  { question: "Are you taking new patients?", count: 43, percentage: 6 },
-  { question: "What's the cost for [service]?", count: 32, percentage: 4 },
-  { question: "Can I reschedule my appointment?", count: 28, percentage: 4 },
-  { question: "Do you offer virtual visits?", count: 24, percentage: 3 },
-  { question: "How do I pay?", count: 19, percentage: 3 },
-  { question: "Is walk-in available?", count: 15, percentage: 2 },
-  { question: "What forms do I need?", count: 12, percentage: 2 },
-];
-
-const ENGAGEMENT_CHANNELS = [
-  { name: 'Phone Calls', value: 60 },
-  { name: 'Website Chatbot', value: 30 },
-  { name: 'Walk-ins', value: 8 },
-  { name: 'Email', value: 2 },
-];
-
-const PROVIDER_PERFORMANCE = [
-  { name: 'Dr. Jonathan Tamas', appointments: 287, rating: 4.9, noShowRate: 2.1 },
-  { name: 'Dr. Peaches Richards', appointments: 234, rating: 4.8, noShowRate: 3.4 },
-];
-
-const KPI_DATA = [
-  { label: 'Total Calls', value: '687', change: '+12%', trend: 'up', iconColor: 'text-blue-600 dark:text-blue-400', iconBg: 'bg-blue-50 dark:bg-blue-950/40', icon: Phone },
-  { label: 'Appointments Booked', value: '521', change: '76% success', trend: 'up', iconColor: 'text-green-600 dark:text-green-400', iconBg: 'bg-green-50 dark:bg-green-950/40', icon: Calendar },
-  { label: 'Total Patients', value: '1,247', change: '+47 new', trend: 'up', iconColor: 'text-purple-600 dark:text-purple-400', iconBg: 'bg-purple-50 dark:bg-purple-950/40', icon: Users },
-  { label: 'Revenue Impact', value: '$43,200', change: 'This month', trend: 'up', iconColor: 'text-emerald-600 dark:text-emerald-400', iconBg: 'bg-emerald-50 dark:bg-emerald-950/40', icon: Activity },
-  { label: 'No-Show Rate', value: '3.2%', change: '-1.1%', trend: 'down', iconColor: 'text-orange-600 dark:text-orange-400', iconBg: 'bg-orange-50 dark:bg-orange-950/40', icon: AlertCircle },
-  { label: 'Avg Call Duration', value: '2.4 min', change: '-18 sec', trend: 'down', iconColor: 'text-slate-600 dark:text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-800', icon: Clock },
-];
-
-const INSIGHTS = [
-  { icon: TrendingUp, iconColor: 'text-green-600 dark:text-green-400', title: 'Bookings Increased', description: 'Bookings increased 12% compared to last month' },
-  { icon: Clock, iconColor: 'text-orange-600 dark:text-orange-400', title: 'Peak Hours', description: 'Most calls happen between 9-11 AM' },
-  { icon: Target, iconColor: 'text-blue-600 dark:text-blue-400', title: 'AI Performance', description: 'AI agent handles 84% of bookings without escalation' },
-  { icon: DollarSign, iconColor: 'text-emerald-600 dark:text-emerald-400', title: 'Revenue Impact', description: 'Estimated $43,200 in revenue from AI-booked appointments' },
-  { icon: AlertCircle, iconColor: 'text-red-600 dark:text-red-400', title: 'Follow-ups Needed', description: '5 patients flagged for follow-up this month' },
+const PERIOD_TABS = [
+  { label: 'Today',        days: 1 },
+  { label: 'Last 7 Days',  days: 7 },
+  { label: 'Last 30 Days', days: 30 },
+  { label: 'Last Quarter', days: 90 },
+  { label: 'Last Year',    days: 365 },
 ];
 
 const card = "bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 rounded-xl shadow-sm";
@@ -196,10 +169,19 @@ interface MetricsData {
   };
 }
 
-function KPICard({ kpi }: { kpi: (typeof KPI_DATA)[number] }) {
+interface KpiCardProps {
+  label: string;
+  value: string;
+  sub: string;
+  icon: React.ElementType;
+  iconColor: string;
+  iconBg: string;
+}
+
+function KPICard({ kpi }: { kpi: KpiCardProps }) {
   const Icon = kpi.icon;
   return (
-    <div key={kpi.label} className={`${card} p-4 md:p-6`}>
+    <div className={`${card} p-4 md:p-6`}>
       <div className="flex items-start justify-between mb-4">
         <div>
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{kpi.label}</p>
@@ -210,13 +192,7 @@ function KPICard({ kpi }: { kpi: (typeof KPI_DATA)[number] }) {
         </div>
       </div>
       <div className="flex items-center gap-1 pt-3 border-t border-slate-100 dark:border-slate-800">
-        {kpi.trend === 'up'
-          ? <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-          : <TrendingDown className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />
-        }
-        <span className={`text-xs font-medium ${kpi.trend === 'up' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-          {kpi.change}
-        </span>
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{kpi.sub}</span>
       </div>
     </div>
   );
@@ -224,9 +200,10 @@ function KPICard({ kpi }: { kpi: (typeof KPI_DATA)[number] }) {
 
 export default function ReportsAnalyticsPage() {
   const router = useRouter();
-  const [timePeriod, setTimePeriod] = useState('30days');
-  const [dateRange, setDateRange] = useState('Last 30 days');
+  const [periodDays, setPeriodDays] = useState(30);
+  const [overview, setOverview] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [overviewError, setOverviewError] = useState("");
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [metricsError, setMetricsError] = useState("");
@@ -237,10 +214,23 @@ export default function ReportsAnalyticsPage() {
   const [emailLoading, setEmailLoading] = useState(true);
   const [emailError, setEmailError] = useState('');
 
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 450);
-    return () => clearTimeout(t);
+  const fetchOverview = useCallback(async (days: number) => {
+    setLoading(true);
+    setOverviewError("");
+    try {
+      const res = await fetch(`/api/reports/overview?days=${days}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: OverviewData = await res.json();
+      setOverview(data);
+    } catch (e) {
+      console.error("Failed to load report overview", e);
+      setOverviewError("Failed to load report data.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchOverview(periodDays); }, [periodDays, fetchOverview]);
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -296,42 +286,24 @@ export default function ReportsAnalyticsPage() {
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Track performance metrics and operational insights</p>
         </div>
         <div className="flex flex-wrap gap-2 self-start sm:self-auto">
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          <Button
+            className="gap-2 bg-blue-600 hover:bg-blue-700 h-9 text-sm"
+            onClick={() => window.print()}
           >
-            <option>Last 7 days</option>
-            <option>Last 30 days</option>
-            <option>Last 3 months</option>
-            <option>This year</option>
-          </select>
-          <Button className="gap-2 bg-blue-600 hover:bg-blue-700 h-9 text-sm">
             <Download className="w-4 h-4" />
-            Export PDF
-          </Button>
-          <Button variant="outline" className="gap-2 h-9 text-sm dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
-            <Calendar className="w-4 h-4" />
-            Schedule
+            Export / Print
           </Button>
         </div>
       </div>
 
       {/* Time Period Tabs */}
-      <div className="flex gap-0 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
-        {[
-          { label: 'Today', value: 'today' },
-          { label: 'This Week', value: 'week' },
-          { label: 'This Month', value: 'month' },
-          { label: 'Last 30 Days', value: '30days' },
-          { label: 'This Quarter', value: 'quarter' },
-          { label: 'This Year', value: 'year' },
-        ].map((tab) => (
+      <div className="flex gap-0 border-b border-slate-200 dark:border-slate-700 overflow-x-auto items-center">
+        {PERIOD_TABS.map((tab) => (
           <button
-            key={tab.value}
-            onClick={() => setTimePeriod(tab.value)}
+            key={tab.days}
+            onClick={() => setPeriodDays(tab.days)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
-              timePeriod === tab.value
+              periodDays === tab.days
                 ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-400'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
@@ -339,221 +311,279 @@ export default function ReportsAnalyticsPage() {
             {tab.label}
           </button>
         ))}
+        {loading && <Loader2 className="w-4 h-4 animate-spin text-slate-400 ml-2" />}
       </div>
+
+      {overviewError && (
+        <div className={`${card} border-red-200 dark:border-red-800 p-4 flex items-center gap-3`}>
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+          <p className="text-red-700 dark:text-red-400">{overviewError}</p>
+          <button onClick={() => fetchOverview(periodDays)} className="ml-auto text-sm underline text-red-600 dark:text-red-400">Retry</button>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {KPI_DATA.map((kpi) => (
-          <KPICard key={kpi.label} kpi={kpi} />
-        ))}
+        {loading && !overview ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className={`${card} p-6 animate-pulse h-32`} />
+          ))
+        ) : overview ? (
+          [
+            {
+              label: 'Appointments',
+              value: overview.kpis.totalAppointments.toLocaleString(),
+              sub: overview.gcalConnected ? 'CRM + Google Calendar' : 'CRM only',
+              icon: Calendar,
+              iconColor: 'text-green-600 dark:text-green-400',
+              iconBg: 'bg-green-50 dark:bg-green-950/40',
+            },
+            {
+              label: 'No-Show / Cancelled',
+              value: `${overview.kpis.noShowRate}%`,
+              sub: `${overview.kpis.noShowCount} of ${overview.kpis.totalAppointments} appointments`,
+              icon: AlertCircle,
+              iconColor: 'text-orange-600 dark:text-orange-400',
+              iconBg: 'bg-orange-50 dark:bg-orange-950/40',
+            },
+            {
+              label: 'Total Calls',
+              value: overview.kpis.totalCalls.toLocaleString(),
+              sub: `${overview.kpis.escalatedCalls} escalated to staff`,
+              icon: Phone,
+              iconColor: 'text-blue-600 dark:text-blue-400',
+              iconBg: 'bg-blue-50 dark:bg-blue-950/40',
+            },
+            {
+              label: 'Active Patients',
+              value: overview.kpis.activePatients.toLocaleString(),
+              sub: `+${overview.kpis.newPatients} new in this period`,
+              icon: Users,
+              iconColor: 'text-purple-600 dark:text-purple-400',
+              iconBg: 'bg-purple-50 dark:bg-purple-950/40',
+            },
+            {
+              label: 'Chat Sessions',
+              value: overview.kpis.chatSessions.toLocaleString(),
+              sub: 'website chatbot conversations',
+              icon: Activity,
+              iconColor: 'text-teal-600 dark:text-teal-400',
+              iconBg: 'bg-teal-50 dark:bg-teal-950/40',
+            },
+            {
+              label: 'Avg Call Duration',
+              value: overview.kpis.avgCallDurationSeconds
+                ? `${Math.floor(overview.kpis.avgCallDurationSeconds / 60)}:${String(overview.kpis.avgCallDurationSeconds % 60).padStart(2, '0')}`
+                : '—',
+              sub: 'minutes per call',
+              icon: Clock,
+              iconColor: 'text-slate-600 dark:text-slate-400',
+              iconBg: 'bg-slate-100 dark:bg-slate-800',
+            },
+          ].map((kpi) => <KPICard key={kpi.label} kpi={kpi} />)
+        ) : null}
       </div>
 
       {/* Charts Grid */}
+      {overview && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Calls Over Time */}
-        {loading ? (
-          <div className={`${card} animate-pulse`}>
-            <div className={cardHeader}><div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-            <div className="p-4 md:p-6"><div className="h-64 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-          </div>
-        ) : (
-          <div className={card}>
-            <div className={cardHeader}><h2 className={cardTitle}>Calls Over Time</h2></div>
-            <div className="p-4 md:p-6">
+        {/* Appointments Over Time */}
+        <div className={card}>
+          <div className={cardHeader}><h2 className={cardTitle}>Appointments Over Time</h2></div>
+          <div className="p-4 md:p-6">
+            {overview.kpis.totalAppointments === 0 ? (
+              <div className="flex items-center justify-center h-[280px] text-slate-400 dark:text-slate-500 text-sm">
+                No appointments in this period
+              </div>
+            ) : (
               <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={CALLS_OVER_TIME}>
+                <LineChart data={overview.apptsOverTime}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    interval={overview.apptsOverTime.length > 14 ? Math.floor(overview.apptsOverTime.length / 10) : 0}
+                  />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="aiHandled" stroke="#3b82f6" strokeWidth={2} dot={false} name="AI Handled" />
-                  <Line type="monotone" dataKey="escalated" stroke="#f97316" strokeWidth={2} dot={false} name="Escalated" />
+                  <Line type="monotone" dataKey="appts" stroke="#3b82f6" strokeWidth={2} dot={false} name="Appointments" />
+                  <Line type="monotone" dataKey="noShows" stroke="#f97316" strokeWidth={2} dot={false} name="No-shows" />
                 </LineChart>
               </ResponsiveContainer>
-            </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* Appointment Types */}
+        <div className={card}>
+          <div className={cardHeader}><h2 className={cardTitle}>Appointments by Visit Type</h2></div>
+          <div className="p-4 md:p-6">
+            {overview.apptTypes.length === 0 ? (
+              <div className="flex items-center justify-center h-[280px] text-slate-400 dark:text-slate-500 text-sm">
+                No appointments in this period
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={overview.apptTypes} layout="vertical" margin={{ top: 5, right: 30, left: 120 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                  <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {overview.apptTypes.map((entry) => (
+                      <Cell key={entry.name} fill={TYPE_COLORS[entry.name] ?? '#3b82f6'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Peak Appointment Hours */}
+        <div className={card}>
+          <div className={cardHeader}><h2 className={cardTitle}>Peak Appointment Hours</h2></div>
+          <div className="p-4 md:p-6">
+            {overview.kpis.totalAppointments === 0 ? (
+              <div className="flex items-center justify-center h-[280px] text-slate-400 dark:text-slate-500 text-sm">
+                No appointments in this period
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={overview.peakHours}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="hour" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" name="Appointments" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
 
         {/* Call Outcomes */}
-        {loading ? (
-          <div className={`${card} animate-pulse`}>
-            <div className={cardHeader}><div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-            <div className="p-4 md:p-6"><div className="h-64 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-          </div>
-        ) : (
-          <div className={card}>
-            <div className={cardHeader}><h2 className={cardTitle}>Call Outcomes</h2></div>
-            <div className="p-4 md:p-6">
+        <div className={card}>
+          <div className={cardHeader}><h2 className={cardTitle}>Call Outcomes</h2></div>
+          <div className="p-4 md:p-6">
+            {overview.callOutcomes.length === 0 ? (
+              <div className="flex items-center justify-center h-[280px] text-slate-400 dark:text-slate-500 text-sm">
+                No calls recorded in this period
+              </div>
+            ) : (
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
-                  <Pie data={CALL_OUTCOMES} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }: { name?: string; percent?: number }) => `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`}>
-                    {CALL_OUTCOMES.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
+                  <Pie data={overview.callOutcomes} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }: { name?: string; percent?: number }) => `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`}>
+                    {overview.callOutcomes.map((entry) => (
+                      <Cell key={entry.name} fill={OUTCOME_COLORS[entry.name] ?? '#64748b'} />
                     ))}
                   </Pie>
                   <Tooltip />
                 </PieChart>
               </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
-        {/* Appointment Types */}
-        {loading ? (
-          <div className={`${card} animate-pulse`}>
-            <div className={cardHeader}><div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-            <div className="p-4 md:p-6"><div className="h-64 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-          </div>
-        ) : (
-          <div className={card}>
-            <div className={cardHeader}><h2 className={cardTitle}>Appointment Types</h2></div>
-            <div className="p-4 md:p-6">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={APPOINTMENT_TYPES} layout="vertical" margin={{ top: 5, right: 30, left: 120 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                  <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
-        {/* Peak Call Hours */}
-        {loading ? (
-          <div className={`${card} animate-pulse`}>
-            <div className={cardHeader}><div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-            <div className="p-4 md:p-6"><div className="h-64 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-          </div>
-        ) : (
-          <div className={card}>
-            <div className={cardHeader}><h2 className={cardTitle}>Peak Call Hours</h2></div>
-            <div className="p-4 md:p-6">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={PEAK_HOURS}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="hour" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                  <Tooltip />
-                  <Bar dataKey="calls" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Top Insights */}
-      <div className={card}>
-        <div className={cardHeader}><h2 className={cardTitle}>Top Insights</h2></div>
-        <div className="p-4 md:p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {INSIGHTS.map((insight) => {
-              const Icon = insight.icon;
-              return (
-                <div key={insight.title} className="p-4 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40">
-                  <div className="mb-2">
-                    <Icon className={`w-5 h-5 ${insight.iconColor}`} />
-                  </div>
-                  <p className="font-semibold text-slate-900 dark:text-slate-100 text-sm mb-1">{insight.title}</p>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">{insight.description}</p>
-                </div>
-              );
-            })}
+            )}
           </div>
         </div>
       </div>
+      )}
 
-      {/* Two Column Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top FAQs */}
-        <div className={card}>
-          <div className={cardHeader}><h2 className={cardTitle}>Top Customer Questions</h2></div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className={tableHeaderRow}>
-                  <th className={tableHeaderCell}>Question</th>
-                  <th className={`${tableHeaderCell} text-center`}>Count</th>
-                  <th className={`${tableHeaderCell} text-center`}>%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TOP_FAQS.map((faq, idx) => (
-                  <tr key={idx} className={tableRow}>
-                    <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{faq.question}</td>
-                    <td className="py-3 px-4 text-center font-medium text-slate-900 dark:text-slate-100">{faq.count}</td>
-                    <td className="py-3 px-4 text-center text-slate-600 dark:text-slate-400">{faq.percentage}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Top Insights — computed from real data */}
+      {overview && overview.kpis.totalAppointments > 0 && (() => {
+        const busiest = overview.apptsOverTime.reduce(
+          (best, b) => (b.appts > best.appts ? b : best),
+          overview.apptsOverTime[0],
+        );
+        const peak = overview.peakHours.reduce(
+          (best, h) => (h.count > best.count ? h : best),
+          overview.peakHours[0],
+        );
+        const topType = overview.apptTypes[0];
+        const insights = [
+          {
+            icon: Calendar,
+            iconColor: 'text-blue-600 dark:text-blue-400',
+            title: 'Busiest Day',
+            description: `${busiest.label} had the most appointments (${busiest.appts}) in this period`,
+          },
+          {
+            icon: Clock,
+            iconColor: 'text-orange-600 dark:text-orange-400',
+            title: 'Peak Hour',
+            description: `Most appointments start around ${peak.hour} (${peak.count} appointments)`,
+          },
+          topType && {
+            icon: Target,
+            iconColor: 'text-green-600 dark:text-green-400',
+            title: 'Top Visit Type',
+            description: `${topType.name} is the most common visit (${topType.value} appointments)`,
+          },
+          {
+            icon: AlertCircle,
+            iconColor: overview.kpis.noShowRate > 10 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400',
+            title: 'No-Show Rate',
+            description: `${overview.kpis.noShowRate}% of appointments were no-shows or cancellations`,
+          },
+          {
+            icon: TrendingUp,
+            iconColor: 'text-purple-600 dark:text-purple-400',
+            title: 'Daily Average',
+            description: `About ${Math.round(overview.kpis.totalAppointments / Math.max(overview.rangeDays, 1) * 10) / 10} appointments per day`,
+          },
+        ].filter(Boolean) as Array<{ icon: React.ElementType; iconColor: string; title: string; description: string }>;
+        return (
+          <div className={card}>
+            <div className={cardHeader}><h2 className={cardTitle}>Top Insights</h2></div>
+            <div className="p-4 md:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                {insights.map((insight) => {
+                  const Icon = insight.icon;
+                  return (
+                    <div key={insight.title} className="p-4 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40">
+                      <div className="mb-2">
+                        <Icon className={`w-5 h-5 ${insight.iconColor}`} />
+                      </div>
+                      <p className="font-semibold text-slate-900 dark:text-slate-100 text-sm mb-1">{insight.title}</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">{insight.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        </div>
+        );
+      })()}
 
-        {/* Patient Engagement */}
+      {/* Patient Engagement by Channel — real counts */}
+      {overview && (
         <div className={card}>
           <div className={cardHeader}><h2 className={cardTitle}>Patient Engagement by Channel</h2></div>
           <div className="p-4 md:p-6 space-y-4">
-            {ENGAGEMENT_CHANNELS.map((channel) => (
-              <div key={channel.name}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{channel.name}</span>
-                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{channel.value}%</span>
+            {(() => {
+              const channels = [
+                { name: 'Phone Calls',      value: overview.engagement.calls },
+                { name: 'Website Chatbot',  value: overview.engagement.chats },
+                { name: 'Emails Sent',      value: overview.engagement.emails },
+              ];
+              const max = Math.max(...channels.map((c) => c.value), 1);
+              return channels.map((channel) => (
+                <div key={channel.name}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{channel.name}</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{channel.value.toLocaleString()}</span>
+                  </div>
+                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full"
+                      style={{ width: `${(channel.value / max) * 100}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-                  <div
-                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full"
-                    style={{ width: `${channel.value}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         </div>
-      </div>
-
-      {/* Provider Performance */}
-      <div className={card}>
-        <div className={cardHeader}><h2 className={cardTitle}>Provider Performance</h2></div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className={tableHeaderRow}>
-                <th className={tableHeaderCell}>Provider</th>
-                <th className={`${tableHeaderCell} text-center`}>Appointments</th>
-                <th className={`${tableHeaderCell} text-center`}>Rating</th>
-                <th className={`${tableHeaderCell} text-center`}>No-Show Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {PROVIDER_PERFORMANCE.map((provider, idx) => (
-                <tr key={idx} className={tableRow}>
-                  <td className="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{provider.name}</td>
-                  <td className="py-3 px-4 text-center text-slate-700 dark:text-slate-300">{provider.appointments}</td>
-                  <td className="py-3 px-4 text-center">
-                    <span className="text-xs font-medium px-2.5 py-0.5 rounded-md bg-yellow-100 dark:bg-yellow-950/50 text-yellow-800 dark:text-yellow-300">
-                      {provider.rating} ⭐
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <span className={`text-xs font-medium px-2.5 py-0.5 rounded-md ${
-                      provider.noShowRate < 3
-                        ? 'bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300'
-                        : 'bg-orange-100 dark:bg-orange-950/50 text-orange-800 dark:text-orange-300'
-                    }`}>
-                      {provider.noShowRate}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
 
       {/* ── Email Analytics Section ────────────────────────────────────────────── */}
       <div className="pt-8 border-t border-slate-200 dark:border-slate-700">

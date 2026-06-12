@@ -35,6 +35,8 @@ interface ScheduleItem {
   type: string;
   status: string;
   patient: { firstName: string; lastName: string } | null;
+  title?: string | null;
+  source?: "crm" | "gcal";
 }
 
 interface DashboardData {
@@ -384,10 +386,11 @@ export default function DashboardPage() {
                           <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
                             {apt.patient
                               ? `${apt.patient.firstName} ${apt.patient.lastName}`
-                              : "Unknown Patient"}
+                              : apt.title ?? "Unknown Patient"}
                           </p>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {formatAppointmentType(apt.type)}
+                            {apt.source === "gcal" && " · Google Calendar"}
                           </p>
                         </div>
                       </div>

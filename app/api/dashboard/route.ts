@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { auth } from "@/auth"
+import { fetchGcalEvents, GCAL_TYPE_LABELS, type ClassifiedGcalEvent } from "@/lib/google-calendar"
 
 export async function GET() {
   try {
@@ -118,10 +119,55 @@ export async function GET() {
       }),
     ])
 
+    // Google Calendar events (last 30 days through end of today) — the practice's
+    // real schedule lives in GCal, so appointment stats must include it.
+    let gcalEvents: ClassifiedGcalEvent[] = []
+    try {
+      const gcal = await fetchGcalEvents(thirtyDaysAgo, todayEnd)
+      gcalEvents = gcal.events.filter((e) => !e.allDay)
+    } catch (e) {
+      console.error("[GET /api/dashboard] gcal fetch failed", e)
+    }
+
+    const inRange = (e: ClassifiedGcalEvent, from: Date, to: Date) => {
+      const t = new Date(e.start).getTime()
+      return t >= from.getTime() && t <= to.getTime()
+    }
+    const gcalToday = gcalEvents.filter((e) => inRange(e, todayStart, todayEnd))
+    const gcalNoShows30 = gcalEvents.filter((e) => e.noShow).length
+
     const noShowRate =
-      totalAptsLast30 > 0
-        ? parseFloat(((noShowsLast30 / totalAptsLast30) * 100).toFixed(1))
+      totalAptsLast30 + gcalEvents.length > 0
+        ? parseFloat(
+            (((noShowsLast30 + gcalNoShows30) / (totalAptsLast30 + gcalEvents.length)) * 100).toFixed(1)
+          )
         : 0
+
+    // Merge today's schedule: CRM appointments + GCal events (no-shows excluded)
+    const mergedSchedule = [
+      ...todayAppointments.map((a) => ({
+        id: a.id,
+        startTime: a.startTime.toISOString(),
+        type: a.type as string,
+        status: a.status as string,
+        patient: a.patient,
+        title: null as string | null,
+        source: "crm" as const,
+      })),
+      ...gcalToday
+        .filter((e) => !e.noShow)
+        .map((e) => ({
+          id: e.id,
+          startTime: e.start,
+          type: GCAL_TYPE_LABELS[e.visitType],
+          status: "SCHEDULED",
+          patient: null,
+          title: e.cleanTitle,
+          source: "gcal" as const,
+        })),
+    ]
+      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .slice(0, 8)
 
     const avgDurationSecs = avgDurationResult._avg.duration ?? 0
 
@@ -137,7 +183,7 @@ export async function GET() {
       stats: {
         callsToday,
         callsYesterday,
-        appointmentsToday: todayAppointments.length,
+        appointmentsToday: todayAppointments.length + gcalToday.length,
         appointmentsBookedToday,
         appointmentsYesterday,
         activePatients,
@@ -148,7 +194,7 @@ export async function GET() {
         escalatedToday,
       },
       recentCalls,
-      todaySchedule: todayAppointments,
+      todaySchedule: mergedSchedule,
     })
   } catch (error) {
     console.error("[GET /api/dashboard]", error)
