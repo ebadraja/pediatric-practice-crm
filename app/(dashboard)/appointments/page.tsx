@@ -259,7 +259,25 @@ function AppointmentBlock({
   );
 }
 
-// ─── GCalEventBlock ───────────────────────────────────────────────────────────
+// ─── Google Calendar event typing & parsing ──────────────────────────────────
+
+const GCAL_TYPE_CONFIG = {
+  WELL:    { label: "Well Visit",        dot: "bg-blue-500",    block: "bg-blue-50 dark:bg-blue-950/50",       text: "text-blue-800 dark:text-blue-200",       borderColor: "#3b82f6" },
+  SICK:    { label: "Sick Visit",        dot: "bg-green-500",   block: "bg-green-50 dark:bg-green-950/50",     text: "text-green-800 dark:text-green-200",     borderColor: "#22c55e" },
+  BH:      { label: "Behavioral Health", dot: "bg-fuchsia-500", block: "bg-fuchsia-50 dark:bg-fuchsia-950/50", text: "text-fuchsia-800 dark:text-fuchsia-200", borderColor: "#d946ef" },
+  NEW:     { label: "New Patient",       dot: "bg-teal-500",    block: "bg-teal-50 dark:bg-teal-950/50",       text: "text-teal-800 dark:text-teal-200",       borderColor: "#14b8a6" },
+  NURSE:   { label: "Nurse Visit",       dot: "bg-orange-500",  block: "bg-orange-50 dark:bg-orange-950/50",   text: "text-orange-800 dark:text-orange-200",   borderColor: "#f97316" },
+  VIRTUAL: { label: "Virtual",           dot: "bg-indigo-500",  block: "bg-indigo-50 dark:bg-indigo-950/50",   text: "text-indigo-800 dark:text-indigo-200",   borderColor: "#6366f1" },
+  OTHER:   { label: "Other",             dot: "bg-sky-400",     block: "bg-sky-50 dark:bg-sky-950/40",         text: "text-sky-800 dark:text-sky-200",         borderColor: "#38bdf8" },
+} as const;
+
+type GcalVisitType = keyof typeof GCAL_TYPE_CONFIG;
+
+interface EnrichedGCalEvent extends GCalEvent {
+  visitType: GcalVisitType;
+  noShow: boolean;
+  cleanTitle: string;
+}
 
 function cleanSummary(raw: string): string {
   return raw
@@ -270,7 +288,26 @@ function cleanSummary(raw: string): string {
     .trim();
 }
 
-function GCalEventBlock({ event, col, totalCols }: { event: GCalEvent; col: number; totalCols: number }) {
+function parseGcal(e: GCalEvent): EnrichedGCalEvent {
+  const raw = e.summary ?? "";
+  let visitType: GcalVisitType = "OTHER";
+  if      (/[-–]\s*WELL\b/i.test(raw))  visitType = "WELL";
+  else if (/[-–]\s*SICK\b/i.test(raw))  visitType = "SICK";
+  else if (/[-–]\s*BH\b/i.test(raw))    visitType = "BH";
+  else if (/[-–]\s*NEW\b/i.test(raw))   visitType = "NEW";
+  else if (/[-–]\s*NURSE\b/i.test(raw)) visitType = "NURSE";
+  else if (/virtual/i.test(raw))        visitType = "VIRTUAL";
+  return {
+    ...e,
+    visitType,
+    noShow: /no[\s-]*show/i.test(raw),
+    cleanTitle: cleanSummary(raw) || raw,
+  };
+}
+
+// ─── GCalEventBlock ───────────────────────────────────────────────────────────
+
+function GCalEventBlock({ event, col, totalCols }: { event: EnrichedGCalEvent; col: number; totalCols: number }) {
   if (event.allDay) return null;
 
   const start   = new Date(event.start);
@@ -285,7 +322,7 @@ function GCalEventBlock({ event, col, totalCols }: { event: GCalEvent; col: numb
   if (top < 0 || top >= TOTAL_HEIGHT) return null;
   if (col >= 3) return null;
 
-  const label = cleanSummary(event.summary);
+  const cfg = GCAL_TYPE_CONFIG[event.visitType];
 
   return (
     <a
@@ -299,17 +336,23 @@ function GCalEventBlock({ event, col, totalCols }: { event: GCalEvent; col: numb
         left: `calc(${leftPct}% + 2px)`,
         width: `calc(${colW}% - 4px)`,
         zIndex: 8,
-        borderLeft: "3px solid #38bdf8",
+        borderLeft: `3px solid ${event.noShow ? "#94a3b8" : cfg.borderColor}`,
       }}
-      className="rounded-r-md px-1.5 py-0.5 bg-sky-50/95 dark:bg-sky-950/50 overflow-hidden cursor-pointer hover:brightness-95 transition-all select-none"
+      className={`rounded-r-md px-1.5 py-0.5 overflow-hidden cursor-pointer hover:brightness-95 transition-all select-none ${
+        event.noShow ? "bg-slate-100 dark:bg-slate-800/60 opacity-60" : cfg.block
+      }`}
       title={event.summary}
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300 truncate leading-tight">
-        {label || event.summary}
+      <p className={`text-[10px] font-semibold truncate leading-tight ${
+        event.noShow ? "line-through text-slate-500 dark:text-slate-400" : cfg.text
+      }`}>
+        {event.cleanTitle}
       </p>
       {height > 30 && (
-        <p className="text-[9px] text-sky-600 dark:text-sky-400 opacity-80 truncate">
+        <p className={`text-[9px] opacity-75 truncate ${
+          event.noShow ? "text-slate-400 dark:text-slate-500" : cfg.text
+        }`}>
           {format(start, "h:mm a")}
         </p>
       )}
@@ -477,76 +520,14 @@ function AppointmentDetailDialog({
   );
 }
 
-// ─── Filter pill helper ───────────────────────────────────────────────────────
-
-function FilterPills({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: string; label: string }[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex gap-0.5 border border-slate-200 dark:border-slate-700 rounded-lg p-1 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
-      {options.map(({ value: v, label }) => (
-        <button
-          key={v}
-          onClick={() => onChange(v)}
-          className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
-            value === v
-              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
-
-const PROVIDER_FILTERS = [
-  { value: "all",             label: "All" },
-  { value: "Dr. Tamas",       label: "Dr. Tamas" },
-  { value: "Dr. Richards",    label: "Dr. Richards" },
-  { value: "Nurse Jennifer",  label: "Nurse" },
-];
-
-const TYPE_FILTERS = [
-  { value: "all",              label: "All Types" },
-  { value: "WELL_CHILD_VISIT", label: "Well-child" },
-  { value: "SICK_VISIT",       label: "Sick Visit" },
-  { value: "VACCINATION",      label: "Vaccination" },
-  { value: "FOLLOW_UP",        label: "Follow-up" },
-];
-
-const STATUS_FILTERS = [
-  { value: "all",        label: "All" },
-  { value: "SCHEDULED",  label: "Scheduled" },
-  { value: "CONFIRMED",  label: "Confirmed" },
-  { value: "COMPLETED",  label: "Completed" },
-  { value: "CANCELLED",  label: "Cancelled" },
-];
-
-const LEGEND = [
-  { type: "WELL_CHILD_VISIT", label: "Well-child" },
-  { type: "SICK_VISIT",       label: "Sick Visit" },
-  { type: "VACCINATION",      label: "Vaccination" },
-  { type: "FOLLOW_UP",        label: "Follow-up" },
-  { type: "CONSULTATION",     label: "Consultation" },
-  { type: "PROCEDURE",        label: "Procedure" },
-];
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading]           = useState(true);
   const [currentWeek, setCurrentWeek]   = useState<Date>(() => new Date());
   const [viewMode, setViewMode]         = useState<"day" | "week" | "month">("week");
-  const [filters, setFilters]           = useState({ provider: "all", type: "all", status: "all" });
+  const [activeCats, setActiveCats]     = useState<Set<string>>(new Set());
   const [selected, setSelected]         = useState<Appointment | null>(null);
   const [newApptOpen, setNewApptOpen]   = useState(false);
   const [prefill, setPrefill]           = useState<{ date: string; time: string } | null>(null);
@@ -576,9 +557,6 @@ export default function AppointmentsPage() {
         limit:     "200",
         page:      "1",
       });
-      if (filters.provider !== "all") p.set("provider", filters.provider);
-      if (filters.type     !== "all") p.set("type",     filters.type);
-      if (filters.status   !== "all") p.set("status",   filters.status);
 
       const res = await fetch(`/api/appointments?${p}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -590,7 +568,7 @@ export default function AppointmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [weekStart, weekEnd, filters.provider, filters.type, filters.status]);
+  }, [weekStart, weekEnd]);
 
   useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
 
@@ -641,13 +619,58 @@ export default function AppointmentsPage() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Stats ───────────────────────────────────────────────────────────────────
+  // ── Enriched GCal events + type filtering ───────────────────────────────────
+
+  const enrichedGcal = useMemo(
+    () => gcalEvents.filter((e) => !e.allDay).map(parseGcal),
+    [gcalEvents],
+  );
+
+  // Legend entries: only types actually present this week, with counts
+  const legendEntries = useMemo(() => {
+    const entries: Array<{ key: string; label: string; dot: string; count: number }> = [];
+    (Object.keys(GCAL_TYPE_CONFIG) as GcalVisitType[]).forEach((t) => {
+      const count = enrichedGcal.filter((e) => e.visitType === t).length;
+      if (count > 0) entries.push({ key: `g:${t}`, label: GCAL_TYPE_CONFIG[t].label, dot: GCAL_TYPE_CONFIG[t].dot, count });
+    });
+    Object.entries(TYPE_CONFIG).forEach(([t, cfg]) => {
+      const count = appointments.filter((a) => a.type === t).length;
+      if (count > 0) entries.push({ key: `c:${t}`, label: cfg.label, dot: cfg.dot, count });
+    });
+    return entries;
+  }, [enrichedGcal, appointments]);
+
+  const toggleCat = useCallback((key: string) => {
+    setActiveCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const visibleAppts = useMemo(
+    () => activeCats.size === 0 ? appointments : appointments.filter((a) => activeCats.has(`c:${a.type}`)),
+    [appointments, activeCats],
+  );
+  const visibleGcal = useMemo(
+    () => activeCats.size === 0 ? enrichedGcal : enrichedGcal.filter((e) => activeCats.has(`g:${e.visitType}`)),
+    [enrichedGcal, activeCats],
+  );
+
+  // ── Stats (CRM + Google Calendar combined) ──────────────────────────────────
 
   const today = useMemo(() => new Date(), []);
   const todayCount = useMemo(
-    () => appointments.filter((a) => isSameDay(parseISO(a.startTime), today)).length,
-    [appointments, today],
+    () =>
+      appointments.filter((a) => isSameDay(parseISO(a.startTime), today)).length +
+      enrichedGcal.filter((e) => isSameDay(new Date(e.start), today)).length,
+    [appointments, enrichedGcal, today],
   );
+  const weekTotal = appointments.length + enrichedGcal.length;
+  const noShowCount =
+    appointments.filter((a) => a.status === "CANCELLED" || a.status === "NO_SHOW").length +
+    enrichedGcal.filter((e) => e.noShow).length;
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -760,7 +783,7 @@ export default function AppointmentsPage() {
         </div>
       </div>
 
-      {/* ── Sub-header: Navigation & Filters ──────────────────────────────────── */}
+      {/* ── Sub-header: Navigation ────────────────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="px-2 h-8"
@@ -785,14 +808,14 @@ export default function AppointmentsPage() {
           {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1 -mb-1 scrollbar-hide">
-          <FilterPills options={PROVIDER_FILTERS} value={filters.provider}
-            onChange={(v) => setFilters((f) => ({ ...f, provider: v }))} />
-          <FilterPills options={TYPE_FILTERS}     value={filters.type}
-            onChange={(v) => setFilters((f) => ({ ...f, type: v }))} />
-          <FilterPills options={STATUS_FILTERS}   value={filters.status}
-            onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
-        </div>
+        {activeCats.size > 0 && (
+          <button
+            onClick={() => setActiveCats(new Set())}
+            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline self-start lg:self-auto"
+          >
+            Clear filter ({activeCats.size})
+          </button>
+        )}
       </div>
 
       {/* ── Mobile / Tablet list ───────────────────────────────────────────────── */}
@@ -810,7 +833,7 @@ export default function AppointmentsPage() {
               </div>
             ) : appointments.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-6">
-                No appointments match the current filters
+                No CRM appointments this week
               </p>
             ) : (
               <div className="space-y-5">
@@ -884,8 +907,8 @@ export default function AppointmentsPage() {
 
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: "Today",     value: todayCount,           color: "text-slate-900 dark:text-slate-50" },
-            { label: "This Week", value: appointments.length,  color: "text-slate-900 dark:text-slate-50" },
+            { label: "Today",     value: todayCount, color: "text-slate-900 dark:text-slate-50" },
+            { label: "This Week", value: weekTotal,  color: "text-slate-900 dark:text-slate-50" },
           ].map((s) => (
             <Card key={s.label}>
               <CardContent className="pt-4 pb-4 px-3 text-center">
@@ -941,8 +964,8 @@ export default function AppointmentsPage() {
                   </div>
                   {/* Single day column */}
                   {(() => {
-                    const dayAppts = appointments.filter((a) => isSameDay(parseISO(a.startTime), selectedDay));
-                    const dayGcal  = showGcal ? gcalEvents.filter((e) => !e.allDay && isSameDay(new Date(e.start), selectedDay)) : [];
+                    const dayAppts = visibleAppts.filter((a) => isSameDay(parseISO(a.startTime), selectedDay));
+                    const dayGcal  = showGcal ? visibleGcal.filter((e) => isSameDay(new Date(e.start), selectedDay)) : [];
                     const layoutItems = [
                       ...dayAppts.map((a) => { const s = parseISO(a.startTime); const e = parseISO(a.endTime); return { id: `a-${a.id}`, startMin: s.getHours() * 60 + s.getMinutes() - DAY_START * 60, endMin: e.getHours() * 60 + e.getMinutes() - DAY_START * 60 }; }),
                       ...dayGcal.map((e)  => { const s = new Date(e.start); const end = new Date(e.end); return { id: `g-${e.id}`, startMin: s.getHours() * 60 + s.getMinutes() - DAY_START * 60, endMin: end.getHours() * 60 + end.getMinutes() - DAY_START * 60 }; }),
@@ -1041,11 +1064,11 @@ export default function AppointmentsPage() {
 
                   {/* Day columns */}
                   {weekDays.map((day) => {
-                    const dayAppts = appointments.filter((a) =>
+                    const dayAppts = visibleAppts.filter((a) =>
                       isSameDay(parseISO(a.startTime), day)
                     );
                     const dayGcal = showGcal
-                      ? gcalEvents.filter((e) => !e.allDay && isSameDay(new Date(e.start), day))
+                      ? visibleGcal.filter((e) => isSameDay(new Date(e.start), day))
                       : [];
                     const layoutItems = [
                       ...dayAppts.map((a) => {
@@ -1170,14 +1193,9 @@ export default function AppointmentsPage() {
             </CardHeader>
             <CardContent className="px-4 pb-4 space-y-3">
               {[
-                { label: "Today",         value: todayCount,          icon: Clock },
-                { label: "Total",         value: appointments.length, icon: Calendar },
-                { label: "Completed",
-                  value: appointments.filter((a) => a.status === "COMPLETED").length,
-                  icon: User },
-                { label: "Cancelled",
-                  value: appointments.filter((a) => a.status === "CANCELLED" || a.status === "NO_SHOW").length,
-                  icon: Ban },
+                { label: "Today",              value: todayCount,  icon: Clock },
+                { label: "Total",              value: weekTotal,   icon: Calendar },
+                { label: "No-show / Cancelled", value: noShowCount, icon: Ban },
               ].map(({ label, value, icon: Icon }) => (
                 <div key={label} className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
@@ -1192,37 +1210,69 @@ export default function AppointmentsPage() {
             </CardContent>
           </Card>
 
-          {/* Color legend */}
+          {/* Visit types — interactive legend / filter */}
           <Card>
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Appointment Types
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4 space-y-2">
-              {LEGEND.map(({ type, label }) => (
-                <div key={type} className="flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${TYPE_CONFIG[type].dot}`} />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">{label}</span>
-                </div>
-              ))}
-              {gcalConnected && (
-                <div className="flex items-center gap-2 mt-1 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-blue-400" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Google Calendar</span>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Visit Types
+                </CardTitle>
+                {activeCats.size > 0 && (
                   <button
-                    onClick={() => setShowGcal((v) => !v)}
-                    className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-medium ${showGcal ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                    onClick={() => setActiveCats(new Set())}
+                    className="text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:underline"
                   >
-                    {showGcal ? 'On' : 'Off'}
+                    Show all
                   </button>
-                </div>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500">Click a type to filter the calendar</p>
+            </CardHeader>
+            <CardContent className="px-2 pb-3 space-y-0.5">
+              {legendEntries.length === 0 ? (
+                <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-2">
+                  No appointments this week
+                </p>
+              ) : (
+                legendEntries.map(({ key, label, dot, count }) => {
+                  const active = activeCats.has(key);
+                  const dimmed = activeCats.size > 0 && !active;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => toggleCat(key)}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-left ${
+                        active
+                          ? "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-200 dark:ring-blue-800"
+                          : "hover:bg-slate-50 dark:hover:bg-slate-800"
+                      } ${dimmed ? "opacity-40" : ""}`}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dot}`} />
+                      <span className="text-xs text-slate-700 dark:text-slate-300 flex-1">{label}</span>
+                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-full px-1.5 py-0.5">
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })
               )}
-              <div className="pt-1 border-t border-slate-100 dark:border-slate-800 mt-1">
+              <div className="pt-2 mt-1 border-t border-slate-100 dark:border-slate-800 px-2 space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-slate-300 dark:bg-slate-600" />
                   <span className="text-xs text-slate-500 dark:text-slate-500">Cancelled / No-show</span>
                 </div>
+                {gcalConnected && (
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-2.5 h-2.5 flex-shrink-0 text-slate-400" />
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Google Calendar</span>
+                    <button
+                      onClick={() => setShowGcal((v) => !v)}
+                      className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-medium ${showGcal ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                    >
+                      {showGcal ? 'On' : 'Off'}
+                    </button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1248,14 +1298,14 @@ export default function AppointmentsPage() {
                   .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
                 const gcalUpcoming = showGcal
-                  ? gcalEvents
-                      .filter((e) => !e.allDay && isSameDay(new Date(e.start), today))
+                  ? enrichedGcal
+                      .filter((e) => !e.noShow && isSameDay(new Date(e.start), today))
                       .sort((a, b) => a.start.localeCompare(b.start))
                   : [];
 
                 type UpcomingItem =
                   | { kind: "crm"; appt: (typeof crmUpcoming)[0] }
-                  | { kind: "gcal"; event: GCalEvent };
+                  | { kind: "gcal"; event: EnrichedGCalEvent };
 
                 const merged: UpcomingItem[] = [
                   ...crmUpcoming.map((appt): UpcomingItem => ({ kind: "crm", appt })),
@@ -1295,21 +1345,22 @@ export default function AppointmentsPage() {
                           </button>
                         );
                       }
+                      const gcfg = GCAL_TYPE_CONFIG[item.event.visitType];
                       return (
                         <a
                           key={`gcal-${item.event.id}`}
                           href={item.event.htmlLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-sky-50 dark:hover:bg-sky-950/30 transition-colors text-left"
+                          className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
                         >
-                          <span className="w-2 h-2 rounded-full flex-shrink-0 bg-sky-400" />
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${gcfg.dot}`} />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-slate-800 dark:text-slate-100 truncate">
-                              {item.event.summary}
+                              {item.event.cleanTitle}
                             </p>
-                            <p className="text-[10px] text-sky-600 dark:text-sky-400 truncate">
-                              {format(new Date(item.event.start), "h:mm a")} · Google Calendar
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                              {format(new Date(item.event.start), "h:mm a")} · {gcfg.label}
                             </p>
                           </div>
                         </a>
