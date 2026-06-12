@@ -32,10 +32,11 @@ interface AppointmentData {
   appointmentDate: string;
   appointmentTime: string;
   appointmentType: string;
+  duration?: number;
   provider: string;
   reason: string;
   notes: string;
-  status: "scheduled" | "confirmed" | "cancelled" | "completed";
+  status: string;
 }
 
 interface FormErrors {
@@ -47,31 +48,36 @@ const INITIAL_APPOINTMENT: AppointmentData = {
   patientPhone: "",
   appointmentDate: "",
   appointmentTime: "",
-  appointmentType: "checkup",
-  provider: "Dr. Tamas",
+  appointmentType: "WELL_CHILD_VISIT",
+  duration: 30,
+  provider: "Dr. Jonathan Tamas",
   reason: "",
   notes: "",
-  status: "scheduled",
+  status: "SCHEDULED",
 };
 
 const APPOINTMENT_TYPES = [
-  { id: "checkup", label: "General Checkup" },
-  { id: "vaccination", label: "Vaccination" },
-  { id: "dental", label: "Dental Checkup" },
-  { id: "follow-up", label: "Follow-up" },
-  { id: "emergency", label: "Emergency" },
+  { id: "WELL_CHILD_VISIT", label: "Well-child Visit" },
+  { id: "SICK_VISIT",       label: "Sick Visit" },
+  { id: "VACCINATION",      label: "Vaccination" },
+  { id: "FOLLOW_UP",        label: "Follow-up" },
+  { id: "CONSULTATION",     label: "Consultation" },
+  { id: "PROCEDURE",        label: "Procedure" },
+  { id: "OTHER",            label: "Other" },
 ];
 
 const PROVIDERS = [
-  { id: "dr-tamas", label: "Dr. Tamas" },
-  { id: "dr-richards", label: "Dr. Richards" },
+  { id: "Dr. Jonathan Tamas",   label: "Dr. Jonathan Tamas" },
+  { id: "Dr. Peaches Richards", label: "Dr. Peaches Richards" },
 ];
 
 const STATUSES = [
-  { id: "scheduled", label: "Scheduled" },
-  { id: "confirmed", label: "Confirmed" },
-  { id: "cancelled", label: "Cancelled" },
-  { id: "completed", label: "Completed" },
+  { id: "SCHEDULED",   label: "Scheduled" },
+  { id: "CONFIRMED",   label: "Confirmed" },
+  { id: "COMPLETED",   label: "Completed" },
+  { id: "CANCELLED",   label: "Cancelled" },
+  { id: "NO_SHOW",     label: "No-show" },
+  { id: "RESCHEDULED", label: "Rescheduled" },
 ];
 
 export default function AddAppointmentModal({
@@ -173,7 +179,7 @@ export default function AddAppointmentModal({
     ];
 
     requiredFields.forEach((fieldName) => {
-      const value = formData[fieldName as keyof AppointmentData] || "";
+      const value = String(formData[fieldName as keyof AppointmentData] ?? "");
       const error = validateField(fieldName, value);
       if (error) {
         newErrors[fieldName] = error;
@@ -187,24 +193,44 @@ export default function AddAppointmentModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
+    try {
+      const start    = new Date(`${formData.appointmentDate}T${formData.appointmentTime}:00`);
+      const duration = formData.duration ?? 30;
+      const end      = new Date(start.getTime() + duration * 60_000);
 
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (formData.id) {
+        const res = await fetch(`/api/appointments/${formData.id}`, {
+          method:  "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startTime: start.toISOString(),
+            endTime:   end.toISOString(),
+            type:      formData.appointmentType,
+            status:    formData.status,
+            provider:  formData.provider,
+            reason:    formData.reason   || null,
+            notes:     formData.notes    || null,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(err.error ?? "Failed to update appointment");
+          return;
+        }
+      }
 
-    setIsLoading(false);
-    setSubmitted(true);
-
-    if (onAppointmentSaved) {
-      onAppointmentSaved(formData);
+      setIsLoading(false);
+      setSubmitted(true);
+      if (onAppointmentSaved) onAppointmentSaved(formData);
+      setTimeout(() => handleReset(), 2000);
+    } catch {
+      alert("Something went wrong. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
-
-    setTimeout(() => {
-      handleReset();
-    }, 2000);
   };
 
   const handleReset = () => {

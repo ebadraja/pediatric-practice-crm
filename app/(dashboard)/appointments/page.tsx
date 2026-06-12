@@ -81,6 +81,58 @@ function slotTop(hhmm: string): number {
 const LUNCH_TOP    = slotTop("12:00");
 const LUNCH_HEIGHT = slotTop("13:00") - LUNCH_TOP;
 
+// ─── Collision layout ─────────────────────────────────────────────────────────
+
+function computeLayout(
+  items: Array<{ id: string; startMin: number; endMin: number }>,
+): Map<string, { col: number; totalCols: number }> {
+  if (items.length === 0) return new Map();
+
+  const sorted = [...items].sort((a, b) => a.startMin - b.startMin);
+  const result = new Map<string, { col: number; totalCols: number }>();
+
+  const groups: typeof sorted[] = [];
+  let current: typeof sorted = [];
+  let groupEnd = -Infinity;
+
+  for (const item of sorted) {
+    if (item.startMin >= groupEnd && current.length > 0) {
+      groups.push(current);
+      current = [];
+      groupEnd = -Infinity;
+    }
+    current.push(item);
+    groupEnd = Math.max(groupEnd, item.endMin);
+  }
+  if (current.length > 0) groups.push(current);
+
+  for (const group of groups) {
+    const colEnds: number[] = [];
+    for (const item of group) {
+      let placed = false;
+      for (let c = 0; c < colEnds.length; c++) {
+        if (colEnds[c] <= item.startMin) {
+          colEnds[c] = item.endMin;
+          result.set(item.id, { col: c, totalCols: 0 });
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        colEnds.push(item.endMin);
+        result.set(item.id, { col: colEnds.length - 1, totalCols: 0 });
+      }
+    }
+    const numCols = colEnds.length;
+    for (const item of group) {
+      const r = result.get(item.id)!;
+      result.set(item.id, { ...r, totalCols: numCols });
+    }
+  }
+
+  return result;
+}
+
 // ─── Styling maps ─────────────────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<string, { block: string; text: string; dot: string; label: string }> = {
@@ -151,9 +203,13 @@ const STATUS_LABEL: Record<string, string> = {
 function AppointmentBlock({
   appt,
   onClick,
+  col,
+  totalCols,
 }: {
   appt: Appointment;
   onClick: () => void;
+  col: number;
+  totalCols: number;
 }) {
   const start      = parseISO(appt.startTime);
   const topMin     = start.getHours() * 60 + start.getMinutes() - DAY_START * 60;
@@ -162,13 +218,22 @@ function AppointmentBlock({
   const cfg        = TYPE_CONFIG[appt.type] ?? TYPE_CONFIG.OTHER;
   const isCancelled = appt.status === "CANCELLED" || appt.status === "NO_SHOW";
   const isCompleted = appt.status === "COMPLETED";
+  const colW       = 100 / totalCols;
+  const leftPct    = col * colW;
 
   if (top < 0 || top >= TOTAL_HEIGHT) return null;
 
   return (
     <div
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      style={{ top, height, position: "absolute", left: 3, right: 3, zIndex: 10 }}
+      style={{
+        top,
+        height,
+        position: "absolute",
+        left: `calc(${leftPct}% + 2px)`,
+        width: `calc(${colW}% - 4px)`,
+        zIndex: 10,
+      }}
       className={`rounded-md px-2 py-0.5 cursor-pointer border transition-all hover:brightness-95 hover:shadow-sm select-none overflow-hidden
         ${isCancelled
           ? "bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-50"
@@ -195,7 +260,7 @@ function AppointmentBlock({
 
 // ─── GCalEventBlock ───────────────────────────────────────────────────────────
 
-function GCalEventBlock({ event }: { event: GCalEvent }) {
+function GCalEventBlock({ event, col, totalCols }: { event: GCalEvent; col: number; totalCols: number }) {
   if (event.allDay) return null;
 
   const start   = new Date(event.start);
@@ -204,6 +269,8 @@ function GCalEventBlock({ event }: { event: GCalEvent }) {
   const durMin  = Math.max((end.getTime() - start.getTime()) / 60_000, 15);
   const top     = topMin * PX_PER_MIN;
   const height  = Math.max(durMin * PX_PER_MIN, 18);
+  const colW    = 100 / totalCols;
+  const leftPct = col * colW;
 
   if (top < 0 || top >= TOTAL_HEIGHT) return null;
 
@@ -212,16 +279,25 @@ function GCalEventBlock({ event }: { event: GCalEvent }) {
       href={event.htmlLink}
       target="_blank"
       rel="noopener noreferrer"
-      style={{ top, height, position: "absolute", left: 3, right: 3, zIndex: 8 }}
-      className="rounded-md px-2 py-0.5 border border-blue-300 dark:border-blue-600 bg-blue-50/80 dark:bg-blue-950/50 overflow-hidden cursor-pointer hover:brightness-95 transition-all select-none"
+      style={{
+        top,
+        height,
+        position: "absolute",
+        left: `calc(${leftPct}% + 2px)`,
+        width: `calc(${colW}% - 4px)`,
+        zIndex: 8,
+        borderLeft: "3px solid #38bdf8",
+      }}
+      className="rounded-r-md px-1.5 py-0.5 bg-sky-50/95 dark:bg-sky-950/50 overflow-hidden cursor-pointer hover:brightness-95 transition-all select-none"
       title={`Google Calendar: ${event.summary}`}
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 truncate leading-tight">
-        <span className="mr-0.5 opacity-60">G</span>{event.summary}
+      <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300 truncate leading-tight flex items-center gap-0.5">
+        <span className="text-[8px] font-black text-sky-500 dark:text-sky-400 flex-shrink-0">G</span>
+        <span className="truncate">{event.summary}</span>
       </p>
       {height > 28 && (
-        <p className="text-[9px] text-blue-600 dark:text-blue-400 opacity-80 truncate">
+        <p className="text-[9px] text-sky-600 dark:text-sky-400 opacity-80 truncate">
           {format(start, "h:mm a")}
         </p>
       )}
@@ -464,6 +540,7 @@ export default function AppointmentsPage() {
   const [prefill, setPrefill]           = useState<{ date: string; time: string } | null>(null);
   const [editTarget, setEditTarget]     = useState<Appointment | null>(null);
   const [nowTop, setNowTop]             = useState<number | null>(null);
+  const [selectedDay, setSelectedDay]   = useState<Date>(() => new Date());
 
   // Google Calendar overlay
   const [gcalEvents, setGcalEvents]         = useState<GCalEvent[]>([]);
@@ -583,6 +660,14 @@ export default function AppointmentsPage() {
     fetchAppointments();
   };
 
+  const navigateDay = useCallback((delta: number) => {
+    setSelectedDay((d) => {
+      const next = addDays(d, delta);
+      setCurrentWeek(next);
+      return next;
+    });
+  }, []);
+
   const editModalData = editTarget
     ? {
         id:               editTarget.id,
@@ -590,15 +675,16 @@ export default function AppointmentsPage() {
         patientPhone:     editTarget.patient.phone ?? "",
         appointmentDate:  format(parseISO(editTarget.startTime), "yyyy-MM-dd"),
         appointmentTime:  format(parseISO(editTarget.startTime), "HH:mm"),
-        appointmentType:  editTarget.type.toLowerCase().replace(/_/g, "-"),
+        appointmentType:  editTarget.type,
+        duration:         editTarget.duration,
         provider:         editTarget.provider ?? "",
         reason:           editTarget.reason ?? "",
         notes:            editTarget.notes ?? "",
-        status:           editTarget.status.toLowerCase() as "scheduled" | "confirmed" | "cancelled" | "completed",
+        status:           editTarget.status,
       }
     : prefill
     ? {
-        ...{ patientName: "", patientPhone: "", appointmentType: "checkup", provider: "Dr. Tamas", reason: "", notes: "", status: "scheduled" as const },
+        ...{ patientName: "", patientPhone: "", appointmentType: "WELL_CHILD_VISIT", duration: 30, provider: "Dr. Jonathan Tamas", reason: "", notes: "", status: "SCHEDULED" },
         appointmentDate: prefill.date,
         appointmentTime: prefill.time,
       }
@@ -606,7 +692,9 @@ export default function AppointmentsPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const rangeLabel = `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`;
+  const rangeLabel = viewMode === "day"
+    ? format(selectedDay, "EEEE, MMM d, yyyy")
+    : `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`;
 
   return (
     <div className="pt-4 pb-8 space-y-5 md:space-y-8">
@@ -664,7 +752,7 @@ export default function AppointmentsPage() {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="px-2 h-8"
-            onClick={() => setCurrentWeek((w) => subWeeks(w, 1))}
+            onClick={() => viewMode === "day" ? navigateDay(-1) : setCurrentWeek((w) => subWeeks(w, 1))}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -672,12 +760,12 @@ export default function AppointmentsPage() {
             {rangeLabel}
           </span>
           <Button variant="outline" size="sm" className="px-2 h-8"
-            onClick={() => setCurrentWeek((w) => addWeeks(w, 1))}
+            onClick={() => viewMode === "day" ? navigateDay(1) : setCurrentWeek((w) => addWeeks(w, 1))}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="sm" className="gap-1.5 h-8"
-            onClick={() => setCurrentWeek(new Date())}
+            onClick={() => { setCurrentWeek(new Date()); setSelectedDay(new Date()); }}
           >
             <Calendar className="h-3.5 w-3.5" />
             Today
@@ -806,7 +894,80 @@ export default function AppointmentsPage() {
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 h-96 bg-slate-50 dark:bg-slate-800/30 flex items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
             </div>
+          ) : viewMode === "month" ? (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-8 flex items-center justify-center h-96">
+              <p className="text-sm text-slate-400 dark:text-slate-500">Month view coming soon</p>
+            </div>
+          ) : viewMode === "day" ? (
+            /* ── Day view ── */
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+              {/* Day header */}
+              <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                <div className="w-16 flex-shrink-0" />
+                <div className="flex-1 text-center py-2.5 border-l border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{format(selectedDay, "EEEE")}</p>
+                  <p className={`text-base font-semibold mt-0.5 ${isToday(selectedDay) ? "text-blue-600 dark:text-blue-400" : "text-slate-800 dark:text-slate-100"}`}>
+                    {format(selectedDay, "d")}
+                  </p>
+                  {isToday(selectedDay) && <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full mx-auto mt-0.5" />}
+                </div>
+              </div>
+              {/* Scrollable body */}
+              <div className="overflow-y-auto" style={{ maxHeight: "620px" }}>
+                <div className="flex">
+                  {/* Time labels */}
+                  <div className="w-16 flex-shrink-0 relative" style={{ height: TOTAL_HEIGHT }}>
+                    {TIME_SLOTS.map((slot, i) => (
+                      <div key={slot} style={{ position: "absolute", top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }} className="w-full flex items-start justify-end pr-2.5">
+                        {i % 2 === 0 && (
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 -mt-2 font-medium">
+                            {format(new Date(0, 0, 0, ...slot.split(":").map(Number)), "h a")}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Single day column */}
+                  {(() => {
+                    const dayAppts = appointments.filter((a) => isSameDay(parseISO(a.startTime), selectedDay));
+                    const dayGcal  = showGcal ? gcalEvents.filter((e) => !e.allDay && isSameDay(new Date(e.start), selectedDay)) : [];
+                    const layoutItems = [
+                      ...dayAppts.map((a) => { const s = parseISO(a.startTime); const e = parseISO(a.endTime); return { id: `a-${a.id}`, startMin: s.getHours() * 60 + s.getMinutes() - DAY_START * 60, endMin: e.getHours() * 60 + e.getMinutes() - DAY_START * 60 }; }),
+                      ...dayGcal.map((e)  => { const s = new Date(e.start); const end = new Date(e.end); return { id: `g-${e.id}`, startMin: s.getHours() * 60 + s.getMinutes() - DAY_START * 60, endMin: end.getHours() * 60 + end.getMinutes() - DAY_START * 60 }; }),
+                    ];
+                    const layout = computeLayout(layoutItems);
+                    return (
+                      <div className="flex-1 border-l border-slate-200 dark:border-slate-700 relative" style={{ height: TOTAL_HEIGHT }}>
+                        {TIME_SLOTS.map((slot, i) => {
+                          const [h, m] = slot.split(":").map(Number);
+                          const isLunch = h * 60 + m >= 12 * 60 && h * 60 + m < 13 * 60;
+                          return (
+                            <div key={slot} onClick={() => !isLunch && handleSlotClick(selectedDay, slot)}
+                              style={{ position: "absolute", top: i * SLOT_HEIGHT, height: SLOT_HEIGHT, left: 0, right: 0 }}
+                              className={`border-b border-slate-100 dark:border-slate-800 transition-colors ${isLunch ? "cursor-default" : "cursor-pointer hover:bg-blue-50/30 dark:hover:bg-blue-900/10"}`}
+                            />
+                          );
+                        })}
+                        <div style={{ position: "absolute", top: LUNCH_TOP, height: LUNCH_HEIGHT, left: 0, right: 0, zIndex: 5 }}
+                          className="bg-slate-50/90 dark:bg-slate-800/80 border-y border-slate-200 dark:border-slate-700 pointer-events-none flex items-center justify-center">
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide">Lunch</span>
+                        </div>
+                        {isToday(selectedDay) && nowTop !== null && (
+                          <div style={{ position: "absolute", top: nowTop, left: 0, right: 0, zIndex: 20 }} className="flex items-center pointer-events-none">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-500 -ml-1 flex-shrink-0 shadow-sm" />
+                            <div className="flex-1 h-px bg-red-500" />
+                          </div>
+                        )}
+                        {dayAppts.map((appt) => { const lv = layout.get(`a-${appt.id}`) ?? { col: 0, totalCols: 1 }; return <AppointmentBlock key={appt.id} appt={appt} col={lv.col} totalCols={lv.totalCols} onClick={() => setSelected(appt)} />; })}
+                        {dayGcal.map((e) => { const lv = layout.get(`g-${e.id}`) ?? { col: 0, totalCols: 1 }; return <GCalEventBlock key={e.id} event={e} col={lv.col} totalCols={lv.totalCols} />; })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
           ) : (
+            /* ── Week view ── */
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
 
               {/* Day-header row */}
@@ -860,6 +1021,22 @@ export default function AppointmentsPage() {
                     const dayAppts = appointments.filter((a) =>
                       isSameDay(parseISO(a.startTime), day)
                     );
+                    const dayGcal = showGcal
+                      ? gcalEvents.filter((e) => !e.allDay && isSameDay(new Date(e.start), day))
+                      : [];
+                    const layoutItems = [
+                      ...dayAppts.map((a) => {
+                        const s = parseISO(a.startTime);
+                        const e = parseISO(a.endTime);
+                        return { id: `a-${a.id}`, startMin: s.getHours() * 60 + s.getMinutes() - DAY_START * 60, endMin: e.getHours() * 60 + e.getMinutes() - DAY_START * 60 };
+                      }),
+                      ...dayGcal.map((e) => {
+                        const s = new Date(e.start);
+                        const end = new Date(e.end);
+                        return { id: `g-${e.id}`, startMin: s.getHours() * 60 + s.getMinutes() - DAY_START * 60, endMin: end.getHours() * 60 + end.getMinutes() - DAY_START * 60 };
+                      }),
+                    ];
+                    const layout = computeLayout(layoutItems);
 
                     return (
                       <div
@@ -918,19 +1095,24 @@ export default function AppointmentsPage() {
                         )}
 
                         {/* Appointment blocks */}
-                        {dayAppts.map((appt) => (
-                          <AppointmentBlock
-                            key={appt.id}
-                            appt={appt}
-                            onClick={() => setSelected(appt)}
-                          />
-                        ))}
+                        {dayAppts.map((appt) => {
+                          const lv = layout.get(`a-${appt.id}`) ?? { col: 0, totalCols: 1 };
+                          return (
+                            <AppointmentBlock
+                              key={appt.id}
+                              appt={appt}
+                              col={lv.col}
+                              totalCols={lv.totalCols}
+                              onClick={() => setSelected(appt)}
+                            />
+                          );
+                        })}
 
                         {/* Google Calendar events */}
-                        {showGcal && gcalEvents
-                          .filter((e) => !e.allDay && isSameDay(new Date(e.start), day))
-                          .map((e) => <GCalEventBlock key={e.id} event={e} />)
-                        }
+                        {dayGcal.map((e) => {
+                          const lv = layout.get(`g-${e.id}`) ?? { col: 0, totalCols: 1 };
+                          return <GCalEventBlock key={e.id} event={e} col={lv.col} totalCols={lv.totalCols} />;
+                        })}
                       </div>
                     );
                   })}
@@ -1022,37 +1204,79 @@ export default function AppointmentsPage() {
                   {[1, 2].map((i) => <div key={i} className="h-12 rounded-lg bg-slate-100 dark:bg-slate-800 animate-pulse" />)}
                 </div>
               ) : (() => {
-                const upcoming = appointments
+                const crmUpcoming = appointments
                   .filter((a) =>
                     isSameDay(parseISO(a.startTime), today) &&
                     !["CANCELLED", "NO_SHOW", "COMPLETED"].includes(a.status)
                   )
-                  .sort((a, b) => a.startTime.localeCompare(b.startTime))
-                  .slice(0, 4);
-                return upcoming.length === 0 ? (
+                  .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+                const gcalUpcoming = showGcal
+                  ? gcalEvents
+                      .filter((e) => !e.allDay && isSameDay(new Date(e.start), today))
+                      .sort((a, b) => a.start.localeCompare(b.start))
+                  : [];
+
+                type UpcomingItem =
+                  | { kind: "crm"; appt: (typeof crmUpcoming)[0] }
+                  | { kind: "gcal"; event: GCalEvent };
+
+                const merged: UpcomingItem[] = [
+                  ...crmUpcoming.map((appt): UpcomingItem => ({ kind: "crm", appt })),
+                  ...gcalUpcoming.map((event): UpcomingItem => ({ kind: "gcal", event })),
+                ]
+                  .sort((a, b) => {
+                    const ta = a.kind === "crm" ? a.appt.startTime : a.event.start;
+                    const tb = b.kind === "crm" ? b.appt.startTime : b.event.start;
+                    return ta.localeCompare(tb);
+                  })
+                  .slice(0, 5);
+
+                return merged.length === 0 ? (
                   <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-2">
                     No upcoming appointments
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {upcoming.map((appt) => {
-                      const cfg = TYPE_CONFIG[appt.type] ?? TYPE_CONFIG.OTHER;
+                    {merged.map((item) => {
+                      if (item.kind === "crm") {
+                        const cfg = TYPE_CONFIG[item.appt.type] ?? TYPE_CONFIG.OTHER;
+                        return (
+                          <button
+                            key={`crm-${item.appt.id}`}
+                            onClick={() => setSelected(item.appt)}
+                            className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
+                          >
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-slate-800 dark:text-slate-100 truncate">
+                                {item.appt.patient.firstName} {item.appt.patient.lastName}
+                              </p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                {format(parseISO(item.appt.startTime), "h:mm a")} · {cfg.label}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      }
                       return (
-                        <button
-                          key={appt.id}
-                          onClick={() => setSelected(appt)}
-                          className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
+                        <a
+                          key={`gcal-${item.event.id}`}
+                          href={item.event.htmlLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-sky-50 dark:hover:bg-sky-950/30 transition-colors text-left"
                         >
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
+                          <span className="w-2 h-2 rounded-full flex-shrink-0 bg-sky-400" />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-slate-800 dark:text-slate-100 truncate">
-                              {appt.patient.firstName} {appt.patient.lastName}
+                              {item.event.summary}
                             </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                              {format(parseISO(appt.startTime), "h:mm a")} · {cfg.label}
+                            <p className="text-[10px] text-sky-600 dark:text-sky-400 truncate">
+                              {format(new Date(item.event.start), "h:mm a")} · Google Calendar
                             </p>
                           </div>
-                        </button>
+                        </a>
                       );
                     })}
                   </div>
