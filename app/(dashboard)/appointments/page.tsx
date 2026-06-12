@@ -61,7 +61,7 @@ interface Appointment {
 
 // ─── Grid constants ───────────────────────────────────────────────────────────
 
-const SLOT_HEIGHT  = 40;   // px per 30-min slot
+const SLOT_HEIGHT  = 52;   // px per 30-min slot
 const DAY_START    = 8;    // 08:00
 const DAY_END      = 17;   // 17:00
 const PX_PER_MIN   = SLOT_HEIGHT / 30;
@@ -222,6 +222,7 @@ function AppointmentBlock({
   const leftPct    = col * colW;
 
   if (top < 0 || top >= TOTAL_HEIGHT) return null;
+  if (col >= 3) return null;
 
   return (
     <div
@@ -260,6 +261,15 @@ function AppointmentBlock({
 
 // ─── GCalEventBlock ───────────────────────────────────────────────────────────
 
+function cleanSummary(raw: string): string {
+  return raw
+    .replace(/\*{1,2}[^*]*\*{1,2}/g, "")
+    .replace(/\+[^+]+\+/g, "")
+    .replace(/\s*[-–]\s*(BH|WELL|SICK|NEW|GAC|NURSE|MIGDAS|Migdas|VIRTUAL|Virtual Visit|Virtual)\b.*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function GCalEventBlock({ event, col, totalCols }: { event: GCalEvent; col: number; totalCols: number }) {
   if (event.allDay) return null;
 
@@ -273,6 +283,9 @@ function GCalEventBlock({ event, col, totalCols }: { event: GCalEvent; col: numb
   const leftPct = col * colW;
 
   if (top < 0 || top >= TOTAL_HEIGHT) return null;
+  if (col >= 3) return null;
+
+  const label = cleanSummary(event.summary);
 
   return (
     <a
@@ -289,14 +302,13 @@ function GCalEventBlock({ event, col, totalCols }: { event: GCalEvent; col: numb
         borderLeft: "3px solid #38bdf8",
       }}
       className="rounded-r-md px-1.5 py-0.5 bg-sky-50/95 dark:bg-sky-950/50 overflow-hidden cursor-pointer hover:brightness-95 transition-all select-none"
-      title={`Google Calendar: ${event.summary}`}
+      title={event.summary}
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300 truncate leading-tight flex items-center gap-0.5">
-        <span className="text-[8px] font-black text-sky-500 dark:text-sky-400 flex-shrink-0">G</span>
-        <span className="truncate">{event.summary}</span>
+      <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300 truncate leading-tight">
+        {label || event.summary}
       </p>
-      {height > 28 && (
+      {height > 30 && (
         <p className="text-[9px] text-sky-600 dark:text-sky-400 opacity-80 truncate">
           {format(start, "h:mm a")}
         </p>
@@ -913,7 +925,7 @@ export default function AppointmentsPage() {
                 </div>
               </div>
               {/* Scrollable body */}
-              <div className="overflow-y-auto" style={{ maxHeight: "620px" }}>
+              <div className="overflow-y-auto" style={{ maxHeight: "780px" }}>
                 <div className="flex">
                   {/* Time labels */}
                   <div className="w-16 flex-shrink-0 relative" style={{ height: TOTAL_HEIGHT }}>
@@ -960,6 +972,17 @@ export default function AppointmentsPage() {
                         )}
                         {dayAppts.map((appt) => { const lv = layout.get(`a-${appt.id}`) ?? { col: 0, totalCols: 1 }; return <AppointmentBlock key={appt.id} appt={appt} col={lv.col} totalCols={lv.totalCols} onClick={() => setSelected(appt)} />; })}
                         {dayGcal.map((e) => { const lv = layout.get(`g-${e.id}`) ?? { col: 0, totalCols: 1 }; return <GCalEventBlock key={e.id} event={e} col={lv.col} totalCols={lv.totalCols} />; })}
+                        {(() => {
+                          const hidden =
+                            dayAppts.filter((a) => (layout.get(`a-${a.id}`)?.col ?? 0) >= 3).length +
+                            dayGcal.filter((e) => (layout.get(`g-${e.id}`)?.col ?? 0) >= 3).length;
+                          return hidden > 0 ? (
+                            <div style={{ position: "absolute", bottom: 6, right: 4, zIndex: 30 }}
+                              className="text-[9px] font-bold bg-slate-500 dark:bg-slate-600 text-white rounded-full px-1.5 py-0.5 pointer-events-none shadow-sm">
+                              +{hidden}
+                            </div>
+                          ) : null;
+                        })()}
                       </div>
                     );
                   })()}
@@ -996,7 +1019,7 @@ export default function AppointmentsPage() {
               </div>
 
               {/* Scrollable body */}
-              <div className="overflow-y-auto" style={{ maxHeight: "620px" }}>
+              <div className="overflow-y-auto" style={{ maxHeight: "780px" }}>
                 <div className="flex">
 
                   {/* Time labels */}
@@ -1113,6 +1136,19 @@ export default function AppointmentsPage() {
                           const lv = layout.get(`g-${e.id}`) ?? { col: 0, totalCols: 1 };
                           return <GCalEventBlock key={e.id} event={e} col={lv.col} totalCols={lv.totalCols} />;
                         })}
+
+                        {/* Overflow chip — hidden events beyond 3 columns */}
+                        {(() => {
+                          const hidden =
+                            dayAppts.filter((a) => (layout.get(`a-${a.id}`)?.col ?? 0) >= 3).length +
+                            dayGcal.filter((e) => (layout.get(`g-${e.id}`)?.col ?? 0) >= 3).length;
+                          return hidden > 0 ? (
+                            <div style={{ position: "absolute", bottom: 6, right: 4, zIndex: 30 }}
+                              className="text-[9px] font-bold bg-slate-500 dark:bg-slate-600 text-white rounded-full px-1.5 py-0.5 pointer-events-none shadow-sm">
+                              +{hidden}
+                            </div>
+                          ) : null;
+                        })()}
                       </div>
                     );
                   })}
