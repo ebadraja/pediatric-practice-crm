@@ -235,7 +235,7 @@ function AppointmentBlock({
         width: `calc(${colW}% - 4px)`,
         zIndex: 10,
       }}
-      className={`rounded-md px-2 py-0.5 cursor-pointer border transition-all hover:brightness-95 hover:shadow-sm select-none overflow-hidden
+      className={`rounded-md shadow-sm px-2 py-0.5 cursor-pointer border transition-all hover:brightness-95 hover:shadow-md select-none overflow-hidden
         ${isCancelled
           ? "bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-50"
           : isCompleted
@@ -307,7 +307,17 @@ function parseGcal(e: GCalEvent): EnrichedGCalEvent {
 
 // ─── GCalEventBlock ───────────────────────────────────────────────────────────
 
-function GCalEventBlock({ event, col, totalCols }: { event: EnrichedGCalEvent; col: number; totalCols: number }) {
+function GCalEventBlock({
+  event,
+  col,
+  totalCols,
+  onClick,
+}: {
+  event: EnrichedGCalEvent;
+  col: number;
+  totalCols: number;
+  onClick: () => void;
+}) {
   if (event.allDay) return null;
 
   const start   = new Date(event.start);
@@ -325,10 +335,7 @@ function GCalEventBlock({ event, col, totalCols }: { event: EnrichedGCalEvent; c
   const cfg = GCAL_TYPE_CONFIG[event.visitType];
 
   return (
-    <a
-      href={event.htmlLink}
-      target="_blank"
-      rel="noopener noreferrer"
+    <div
       style={{
         top,
         height,
@@ -338,11 +345,11 @@ function GCalEventBlock({ event, col, totalCols }: { event: EnrichedGCalEvent; c
         zIndex: 8,
         borderLeft: `3px solid ${event.noShow ? "#94a3b8" : cfg.borderColor}`,
       }}
-      className={`rounded-r-md px-1.5 py-0.5 overflow-hidden cursor-pointer hover:brightness-95 transition-all select-none ${
+      className={`rounded-md shadow-sm px-1.5 py-0.5 overflow-hidden cursor-pointer hover:brightness-95 hover:shadow-md transition-all select-none ${
         event.noShow ? "bg-slate-100 dark:bg-slate-800/60 opacity-60" : cfg.block
       }`}
       title={event.summary}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
     >
       <p className={`text-[10px] font-semibold truncate leading-tight ${
         event.noShow ? "line-through text-slate-500 dark:text-slate-400" : cfg.text
@@ -356,7 +363,100 @@ function GCalEventBlock({ event, col, totalCols }: { event: EnrichedGCalEvent; c
           {format(start, "h:mm a")}
         </p>
       )}
-    </a>
+    </div>
+  );
+}
+
+// ─── GCalEventDetailDialog ────────────────────────────────────────────────────
+
+function GCalEventDetailDialog({
+  event,
+  onClose,
+}: {
+  event: EnrichedGCalEvent | null;
+  onClose: () => void;
+}) {
+  if (!event) return null;
+
+  const start  = new Date(event.start);
+  const end    = new Date(event.end);
+  const durMin = Math.round((end.getTime() - start.getTime()) / 60_000);
+  const cfg    = GCAL_TYPE_CONFIG[event.visitType];
+
+  return (
+    <Dialog open={!!event} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="w-full max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <span className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+            {event.cleanTitle}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          {event.noShow && (
+            <div className="flex items-center gap-2 text-sm font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/40 rounded-lg px-3 py-2">
+              <Ban className="h-4 w-4 flex-shrink-0" />
+              Marked as no-show
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Date & Time</p>
+              <p className="font-medium text-slate-900 dark:text-slate-100">
+                {format(start, "EEE, MMM d, yyyy")}
+              </p>
+              <p className="text-slate-600 dark:text-slate-400">
+                {format(start, "h:mm a")} – {format(end, "h:mm a")}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Visit Type</p>
+              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium ${cfg.block} ${cfg.text}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                {cfg.label}
+              </span>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Duration</p>
+              <p className="font-medium text-slate-900 dark:text-slate-100">{durMin} min</p>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Source</p>
+              <p className="font-medium text-slate-900 dark:text-slate-100">Google Calendar</p>
+            </div>
+          </div>
+
+          {event.summary !== event.cleanTitle && (
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Original event title</p>
+              <p className="text-sm text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/50 rounded-lg px-3 py-2 break-words">
+                {event.summary}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="flex gap-2 pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => window.open(event.htmlLink, "_blank", "noopener,noreferrer")}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Open in Google Calendar
+          </Button>
+          <Button size="sm" className="ml-auto" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -526,9 +626,11 @@ export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading]           = useState(true);
   const [currentWeek, setCurrentWeek]   = useState<Date>(() => new Date());
-  const [viewMode, setViewMode]         = useState<"day" | "week" | "month">("week");
+  const [viewMode, setViewMode]         = useState<"day" | "week" | "list">("week");
   const [activeCats, setActiveCats]     = useState<Set<string>>(new Set());
+  const [hideNoShows, setHideNoShows]   = useState(false);
   const [selected, setSelected]         = useState<Appointment | null>(null);
+  const [selectedGcal, setSelectedGcal] = useState<EnrichedGCalEvent | null>(null);
   const [newApptOpen, setNewApptOpen]   = useState(false);
   const [prefill, setPrefill]           = useState<{ date: string; time: string } | null>(null);
   const [editTarget, setEditTarget]     = useState<Appointment | null>(null);
@@ -649,14 +751,19 @@ export default function AppointmentsPage() {
     });
   }, []);
 
-  const visibleAppts = useMemo(
-    () => activeCats.size === 0 ? appointments : appointments.filter((a) => activeCats.has(`c:${a.type}`)),
-    [appointments, activeCats],
-  );
-  const visibleGcal = useMemo(
-    () => activeCats.size === 0 ? enrichedGcal : enrichedGcal.filter((e) => activeCats.has(`g:${e.visitType}`)),
-    [enrichedGcal, activeCats],
-  );
+  const visibleAppts = useMemo(() => {
+    let list = appointments;
+    if (hideNoShows)        list = list.filter((a) => a.status !== "CANCELLED" && a.status !== "NO_SHOW");
+    if (activeCats.size > 0) list = list.filter((a) => activeCats.has(`c:${a.type}`));
+    return list;
+  }, [appointments, activeCats, hideNoShows]);
+
+  const visibleGcal = useMemo(() => {
+    let list = enrichedGcal;
+    if (hideNoShows)        list = list.filter((e) => !e.noShow);
+    if (activeCats.size > 0) list = list.filter((e) => activeCats.has(`g:${e.visitType}`));
+    return list;
+  }, [enrichedGcal, activeCats, hideNoShows]);
 
   // ── Stats (CRM + Google Calendar combined) ──────────────────────────────────
 
@@ -747,7 +854,7 @@ export default function AppointmentsPage() {
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* View toggle */}
           <div className="hidden sm:flex border border-slate-200 dark:border-slate-700 rounded-lg p-1 bg-slate-50 dark:bg-slate-800">
-            {(["day", "week", "month"] as const).map((v) => (
+            {(["day", "week", "list"] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setViewMode(v)}
@@ -808,14 +915,45 @@ export default function AppointmentsPage() {
           {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
         </div>
 
-        {activeCats.size > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {legendEntries.map(({ key, label, dot, count }) => {
+            const active = activeCats.has(key);
+            return (
+              <button
+                key={key}
+                onClick={() => toggleCat(key)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+                  active
+                    ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                {label}
+                <span className={active ? "opacity-70" : "opacity-50"}>{count}</span>
+              </button>
+            );
+          })}
           <button
-            onClick={() => setActiveCats(new Set())}
-            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline self-start lg:self-auto"
+            onClick={() => setHideNoShows((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+              hideNoShows
+                ? "bg-orange-100 dark:bg-orange-950/50 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300"
+                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500"
+            }`}
           >
-            Clear filter ({activeCats.size})
+            <Ban className="w-3 h-3" />
+            {hideNoShows ? "No-shows hidden" : "Hide no-shows"}
           </button>
-        )}
+          {activeCats.size > 0 && (
+            <button
+              onClick={() => setActiveCats(new Set())}
+              className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline px-1"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Mobile / Tablet list ───────────────────────────────────────────────── */}
@@ -929,9 +1067,119 @@ export default function AppointmentsPage() {
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 h-96 bg-slate-50 dark:bg-slate-800/30 flex items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
             </div>
-          ) : viewMode === "month" ? (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-8 flex items-center justify-center h-96">
-              <p className="text-sm text-slate-400 dark:text-slate-500">Month view coming soon</p>
+          ) : viewMode === "list" ? (
+            /* ── List view ── */
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+              {(() => {
+                const sections = weekDays
+                  .map((day) => {
+                    const crm  = visibleAppts.filter((a) => isSameDay(parseISO(a.startTime), day));
+                    const gcal = showGcal ? visibleGcal.filter((e) => isSameDay(new Date(e.start), day)) : [];
+                    type ListRow = {
+                      id: string;
+                      time: Date;
+                      end: Date;
+                      title: string;
+                      typeLabel: string;
+                      sub: string | null;
+                      dot: string;
+                      struck: boolean;
+                      open: () => void;
+                    };
+                    const rows: ListRow[] = [
+                      ...crm.map((a): ListRow => {
+                        const cfg = TYPE_CONFIG[a.type] ?? TYPE_CONFIG.OTHER;
+                        return {
+                          id: `a-${a.id}`,
+                          time: parseISO(a.startTime),
+                          end: parseISO(a.endTime),
+                          title: `${a.patient.firstName} ${a.patient.lastName}`,
+                          typeLabel: cfg.label,
+                          sub: a.provider,
+                          dot: cfg.dot,
+                          struck: a.status === "CANCELLED" || a.status === "NO_SHOW",
+                          open: () => setSelected(a),
+                        };
+                      }),
+                      ...gcal.map((e): ListRow => {
+                        const cfg = GCAL_TYPE_CONFIG[e.visitType];
+                        return {
+                          id: `g-${e.id}`,
+                          time: new Date(e.start),
+                          end: new Date(e.end),
+                          title: e.cleanTitle,
+                          typeLabel: cfg.label,
+                          sub: null,
+                          dot: e.noShow ? "bg-slate-300 dark:bg-slate-600" : cfg.dot,
+                          struck: e.noShow,
+                          open: () => setSelectedGcal(e),
+                        };
+                      }),
+                    ].sort((x, y) => x.time.getTime() - y.time.getTime());
+                    return { day, rows };
+                  })
+                  .filter((s) => s.rows.length > 0);
+
+                if (sections.length === 0) {
+                  return (
+                    <div className="p-12 text-center">
+                      <Calendar className="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                      <p className="text-sm text-slate-400 dark:text-slate-500">No appointments this week</p>
+                    </div>
+                  );
+                }
+
+                return sections.map(({ day, rows }) => (
+                  <div key={day.toISOString()}>
+                    <div className={`flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700 ${
+                      isToday(day) ? "bg-blue-50 dark:bg-blue-950/30" : "bg-slate-50 dark:bg-slate-800/60"
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-semibold uppercase tracking-wider ${
+                          isToday(day) ? "text-blue-700 dark:text-blue-300" : "text-slate-600 dark:text-slate-300"
+                        }`}>
+                          {format(day, "EEEE, MMM d")}
+                        </span>
+                        {isToday(day) && (
+                          <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-semibold">
+                            Today
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                        {rows.length} {rows.length === 1 ? "appointment" : "appointments"}
+                      </span>
+                    </div>
+                    {rows.map((r) => (
+                      <button
+                        key={r.id}
+                        onClick={r.open}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
+                      >
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 w-[72px] flex-shrink-0">
+                          {format(r.time, "h:mm a")}
+                        </span>
+                        <span className={`w-1.5 h-8 rounded-full flex-shrink-0 ${r.dot}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium truncate ${
+                            r.struck
+                              ? "line-through text-slate-400 dark:text-slate-500"
+                              : "text-slate-900 dark:text-slate-100"
+                          }`}>
+                            {r.title}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {r.typeLabel}
+                            {r.sub ? ` · ${r.sub}` : ""}
+                            {` · ${format(r.time, "h:mm a")} – ${format(r.end, "h:mm a")}`}
+                          </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-slate-300 dark:text-slate-600 flex-shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                ));
+              })()}
             </div>
           ) : viewMode === "day" ? (
             /* ── Day view ── */
@@ -941,10 +1189,11 @@ export default function AppointmentsPage() {
                 <div className="w-16 flex-shrink-0" />
                 <div className="flex-1 text-center py-2.5 border-l border-slate-200 dark:border-slate-700">
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{format(selectedDay, "EEEE")}</p>
-                  <p className={`text-base font-semibold mt-0.5 ${isToday(selectedDay) ? "text-blue-600 dark:text-blue-400" : "text-slate-800 dark:text-slate-100"}`}>
+                  <div className={`mt-0.5 mx-auto w-7 h-7 flex items-center justify-center rounded-full text-sm font-semibold ${
+                    isToday(selectedDay) ? "bg-blue-600 text-white" : "text-slate-800 dark:text-slate-100"
+                  }`}>
                     {format(selectedDay, "d")}
-                  </p>
-                  {isToday(selectedDay) && <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full mx-auto mt-0.5" />}
+                  </div>
                 </div>
               </div>
               {/* Scrollable body */}
@@ -979,7 +1228,7 @@ export default function AppointmentsPage() {
                           return (
                             <div key={slot} onClick={() => !isLunch && handleSlotClick(selectedDay, slot)}
                               style={{ position: "absolute", top: i * SLOT_HEIGHT, height: SLOT_HEIGHT, left: 0, right: 0 }}
-                              className={`border-b border-slate-100 dark:border-slate-800 transition-colors ${isLunch ? "cursor-default" : "cursor-pointer hover:bg-blue-50/30 dark:hover:bg-blue-900/10"}`}
+                              className={`border-b ${i % 2 === 0 ? "border-slate-100/70 dark:border-slate-800/40" : "border-slate-200 dark:border-slate-700/60"} transition-colors ${isLunch ? "cursor-default" : "cursor-pointer hover:bg-blue-50/30 dark:hover:bg-blue-900/10"}`}
                             />
                           );
                         })}
@@ -994,7 +1243,7 @@ export default function AppointmentsPage() {
                           </div>
                         )}
                         {dayAppts.map((appt) => { const lv = layout.get(`a-${appt.id}`) ?? { col: 0, totalCols: 1 }; return <AppointmentBlock key={appt.id} appt={appt} col={lv.col} totalCols={lv.totalCols} onClick={() => setSelected(appt)} />; })}
-                        {dayGcal.map((e) => { const lv = layout.get(`g-${e.id}`) ?? { col: 0, totalCols: 1 }; return <GCalEventBlock key={e.id} event={e} col={lv.col} totalCols={lv.totalCols} />; })}
+                        {dayGcal.map((e) => { const lv = layout.get(`g-${e.id}`) ?? { col: 0, totalCols: 1 }; return <GCalEventBlock key={e.id} event={e} col={lv.col} totalCols={lv.totalCols} onClick={() => setSelectedGcal(e)} />; })}
                         {(() => {
                           const hidden =
                             dayAppts.filter((a) => (layout.get(`a-${a.id}`)?.col ?? 0) >= 3).length +
@@ -1027,16 +1276,11 @@ export default function AppointmentsPage() {
                     <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                       {format(day, "EEE")}
                     </p>
-                    <p className={`text-base font-semibold mt-0.5 ${
-                      isToday(day)
-                        ? "text-blue-600 dark:text-blue-400"
-                        : "text-slate-800 dark:text-slate-100"
+                    <div className={`mt-0.5 mx-auto w-7 h-7 flex items-center justify-center rounded-full text-sm font-semibold ${
+                      isToday(day) ? "bg-blue-600 text-white" : "text-slate-800 dark:text-slate-100"
                     }`}>
                       {format(day, "d")}
-                    </p>
-                    {isToday(day) && (
-                      <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full mx-auto mt-0.5" />
-                    )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1087,7 +1331,13 @@ export default function AppointmentsPage() {
                     return (
                       <div
                         key={day.toISOString()}
-                        className="flex-1 min-w-[100px] border-l border-slate-200 dark:border-slate-700 relative"
+                        className={`flex-1 min-w-[100px] border-l border-slate-200 dark:border-slate-700 relative ${
+                          isToday(day)
+                            ? "bg-blue-50/40 dark:bg-blue-950/10"
+                            : day.getDay() === 0 || day.getDay() === 6
+                            ? "bg-slate-50/70 dark:bg-slate-800/20"
+                            : ""
+                        }`}
                         style={{ height: TOTAL_HEIGHT }}
                       >
                         {/* Clickable slot rows */}
@@ -1104,7 +1354,7 @@ export default function AppointmentsPage() {
                                 height:   SLOT_HEIGHT,
                                 left: 0, right: 0,
                               }}
-                              className={`border-b border-slate-100 dark:border-slate-800 transition-colors ${
+                              className={`border-b ${i % 2 === 0 ? "border-slate-100/70 dark:border-slate-800/40" : "border-slate-200 dark:border-slate-700/60"} transition-colors ${
                                 isLunch
                                   ? "cursor-default"
                                   : "cursor-pointer hover:bg-blue-50/30 dark:hover:bg-blue-900/10"
@@ -1113,21 +1363,23 @@ export default function AppointmentsPage() {
                           );
                         })}
 
-                        {/* Lunch break overlay */}
-                        <div
-                          style={{
-                            position: "absolute",
-                            top:    LUNCH_TOP,
-                            height: LUNCH_HEIGHT,
-                            left: 0, right: 0,
-                            zIndex: 5,
-                          }}
-                          className="bg-slate-50/90 dark:bg-slate-800/80 border-y border-slate-200 dark:border-slate-700 pointer-events-none flex items-center justify-center"
-                        >
-                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide">
-                            Lunch
-                          </span>
-                        </div>
+                        {/* Lunch break overlay (weekdays only) */}
+                        {day.getDay() !== 0 && day.getDay() !== 6 && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top:    LUNCH_TOP,
+                              height: LUNCH_HEIGHT,
+                              left: 0, right: 0,
+                              zIndex: 5,
+                            }}
+                            className="bg-slate-50/90 dark:bg-slate-800/80 border-y border-slate-200 dark:border-slate-700 pointer-events-none flex items-center justify-center"
+                          >
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide">
+                              Lunch
+                            </span>
+                          </div>
+                        )}
 
                         {/* Current-time indicator */}
                         {isToday(day) && nowTop !== null && (
@@ -1157,7 +1409,7 @@ export default function AppointmentsPage() {
                         {/* Google Calendar events */}
                         {dayGcal.map((e) => {
                           const lv = layout.get(`g-${e.id}`) ?? { col: 0, totalCols: 1 };
-                          return <GCalEventBlock key={e.id} event={e} col={lv.col} totalCols={lv.totalCols} />;
+                          return <GCalEventBlock key={e.id} event={e} col={lv.col} totalCols={lv.totalCols} onClick={() => setSelectedGcal(e)} />;
                         })}
 
                         {/* Overflow chip — hidden events beyond 3 columns */}
@@ -1346,12 +1598,11 @@ export default function AppointmentsPage() {
                         );
                       }
                       const gcfg = GCAL_TYPE_CONFIG[item.event.visitType];
+                      const gcalEvent = item.event;
                       return (
-                        <a
-                          key={`gcal-${item.event.id}`}
-                          href={item.event.htmlLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          key={`gcal-${gcalEvent.id}`}
+                          onClick={() => setSelectedGcal(gcalEvent)}
                           className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
                         >
                           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${gcfg.dot}`} />
@@ -1363,7 +1614,7 @@ export default function AppointmentsPage() {
                               {format(new Date(item.event.start), "h:mm a")} · {gcfg.label}
                             </p>
                           </div>
-                        </a>
+                        </button>
                       );
                     })}
                   </div>
@@ -1380,6 +1631,12 @@ export default function AppointmentsPage() {
         onClose={() => setSelected(null)}
         onCancelled={fetchAppointments}
         onEdit={handleEdit}
+      />
+
+      {/* ── Google Calendar event detail dialog ───────────────────────────────── */}
+      <GCalEventDetailDialog
+        event={selectedGcal}
+        onClose={() => setSelectedGcal(null)}
       />
 
       {/* ── New appointment dialog ────────────────────────────────────────────── */}
