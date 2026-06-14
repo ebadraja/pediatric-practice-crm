@@ -969,18 +969,68 @@ export default function AppointmentsPage() {
                   <div key={i} className="h-16 rounded-lg bg-slate-100 dark:bg-slate-800 animate-pulse" />
                 ))}
               </div>
-            ) : appointments.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-6">
-                No CRM appointments this week
-              </p>
-            ) : (
-              <div className="space-y-5">
-                {weekDays.map((day) => {
-                  const dayAppts = appointments
-                    .filter((a) => isSameDay(parseISO(a.startTime), day))
-                    .sort((a, b) => a.startTime.localeCompare(b.startTime));
-                  if (dayAppts.length === 0) return null;
-                  return (
+            ) : (() => {
+              type MobileRow = {
+                id: string;
+                time: Date;
+                title: string;
+                typeLabel: string;
+                sub: string | null;
+                dot: string;
+                struck: boolean;
+                durationLabel: string;
+                open: () => void;
+              };
+              const sections = weekDays
+                .map((day) => {
+                  const crm  = visibleAppts.filter((a) => isSameDay(parseISO(a.startTime), day));
+                  const gcal = showGcal ? visibleGcal.filter((e) => isSameDay(new Date(e.start), day)) : [];
+                  const rows: MobileRow[] = [
+                    ...crm.map((a): MobileRow => {
+                      const cfg = TYPE_CONFIG[a.type] ?? TYPE_CONFIG.OTHER;
+                      return {
+                        id: `a-${a.id}`,
+                        time: parseISO(a.startTime),
+                        title: `${a.patient.firstName} ${a.patient.lastName}`,
+                        typeLabel: cfg.label,
+                        sub: a.provider,
+                        dot: cfg.dot,
+                        struck: a.status === "CANCELLED" || a.status === "NO_SHOW",
+                        durationLabel: `${a.duration} min`,
+                        open: () => setSelected(a),
+                      };
+                    }),
+                    ...gcal.map((e): MobileRow => {
+                      const cfg = GCAL_TYPE_CONFIG[e.visitType];
+                      const durMin = Math.round((new Date(e.end).getTime() - new Date(e.start).getTime()) / 60_000);
+                      return {
+                        id: `g-${e.id}`,
+                        time: new Date(e.start),
+                        title: e.cleanTitle,
+                        typeLabel: cfg.label,
+                        sub: "Google Calendar",
+                        dot: e.noShow ? "bg-slate-300 dark:bg-slate-600" : cfg.dot,
+                        struck: e.noShow,
+                        durationLabel: `${durMin} min`,
+                        open: () => setSelectedGcal(e),
+                      };
+                    }),
+                  ].sort((x, y) => x.time.getTime() - y.time.getTime());
+                  return { day, rows };
+                })
+                .filter((s) => s.rows.length > 0);
+
+              if (sections.length === 0) {
+                return (
+                  <p className="text-sm text-slate-500 text-center py-6">
+                    No appointments this week
+                  </p>
+                );
+              }
+
+              return (
+                <div className="space-y-5">
+                  {sections.map(({ day, rows }) => (
                     <div key={day.toISOString()}>
                       <div className={`flex items-center gap-2 mb-2.5 pb-1.5 border-b ${
                         isToday(day) ? "border-blue-200 dark:border-blue-800" : "border-slate-100 dark:border-slate-800"
@@ -997,49 +1047,42 @@ export default function AppointmentsPage() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        {dayAppts.map((appt) => {
-                          const start = parseISO(appt.startTime);
-                          const cfg   = TYPE_CONFIG[appt.type] ?? TYPE_CONFIG.OTHER;
-                          const isCancelled = appt.status === "CANCELLED" || appt.status === "NO_SHOW";
-                          return (
-                            <div
-                              key={appt.id}
-                              onClick={() => setSelected(appt)}
-                              className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                                isCancelled
-                                  ? "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-60"
-                                  : appt.status === "COMPLETED"
-                                  ? "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40"
-                                  : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800"
-                              }`}
-                            >
-                              <div className={`w-1.5 h-10 rounded-full flex-shrink-0 ${cfg.dot}`} />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className={`text-sm font-medium truncate ${
-                                    isCancelled
-                                      ? "line-through text-slate-400 dark:text-slate-600"
-                                      : "text-slate-900 dark:text-slate-100"
-                                  }`}>
-                                    {appt.patient.firstName} {appt.patient.lastName}
-                                  </p>
-                                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded whitespace-nowrap flex-shrink-0">
-                                    {format(start, "h:mm a")}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                                  {cfg.label} · {appt.provider ?? "—"} · {appt.duration} min
+                        {rows.map((r) => (
+                          <div
+                            key={r.id}
+                            onClick={r.open}
+                            className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                              r.struck
+                                ? "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-60"
+                                : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800"
+                            }`}
+                          >
+                            <div className={`w-1.5 h-10 rounded-full flex-shrink-0 ${r.dot}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className={`text-sm font-medium truncate ${
+                                  r.struck
+                                    ? "line-through text-slate-400 dark:text-slate-600"
+                                    : "text-slate-900 dark:text-slate-100"
+                                }`}>
+                                  {r.title}
                                 </p>
+                                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded whitespace-nowrap flex-shrink-0">
+                                  {format(r.time, "h:mm a")}
+                                </span>
                               </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                                {r.typeLabel} · {r.sub ?? "—"} · {r.durationLabel}
+                              </p>
                             </div>
-                          );
-                        })}
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  ))}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
 
