@@ -17,6 +17,7 @@ module.exports = {
       script:      'node_modules/.bin/next',
       args:        'start',
       cwd:         '/var/www/kids018-crm',
+      exec_mode:   'fork',
       instances:   1,
       autorestart: true,
       watch:       false,
@@ -27,9 +28,12 @@ module.exports = {
     },
     {
       name:        'kids018-worker',
-      script:      'node_modules/.bin/tsx',
-      args:        'worker.ts',
+      // Run the TS worker via npm script (tsx) in fork mode. Cluster mode does
+      // not work with tsx — the process shows "online" but never runs the code.
+      script:      'npm',
+      args:        'run worker',
       cwd:         '/var/www/kids018-crm',
+      exec_mode:   'fork',
       instances:   1,
       autorestart: true,
       watch:       false,
