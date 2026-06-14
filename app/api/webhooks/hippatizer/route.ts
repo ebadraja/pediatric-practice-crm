@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getMappingForForm } from "@/lib/hippatizer/fieldMappings";
 import { findBestPatientMatch, findPatientMatches, type PatientMatch } from "@/lib/hippatizer/patientMatcher";
+import { logWebhook, logError } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -414,14 +415,19 @@ async function createFormSubmissionNotifications(
       });
     }
   } catch (error) {
-    console.error("[NOTIFICATION_CREATION]", error);
+    logError("notification_creation", error, { formId, status });
   }
 }
 
 export async function POST(request: NextRequest) {
+  logWebhook("hippatizer", "received", {
+    hasApiKey: !!request.headers.get("X-Api-Key"),
+  });
+
   try {
     const isValid = await validateApiKey(request);
     if (!isValid) {
+      logWebhook("hippatizer", "rejected_unauthorized", {});
       return NextResponse.json({ error: "Unauthorized: Invalid API key" }, { status: 401 });
     }
 
@@ -429,11 +435,15 @@ export async function POST(request: NextRequest) {
     try {
       rawPayload = await request.json();
     } catch {
+      logWebhook("hippatizer", "rejected_invalid_json", {});
       return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
     }
 
     const payload = normalizePayload(rawPayload);
     if (!payload) {
+      logWebhook("hippatizer", "rejected_missing_fields", {
+        formName: rawPayload["Form Name"] ?? null,
+      });
       return NextResponse.json(
         { error: "Missing required fields: Form Name, Submission Id, Form Id" },
         { status: 400 }
@@ -442,9 +452,17 @@ export async function POST(request: NextRequest) {
 
     const result = await processWebhookPayload(payload);
 
+    logWebhook("hippatizer", "processed", {
+      formTitle: payload.form_title,
+      submissionId: payload.submission_id,
+      success: result.success,
+      status: "status" in result ? result.status : null,
+      formId: result.formId ?? null,
+    });
+
     return NextResponse.json(result, { status: result.success ? 200 : 409 });
   } catch (error) {
-    console.error("Webhook error:", error);
+    logError("hippatizer_webhook", error);
     return NextResponse.json(
       { error: "Internal server error", message: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

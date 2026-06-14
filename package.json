@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
+    "postinstall": "prisma generate",
+    "deploy": "prisma migrate deploy && prisma generate && next build",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
     "worker": "tsx worker.ts",

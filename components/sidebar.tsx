@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -134,14 +134,70 @@ function SidebarContent({ isMobile = false }) {
   );
 }
 
+interface SidebarNotification {
+  id: string;
+  message: string;
+  time: string;
+  isRead: boolean;
+  actionUrl?: string;
+}
+
 export function Sidebar() {
   const { theme, toggleTheme } = useTheme();
+  const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
-  const notifications = [
-    { id: 1, message: "New patient Emma Wilson added", time: "2 mins ago", type: "success" },
-    { id: 2, message: "Appointment with Dr. Tamas in 30 minutes", time: "5 mins ago", type: "info" },
-    { id: 3, message: "Document upload failed for patient ID 5", time: "1 hour ago", type: "error" },
-  ];
+  const [notifications, setNotifications] = useState<SidebarNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const formatTime = (date: Date): string => {
+    const diffMs = Date.now() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMins < 1) return "just now";
+    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? "s" : ""} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+    return date.toLocaleDateString();
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch("/api/notifications?includeRead=false&limit=10");
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(
+          data.notifications.map((n: any) => ({
+            id: n.id,
+            message: n.message,
+            time: formatTime(new Date(n.createdAt)),
+            isRead: n.isRead,
+            actionUrl: n.actionUrl,
+          }))
+        );
+        setUnreadCount(data.unreadCount);
+      }
+    } catch (error) {
+      console.error("Failed to fetch notifications:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleNotificationClick = (notification: SidebarNotification) => {
+    setShowNotifications(false);
+    if (!notification.isRead) {
+      fetch(`/api/notifications/${notification.id}`, { method: "PUT" }).then(fetchNotifications);
+    }
+    if (notification.actionUrl) {
+      router.push(notification.actionUrl);
+      router.refresh();
+    }
+  };
 
   return (
     <>
@@ -174,11 +230,11 @@ export function Sidebar() {
           {/* Notification Bell */}
           <div className="relative">
             <button
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => { setShowNotifications(!showNotifications); fetchNotifications(); }}
               className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors relative"
             >
               <Bell className="h-6 w-6 text-slate-900 dark:text-slate-400" />
-              {notifications.length > 0 && (
+              {unreadCount > 0 && (
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
               )}
             </button>
@@ -186,19 +242,47 @@ export function Sidebar() {
             {/* Notifications Dropdown */}
             {showNotifications && (
               <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50">
-                <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                   <h3 className="font-semibold text-slate-900 dark:text-slate-50">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <span className="text-xs font-medium px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full">
+                      {unreadCount} new
+                    </span>
+                  )}
                 </div>
                 <div className="max-h-96 overflow-y-auto">
-                  {notifications.map((notif) => (
-                    <div
-                      key={notif.id}
-                      className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors last:border-b-0"
-                    >
-                      <p className="text-sm text-slate-900 dark:text-slate-50">{notif.message}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{notif.time}</p>
+                  {notifications.length > 0 ? (
+                    notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        onClick={() => handleNotificationClick(notif)}
+                        className={cn(
+                          "px-4 py-3 border-b border-slate-100 dark:border-slate-700 cursor-pointer transition-colors last:border-b-0",
+                          notif.isRead
+                            ? "hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                            : "bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40"
+                        )}
+                      >
+                        <p className={cn(
+                          "text-sm",
+                          notif.isRead ? "text-slate-900 dark:text-slate-50" : "font-semibold text-blue-900 dark:text-blue-200"
+                        )}>{notif.message}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{notif.time}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      No unread notifications
                     </div>
-                  ))}
+                  )}
+                </div>
+                <div className="px-4 py-2.5 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    onClick={() => { setShowNotifications(false); router.push("/notifications"); }}
+                    className="w-full text-center text-sm text-blue-600 dark:text-blue-400 font-medium py-1"
+                  >
+                    View all notifications
+                  </button>
                 </div>
               </div>
             )}

@@ -327,41 +327,62 @@ export const diagnosticInterviewMapping: FieldMapping[] = [
 /**
  * SENSORY ASSESSMENT - PARENT/CAREGIVER
  */
+// Field IDs match the exact label keys sent by the Parent/Caregiver sensory form
 export const sensoryAssessmentParentMapping: FieldMapping[] = [
   {
-    hippatizFieldId: "Child's Name",
-    fieldLabel: "Child's Name",
+    hippatizFieldId: "First Name",
+    fieldLabel: "First Name",
     fieldType: "text",
-    patientField: "childName",
+    patientField: "firstName",
+    required: true,
   },
   {
-    hippatizFieldId: "Parent/Caregiver Name",
-    fieldLabel: "Parent/Caregiver Name",
+    hippatizFieldId: "Last Name",
+    fieldLabel: "Last Name",
+    fieldType: "text",
+    patientField: "lastName",
+    required: true,
+  },
+  {
+    hippatizFieldId: "Date of Birth",
+    fieldLabel: "Date of Birth",
+    fieldType: "date",
+    patientField: "dateOfBirth",
+    required: true,
+    transform: (value) => {
+      if (!value) return null;
+      const [month, day, year] = (value as string).split("/");
+      return new Date(`${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`);
+    },
+  },
+  {
+    hippatizFieldId: "Who is filling out this form (First & Last Name)?",
+    fieldLabel: "Who is filling out this form (First & Last Name)?",
     fieldType: "text",
     patientField: "caregiverName",
   },
   {
-    hippatizFieldId: "Date",
-    fieldLabel: "Date",
+    hippatizFieldId: "What is your relationship to the child?",
+    fieldLabel: "What is your relationship to the child?",
+    fieldType: "text",
+    patientField: "caregiver1Relationship",
+  },
+  {
+    hippatizFieldId: "What grade is the child presently completing?",
+    fieldLabel: "What grade is the child presently completing?",
+    fieldType: "text",
+    patientField: "gradeClass",
+  },
+  {
+    hippatizFieldId: "Date Completed",
+    fieldLabel: "Date Completed",
     fieldType: "date",
     patientField: "assessmentDate",
     transform: (value) => {
       if (!value) return null;
       const [month, day, year] = (value as string).split("/");
-      return new Date(`${year}-${month}-${day}`);
+      return new Date(`${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`);
     },
-  },
-  {
-    hippatizFieldId: "Sensory Seeking Total Score",
-    fieldLabel: "Sensory Seeking Total Score",
-    fieldType: "number",
-    patientField: "sensorySeekingScore",
-  },
-  {
-    hippatizFieldId: "Sensory Sensitivity Total Score",
-    fieldLabel: "Sensory Sensitivity Total Score",
-    fieldType: "number",
-    patientField: "sensorySensitivityScore",
   },
 ];
 
@@ -384,10 +405,21 @@ export const sensoryAssessmentAdolescentMapping: FieldMapping[] = [
     required: true,
   },
   {
-    hippatizFieldId: "Date of Assessment",
-    fieldLabel: "Date of Assessment",
+    hippatizFieldId: "Date",
+    fieldLabel: "Date",
     fieldType: "date",
     patientField: "assessmentDate",
+    transform: (value) => {
+      if (!value) return null;
+      const [month, day, year] = (value as string).split("/");
+      return new Date(`${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`);
+    },
+  },
+  {
+    hippatizFieldId: "Date Completed",
+    fieldLabel: "Date Completed",
+    fieldType: "date",
+    patientField: "evaluationDate",
     transform: (value) => {
       if (!value) return null;
       const [month, day, year] = (value as string).split("/");
@@ -405,6 +437,17 @@ export const sensoryAssessmentTeacherMapping: FieldMapping[] = [
     fieldLabel: "Student's name",
     fieldType: "text",
     patientField: "patientFullName",
+  },
+  {
+    hippatizFieldId: "Date of birth:",
+    fieldLabel: "Date of birth",
+    fieldType: "date",
+    patientField: "dateOfBirth",
+    transform: (value) => {
+      if (!value) return null;
+      const [month, day, year] = (value as string).split("/");
+      return new Date(`${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`);
+    },
   },
   {
     hippatizFieldId: "Respondent(s):",
