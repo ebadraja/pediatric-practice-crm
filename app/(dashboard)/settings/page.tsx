@@ -31,6 +31,7 @@ import {
   Zap,
   RefreshCw,
   ExternalLink,
+  Mail,
 } from 'lucide-react';
 import { WebhookTestingComponent } from '@/components/webhook-testing';
 
@@ -137,6 +138,18 @@ function SettingsPage() {
   const [changingGcalClientId, setChangingGcalClientId] = useState(false);
   const [changingGcalClientSecret, setChangingGcalClientSecret] = useState(false);
 
+  // Gmail (email sending) state — reuses the Google OAuth client
+  const [gmail, setGmail] = useState({
+    connected: false,
+    enabled: false,
+    senderEmail: null as string | null,
+    fromName: '',
+    hasGoogleCreds: false,
+  });
+  const [gmailFromName, setGmailFromName] = useState('');
+  const [gmailSaving, setGmailSaving] = useState(false);
+  const [gmailMessage, setGmailMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 350);
     return () => clearTimeout(t);
@@ -149,6 +162,8 @@ function SettingsPage() {
     loadHippatizSettings();
     // Load Google Calendar settings
     loadGcalSettings();
+    // Load Email (Gmail) settings
+    loadGmailSettings();
   }, []);
 
   // Handle OAuth callback messages
@@ -168,6 +183,27 @@ function SettingsPage() {
         no_code: 'Authorization was cancelled.',
       };
       setGcalMessage({ type: 'error', text: msgs[error] ?? `OAuth error: ${error}` });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Handle Gmail OAuth callback messages
+  useEffect(() => {
+    if (activeTab !== 'email') return;
+    const connected = searchParams.get('connected');
+    const error = searchParams.get('error');
+    if (connected === '1') {
+      setGmailMessage({ type: 'success', text: 'Gmail connected successfully! Emails will now send from your account.' });
+      loadGmailSettings();
+      setTimeout(() => setGmailMessage(null), 5000);
+    } else if (error) {
+      const msgs: Record<string, string> = {
+        missing_credentials: 'Set up your Google OAuth credentials in the Google Calendar tab first.',
+        token_exchange_failed: 'Token exchange failed — check your credentials and redirect URI.',
+        server_error: 'A server error occurred.',
+        no_code: 'Authorization was cancelled.',
+      };
+      setGmailMessage({ type: 'error', text: msgs[error] ?? `OAuth error: ${error}` });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
@@ -279,6 +315,72 @@ function SettingsPage() {
       setTimeout(() => setGcalMessage(null), 3000);
     } catch {
       setGcalMessage({ type: 'error', text: 'Failed to disconnect' });
+    }
+  };
+
+  const loadGmailSettings = async () => {
+    try {
+      const res = await fetch('/api/settings/email');
+      if (res.ok) {
+        const data = await res.json();
+        setGmail(data);
+        setGmailFromName(data.fromName ?? '');
+      }
+    } catch (err) {
+      console.error('Failed to load email settings:', err);
+    }
+  };
+
+  const handleGmailSave = async () => {
+    setGmailSaving(true);
+    setGmailMessage(null);
+    try {
+      const res = await fetch('/api/settings/email', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromName: gmailFromName }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setGmailMessage({ type: 'error', text: err.error ?? 'Failed to save' });
+      } else {
+        await loadGmailSettings();
+        setGmailMessage({ type: 'success', text: 'Email settings saved.' });
+      }
+    } catch {
+      setGmailMessage({ type: 'error', text: 'An error occurred' });
+    } finally {
+      setGmailSaving(false);
+      setTimeout(() => setGmailMessage(null), 5000);
+    }
+  };
+
+  const handleGmailToggleEnabled = async (enabled: boolean) => {
+    try {
+      await fetch('/api/settings/email', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      setGmail((prev) => ({ ...prev, enabled }));
+    } catch {
+      /* silent */
+    }
+  };
+
+  const handleGmailDisconnect = async () => {
+    if (!confirm('Disconnect Gmail? Emails will stop sending until reconnected.')) return;
+    try {
+      await fetch('/api/settings/email', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disconnect: true }),
+      });
+      await loadGmailSettings();
+      setGmailMessage({ type: 'success', text: 'Gmail disconnected.' });
+      setTimeout(() => setGmailMessage(null), 3000);
+    } catch {
+      setGmailMessage({ type: 'error', text: 'Failed to disconnect' });
     }
   };
 
@@ -472,6 +574,7 @@ function SettingsPage() {
     { id: 'knowledge', label: 'Knowledge Base', icon: BookOpen },
     { id: 'integrations', label: 'Integrations', icon: Puzzle },
     { id: 'google-calendar', label: 'Google Calendar', icon: Calendar },
+    { id: 'email', label: 'Email (Gmail)', icon: Mail },
     { id: 'hippatizer', label: 'Intake Forms (Hippatizer)', icon: FileText },
     { id: 'webhook-test', label: 'Test Webhook', icon: Zap },
     { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -1135,6 +1238,163 @@ function SettingsPage() {
                       </li>
                     ))}
                   </ol>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ── Email (Gmail) ── */}
+          {activeTab === 'email' && (
+            <div className="space-y-6">
+              {gmailMessage && (
+                <div className={`p-4 rounded-lg flex items-center gap-3 ${
+                  gmailMessage.type === 'success'
+                    ? 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800'
+                    : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800'
+                }`}>
+                  {gmailMessage.type === 'success'
+                    ? <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    : <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />}
+                  <p className={`text-sm font-medium ${
+                    gmailMessage.type === 'success'
+                      ? 'text-green-800 dark:text-green-300'
+                      : 'text-red-800 dark:text-red-300'
+                  }`}>{gmailMessage.text}</p>
+                </div>
+              )}
+
+              {/* Status card */}
+              <Card className="dark:bg-slate-900 dark:border-slate-700">
+                <CardHeader>
+                  <CardTitle className="dark:text-slate-50 flex items-center gap-2">
+                    <Mail className="h-5 w-5" />
+                    Email Sending (Gmail)
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Sends all CRM emails (campaigns, automated reminders, notifications) through your
+                    Google Workspace account via the Gmail API. Reuses the OAuth client from the Google
+                    Calendar tab — no separate credentials needed.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className={`rounded-lg p-4 flex items-start gap-3 border ${
+                    gmail.connected
+                      ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800'
+                      : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
+                  }`}>
+                    {gmail.connected
+                      ? <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                      : <AlertCircle className="h-5 w-5 text-slate-400 flex-shrink-0 mt-0.5" />}
+                    <div>
+                      <p className={`text-sm font-medium ${gmail.connected ? 'text-green-900 dark:text-green-200' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {gmail.connected ? 'Connected & Authorized' : 'Not Connected'}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {gmail.connected
+                          ? `Sending as: ${gmail.senderEmail ?? 'unknown'}`
+                          : 'Click Connect Gmail to authorize sending via Google OAuth.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!gmail.hasGoogleCreds && (
+                    <div className="rounded-lg p-4 flex items-start gap-3 border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+                      <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-amber-900 dark:text-amber-200">Google OAuth client not set up</p>
+                        <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                          Add your Google Client ID and Secret in the{' '}
+                          <button className="underline font-medium" onClick={() => setActiveTab('google-calendar')}>Google Calendar</button>{' '}
+                          tab first — Gmail reuses the same credentials.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Enable toggle (only relevant when connected) */}
+                  {gmail.connected && (
+                    <div className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-700 rounded-lg">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Enable email sending</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">When off, the CRM will not send any emails through Gmail</p>
+                      </div>
+                      <button
+                        onClick={() => handleGmailToggleEnabled(!gmail.enabled)}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${gmail.enabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${gmail.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Configuration */}
+              <Card className="dark:bg-slate-900 dark:border-slate-700">
+                <CardHeader>
+                  <CardTitle className="dark:text-slate-50 text-base">Configuration</CardTitle>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    In Google Cloud Console, enable the <strong>Gmail API</strong>, add the{' '}
+                    <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">.../auth/gmail.send</code>{' '}
+                    scope to your OAuth consent screen, and add this redirect URI:{' '}
+                    <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">
+                      {typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/gmail/callback
+                    </code>
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* From name */}
+                  <div>
+                    <label className={labelCls}>From Name (optional)</label>
+                    <Input
+                      value={gmailFromName}
+                      onChange={(e) => setGmailFromName(e.target.value)}
+                      placeholder="e.g. Kids 0-18 Pediatrics"
+                      className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      The display name recipients see. The from-address is your connected Google account
+                      {gmail.senderEmail ? ` (${gmail.senderEmail})` : ''}.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    <Button
+                      onClick={handleGmailSave}
+                      disabled={gmailSaving}
+                      className="bg-blue-600 hover:bg-blue-700 gap-2"
+                    >
+                      {gmailSaving && <RefreshCw className="w-4 h-4 animate-spin" />}
+                      Save Settings
+                    </Button>
+
+                    {gmail.hasGoogleCreds && !gmail.connected && (
+                      <a href="/api/auth/gmail">
+                        <Button className="bg-green-600 hover:bg-green-700 gap-2">
+                          <ExternalLink className="w-4 h-4" />
+                          Connect Gmail
+                        </Button>
+                      </a>
+                    )}
+
+                    {gmail.connected && (
+                      <>
+                        <a href="/api/auth/gmail">
+                          <Button variant="outline" className="gap-2 dark:border-slate-600 dark:text-slate-300">
+                            <RefreshCw className="w-4 h-4" />
+                            Re-authorize
+                          </Button>
+                        </a>
+                        <Button
+                          variant="outline"
+                          onClick={handleGmailDisconnect}
+                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:border-slate-600"
+                        >
+                          Disconnect
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </div>

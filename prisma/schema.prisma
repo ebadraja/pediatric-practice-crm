@@ -529,6 +529,14 @@ model Settings {
   googleCalSyncDirection String    @default("read_only") @map("google_cal_sync_direction")
   googleCalLastSync      DateTime? @map("google_cal_last_sync")
 
+  // Gmail email sending — reuses the Google OAuth client above (same Cloud project)
+  gmailAccessToken  String?   @map("gmail_access_token") @db.Text
+  gmailRefreshToken String?   @map("gmail_refresh_token") @db.Text
+  gmailTokenExpiry  DateTime? @map("gmail_token_expiry")
+  gmailSenderEmail  String?   @map("gmail_sender_email")
+  gmailFromName     String?   @map("gmail_from_name")
+  gmailEnabled      Boolean   @default(false) @map("gmail_enabled")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
