@@ -270,6 +270,12 @@ export function startWorker(): Worker<EmailJobData> {
     processEmailJob,
     {
       connection,
+      // Register the "custom" backoff strategy referenced by the queue's job options.
+      // Without this, BullMQ throws "Unknown backoff strategy custom" on every retry,
+      // which stalls the job and marks it FAILED (so nothing ever sends).
+      settings: {
+        backoffStrategy: (attemptsMade: number) => getBackoffDelay(attemptsMade),
+      },
       // Rate limit: max 100 emails per minute (SendGrid free tier safe)
       limiter: { max: 100, duration: 60_000 },
       concurrency: 5,
@@ -288,8 +294,7 @@ export function startWorker(): Worker<EmailJobData> {
       ` attempt=${job.attemptsMade} willRetry=${willRetry} err=${err.message}`
     )
 
-    // Override next retry delay (BullMQ reads this from the error)
-    ;(err as any).delay = getBackoffDelay(job.attemptsMade)
+    // Retry delay is handled by the registered custom backoffStrategy above.
 
     // After all retries exhausted — mark as permanently failed
     if (!willRetry) {
