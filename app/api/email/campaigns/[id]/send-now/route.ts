@@ -31,7 +31,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
     const recipients = await buildRecipients(campaign)
     if (recipients.length === 0) {
-      return NextResponse.json({ error: 'No eligible recipients match segment filters' }, { status: 400 })
+      const sf = (campaign.segmentFilters ?? {}) as Record<string, unknown>
+      const isSpecific = Array.isArray(sf.specificPatientIds) && (sf.specificPatientIds as string[]).length > 0
+      return NextResponse.json({
+        error: isSpecific
+          ? 'None of the selected patients have an email address on file. Add an email (or parent email) to those patients, or pick different recipients.'
+          : 'No eligible recipients match the segment filters. Try widening the audience.',
+      }, { status: 400 })
     }
 
     await queueCampaignBatch(id, recipients, campaign.templateId)
@@ -68,10 +74,10 @@ async function buildRecipients(campaign: { segmentFilters: unknown }) {
       },
     })
     return patients
-      .filter(p => p.parentEmail ?? p.email)
+      .filter(p => p.parentEmail || p.email)
       .map(p => ({
         patientId: p.id,
-        toEmail:   encrypt(p.parentEmail ?? p.email!),
+        toEmail:   encrypt(p.parentEmail || p.email!),
         variables: {
           patient_name:       `${p.firstName} ${p.lastName}`,
           patient_first_name: p.firstName,

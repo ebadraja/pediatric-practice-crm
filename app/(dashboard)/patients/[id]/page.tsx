@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -127,6 +127,7 @@ function aptStatusColor(s: string) {
 export default function PatientDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const patientId = params.id as string;
 
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -233,6 +234,11 @@ export default function PatientDetailPage() {
 
   useEffect(() => { fetchPatient(); fetchIntakeForms(); }, [fetchPatient, fetchIntakeForms]);
 
+  // Open directly in edit mode when arriving from the list's "Edit" action (?edit=1)
+  useEffect(() => {
+    if (searchParams.get("edit") === "1") setIsEditing(true);
+  }, [searchParams]);
+
   const handleSave = async () => {
     setSaving(true); setSaveError("");
     try {
@@ -243,8 +249,10 @@ export default function PatientDetailPage() {
       });
       if (!res.ok) throw new Error("Save failed");
       const updated = await res.json();
-      setPatient(updated);
-      setEditForm(updated);
+      // PUT returns only scalar fields — merge so relation arrays (appointments,
+      // callLogs, notes, etc.) are preserved and the page doesn't crash on re-render.
+      setPatient((prev) => (prev ? { ...prev, ...updated } : updated));
+      setEditForm((prev) => ({ ...prev, ...updated }));
       setIsEditing(false);
     } catch (e: any) {
       setSaveError(e.message || "Save failed");
@@ -409,14 +417,14 @@ export default function PatientDetailPage() {
               <div>
                 <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Core Patient Data</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <F label="First Name" k="firstName" />
-                  <F label="Last Name" k="lastName" />
-                  <F label="Date of Birth" k="dateOfBirth" type="date" />
-                  <F label="Gender" k="gender" />
-                  <F label="Phone Number" k="phone" type="tel" />
-                  <F label="Email" k="email" type="email" />
-                  <F label="Preferred Language" k="preferredLanguage" />
-                  <F label="Preferred Provider" k="preferredProvider" />
+                  {F({ label: "First Name", k: "firstName" })}
+                  {F({ label: "Last Name", k: "lastName" })}
+                  {F({ label: "Date of Birth", k: "dateOfBirth", type: "date" })}
+                  {F({ label: "Gender", k: "gender" })}
+                  {F({ label: "Phone Number", k: "phone", type: "tel" })}
+                  {F({ label: "Email", k: "email", type: "email" })}
+                  {F({ label: "Preferred Language", k: "preferredLanguage" })}
+                  {F({ label: "Preferred Provider", k: "preferredProvider" })}
                 </div>
               </div>
 
@@ -424,10 +432,10 @@ export default function PatientDetailPage() {
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                 <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Address</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <F label="Street Address" k="address" />
-                  <F label="City" k="city" />
-                  <F label="State" k="state" />
-                  <F label="Zip Code" k="zipCode" />
+                  {F({ label: "Street Address", k: "address" })}
+                  {F({ label: "City", k: "city" })}
+                  {F({ label: "State", k: "state" })}
+                  {F({ label: "Zip Code", k: "zipCode" })}
                 </div>
               </div>
 
@@ -435,12 +443,12 @@ export default function PatientDetailPage() {
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                 <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Parent / Guardian</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <F label="Name" k="parentName" />
-                  <F label="Relationship" k="parentRelation" />
-                  <F label="Phone" k="parentPhone" type="tel" />
-                  <F label="Email" k="parentEmail" type="email" />
-                  <F label="Emergency Contact" k="emergencyContact" />
-                  <F label="Emergency Phone" k="emergencyPhone" type="tel" />
+                  {F({ label: "Name", k: "parentName" })}
+                  {F({ label: "Relationship", k: "parentRelation" })}
+                  {F({ label: "Phone", k: "parentPhone", type: "tel" })}
+                  {F({ label: "Email", k: "parentEmail", type: "email" })}
+                  {F({ label: "Emergency Contact", k: "emergencyContact" })}
+                  {F({ label: "Emergency Phone", k: "emergencyPhone", type: "tel" })}
                 </div>
               </div>
 
@@ -448,8 +456,8 @@ export default function PatientDetailPage() {
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                 <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Insurance</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <F label="Provider" k="insuranceProvider" />
-                  <F label="Member ID / Policy #" k="insuranceId" />
+                  {F({ label: "Provider", k: "insuranceProvider" })}
+                  {F({ label: "Member ID / Policy #", k: "insuranceId" })}
                 </div>
               </div>
 
@@ -457,9 +465,9 @@ export default function PatientDetailPage() {
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                 <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Medical Information</p>
                 <div className="space-y-4">
-                  <TA label="Allergies" k="allergies" />
-                  <TA label="Current Medications" k="medications" />
-                  <TA label="Medical Notes / History" k="medicalNotes" />
+                  {TA({ label: "Allergies", k: "allergies" })}
+                  {TA({ label: "Current Medications", k: "medications" })}
+                  {TA({ label: "Medical Notes / History", k: "medicalNotes" })}
                 </div>
               </div>
             </div>

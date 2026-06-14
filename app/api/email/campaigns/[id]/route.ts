@@ -103,3 +103,51 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Failed to update campaign' }, { status: 500 })
   }
 }
+
+// ── DELETE /api/email/campaigns/:id — permanently remove a campaign ───────────
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await auth()
+    if (!session?.user || session.user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { id } = await params
+    const campaign = await prisma.emailCampaign.findUnique({
+      where:  { id },
+      select: { status: true, name: true },
+    })
+    if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+
+    // Block deletion while actively sending to avoid orphaned queue jobs
+    if (campaign.status === 'SENDING') {
+      return NextResponse.json(
+        { error: 'Cannot delete a campaign while it is sending. Pause or cancel it first.' },
+        { status: 409 }
+      )
+    }
+
+    // Remove delivery logs first (no FK cascade), then the campaign
+    await prisma.$transaction([
+      prisma.emailLog.deleteMany({ where: { campaignId: id } }),
+      prisma.emailCampaign.delete({ where: { id } }),
+    ])
+
+    prisma.auditLog.create({
+      data: {
+        userId: session.user.id, action: 'DELETE',
+        entity: 'email_campaign', entityId: id,
+        changes: { name: campaign.name, status: campaign.status },
+      },
+    }).catch(() => {})
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+    }
+    console.error('[DELETE /api/email/campaigns/[id]]', error)
+    return NextResponse.json({ error: 'Failed to delete campaign' }, { status: 500 })
+  }
+}

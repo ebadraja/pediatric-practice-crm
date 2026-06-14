@@ -24,7 +24,7 @@ import {
   Plus, ArrowLeft, ChevronLeft, ChevronRight, MoreVertical,
   Mail, AlertCircle, Send, Clock, Users, BarChart2,
   CheckCircle2, XCircle, PauseCircle, Copy, Eye,
-  Loader2, Calendar, RefreshCw, Search, X, Filter,
+  Loader2, Calendar, RefreshCw, Search, X, Filter, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -619,6 +619,22 @@ export default function EmailCampaignsPage() {
     }
   };
 
+  const handleDeleteCampaign = async (id: string, name: string) => {
+    if (!confirm(`Delete campaign "${name}"? This permanently removes it and its delivery logs. This cannot be undone.`)) return;
+    setActionLoading("delete");
+    try {
+      const res = await fetch(`/api/email/campaigns/${id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Failed to delete campaign");
+      if (view === "detail") { setView("list"); setDetailCampaign(null); }
+      fetchCampaigns();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete campaign");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const openDetail = (id: string) => {
     setSelectedCampaignId(id);
     setDetailLogsPage(1);
@@ -697,6 +713,12 @@ export default function EmailCampaignsPage() {
                   {actionLoading === "duplicate" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
                   Duplicate
                 </Button>
+                {detailCampaign.status !== "SENDING" && (
+                  <Button variant="outline" size="sm" className="gap-2 text-red-600 hover:text-red-700 dark:text-red-400" disabled={actionLoading === "delete"} onClick={() => handleDeleteCampaign(detailCampaign.id, detailCampaign.name)}>
+                    {actionLoading === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    Delete
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -1631,6 +1653,17 @@ export default function EmailCampaignsPage() {
                             }}>
                               <Copy className="h-4 w-4" /> Duplicate
                             </DropdownMenuItem>
+                            {c.status !== "SENDING" && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="gap-2 cursor-pointer text-red-600 dark:text-red-400 focus:text-red-600"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(c.id, c.name); }}
+                                >
+                                  <Trash2 className="h-4 w-4" /> Delete
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

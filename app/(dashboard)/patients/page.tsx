@@ -564,7 +564,7 @@ export default function PatientsPage() {
                                 >
                                   <Eye className="h-4 w-4" /> View
                                 </DropdownMenuItem>
-                                <DropdownMenuItem className="gap-2">
+                                <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => router.push(`/patients/${patient.id}?edit=1`)}>
                                   <Edit className="h-4 w-4" /> Edit
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
