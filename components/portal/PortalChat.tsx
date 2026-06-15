@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PORTAL_REASONS, REASON_LABELS } from '@/lib/messaging/portalSchemas'
+import { useMessagingPoll } from '@/lib/messaging/realtime'
 
 interface PortalMessage {
   id: string
@@ -64,6 +65,10 @@ export function PortalChat() {
       }
     })()
   }, [loadMessages, router])
+
+  useMessagingPoll(() => {
+    if (!loading) void loadMessages()
+  })
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })

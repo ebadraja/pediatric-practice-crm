@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma'
 import { requireStaffSession } from '@/lib/messaging/session'
 import { assignConversationBody } from '@/lib/messaging/schemas'
 import { serializeConversation } from '@/lib/messaging/serialize'
+import { notifyStaffMessageAssigned } from '@/lib/messaging/notifications'
 
 export const dynamic = 'force-dynamic'
 
@@ -117,6 +118,16 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
       return updated
     })
+
+    if (assignedToId && assignedToId !== existing.assignedToId) {
+      void notifyStaffMessageAssigned({
+        conversationId: id,
+        patientFirstName: conversation.patient.firstName,
+        patientLastName: conversation.patient.lastName,
+        assignedToId,
+        assignedByName: `${staff.firstName ?? ''} ${staff.lastName ?? ''}`.trim() || undefined,
+      }).catch((err) => console.error('[assign] notification failed:', err))
+    }
 
     return NextResponse.json(serializeConversation(conversation))
   } catch (error) {

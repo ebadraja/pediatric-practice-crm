@@ -14,6 +14,7 @@ import {
 } from '@/lib/messaging/webchatSession'
 import { normalizePhone, phonesMatch } from '@/lib/messaging/portalAuth'
 import { isWithinBusinessHours } from '@/lib/messaging/businessHours'
+import { notifyStaffNewMessage } from '@/lib/messaging/notifications'
 
 export const dynamic = 'force-dynamic'
 
@@ -158,6 +159,19 @@ export async function POST(request: NextRequest) {
 
       return created
     })
+
+    const patient = await prisma.patient.findUnique({
+      where: { id: patientId },
+      select: { firstName: true, lastName: true },
+    })
+
+    void notifyStaffNewMessage({
+      conversationId: conversation!.id,
+      patientFirstName: patient?.firstName ?? visitorName.split(' ')[0] ?? 'Web',
+      patientLastName: patient?.lastName ?? 'Chat Visitor',
+      preview: previewText(content),
+      assignedToId: conversation!.assignedToId,
+    }).catch((err) => console.error('[webchat] new message notification failed:', err))
 
     const sessionToken = await setWebchatSessionCookie(conversation!.id, phoneKey)
 

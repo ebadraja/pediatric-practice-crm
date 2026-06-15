@@ -11,6 +11,7 @@ import { ConversationList } from '@/components/messaging/ConversationList'
 import { ConversationThread } from '@/components/messaging/ConversationThread'
 import { PatientContextPanel } from '@/components/messaging/PatientContextPanel'
 import { AssignmentDialog } from '@/components/messaging/AssignmentDialog'
+import { useMessagingPoll } from '@/lib/messaging/realtime'
 import type {
   ConversationSummary,
   InboxFilter,
@@ -43,8 +44,8 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
   const [showMobileThread, setShowMobileThread] = useState(!!initialConversationId)
   const [contextCollapsed, setContextCollapsed] = useState(false)
 
-  const fetchConversations = useCallback(async () => {
-    setListLoading(true)
+  const fetchConversations = useCallback(async (silent = false) => {
+    if (!silent) setListLoading(true)
     try {
       const params = new URLSearchParams({
         inbox,
@@ -58,11 +59,22 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
       const data = await res.json()
       setConversations(data.data ?? [])
     } catch {
-      showToast('Failed to load conversations', 'error')
+      if (!silent) showToast('Failed to load conversations', 'error')
     } finally {
-      setListLoading(false)
+      if (!silent) setListLoading(false)
     }
   }, [inbox, search, showToast])
+
+  const pollThread = useCallback(async (conversationId: string) => {
+    try {
+      const msgRes = await fetch(`/api/messaging/conversations/${conversationId}/messages?limit=100`)
+      if (!msgRes.ok) return
+      const msgData = await msgRes.json()
+      setMessages(msgData.data ?? [])
+    } catch {
+      // Polling errors are non-fatal
+    }
+  }, [])
 
   const fetchPatientContext = useCallback(async (patientId: string) => {
     setPatientLoading(true)
@@ -117,6 +129,11 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
   useEffect(() => {
     void fetchConversations()
   }, [fetchConversations])
+
+  useMessagingPoll(() => {
+    void fetchConversations(true)
+    if (selectedId) void pollThread(selectedId)
+  })
 
   useEffect(() => {
     if (!selectedId) {

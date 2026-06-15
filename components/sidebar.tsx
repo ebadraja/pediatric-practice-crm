@@ -48,7 +48,7 @@ const navItems = [
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
-function SidebarContent({ isMobile = false }) {
+function SidebarContent({ isMobile = false, messagingUnreadCount = 0 }: { isMobile?: boolean; messagingUnreadCount?: number }) {
   const pathname = usePathname();
   const { data: session } = useSession();
 
@@ -104,7 +104,12 @@ function SidebarContent({ isMobile = false }) {
                 "h-5 w-5 transition-colors flex-shrink-0",
                 isActive ? "text-white" : "text-slate-400"
               )} />
-              {item.name}
+              <span className="flex-1">{item.name}</span>
+              {item.href === "/messaging" && messagingUnreadCount > 0 && (
+                <span className="min-w-[1.25rem] h-5 px-1.5 flex items-center justify-center rounded-full bg-blue-600 text-[10px] font-semibold text-white">
+                  {messagingUnreadCount > 99 ? "99+" : messagingUnreadCount}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -152,6 +157,7 @@ export function Sidebar() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<SidebarNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [messagingUnreadCount, setMessagingUnreadCount] = useState(0);
 
   const formatTime = (date: Date): string => {
     const diffMs = Date.now() - date.getTime();
@@ -186,9 +192,25 @@ export function Sidebar() {
     }
   };
 
+  const fetchMessagingUnread = async () => {
+    try {
+      const res = await fetch("/api/messaging/unread-count");
+      if (res.ok) {
+        const data = await res.json();
+        setMessagingUnreadCount(data.unreadCount ?? 0);
+      }
+    } catch (error) {
+      console.error("Failed to fetch messaging unread count:", error);
+    }
+  };
+
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 10000);
+    fetchMessagingUnread();
+    const interval = setInterval(() => {
+      fetchNotifications();
+      fetchMessagingUnread();
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -207,7 +229,7 @@ export function Sidebar() {
     <>
       {/* Desktop Sidebar - Hidden on mobile/tablet */}
       <aside className="hidden lg:flex w-64 bg-slate-950 text-white h-screen fixed left-0 top-0 flex-col border-r border-slate-900/50">
-        <SidebarContent />
+        <SidebarContent messagingUnreadCount={messagingUnreadCount} />
       </aside>
 
       {/* Mobile Menu Button - Shown on mobile/tablet */}
@@ -217,7 +239,7 @@ export function Sidebar() {
             <Menu className="h-5 w-5 text-slate-700 dark:text-slate-300" />
           </SheetTrigger>
           <SheetContent side="left" className="w-72 bg-slate-950 text-white p-0 flex flex-col">
-            <SidebarContent isMobile={true} />
+            <SidebarContent isMobile={true} messagingUnreadCount={messagingUnreadCount} />
           </SheetContent>
         </Sheet>
 

@@ -11,6 +11,7 @@ import {
 } from '@/lib/messaging/portalAuth'
 import { portalSendMessageBody } from '@/lib/messaging/portalSchemas'
 import { resolveInboxForReason } from '@/lib/messaging/router'
+import { notifyStaffNewMessage } from '@/lib/messaging/notifications'
 
 export const dynamic = 'force-dynamic'
 
@@ -119,6 +120,14 @@ export async function POST(request: NextRequest) {
 
       return created
     })
+
+    void notifyStaffNewMessage({
+      conversationId: conversation!.id,
+      patientFirstName: session.patient.firstName,
+      patientLastName: session.patient.lastName,
+      preview: previewText(content),
+      assignedToId: conversation!.assignedToId,
+    }).catch((err) => console.error('[portal] new message notification failed:', err))
 
     return NextResponse.json(
       {

@@ -212,7 +212,7 @@ M0  Prerequisites
 - [x] New visitor prompted for name, phone, reason before first message
 - [x] Visitor message creates conversation (or appends to existing by phone match)
 - [x] Message appears in CRM unified inbox with WEB_CHAT channel indicator
-- [ ] Staff reply from CRM delivered to widget in real time while visitor is on page (via M6 realtime) _(polling stub: 5s interval until M6)_
+- [x] Staff reply from CRM delivered to widget in real time while visitor is on page _(2s polling via M6)_
 - [x] Widget matches existing patient by phone when record exists
 - [x] Unknown phone creates conversation linked to unmatched state for staff to link/create patient _(placeholder patient with medical note)_
 - [x] Offline mode shows appropriate message outside configured business hours
@@ -237,14 +237,14 @@ M0  Prerequisites
 
 ### Acceptance Criteria
 
-- [ ] New patient message appears in staff inbox within 2 seconds without manual refresh
-- [ ] Staff reply appears in patient portal within 2 seconds without manual refresh
-- [ ] Staff reply appears in webchat widget within 2 seconds while visitor is connected
-- [ ] New message creates `Notification` with `actionUrl` pointing to conversation
-- [ ] Sidebar Messaging item shows unread count badge
-- [ ] Conversation `unreadCount` increments on patient message; decrements on staff read
-- [ ] Conversation status auto-updates per FR-506 (open on patient message, awaiting reply on staff response)
-- [ ] Supabase Realtime connection errors fail gracefully (polling fallback acceptable for v1)
+- [x] New patient message appears in staff inbox within 2 seconds without manual refresh _(2s polling)_
+- [x] Staff reply appears in patient portal within 2 seconds without manual refresh _(2s polling)_
+- [x] Staff reply appears in webchat widget within 2 seconds while visitor is connected _(2s polling)_
+- [x] New message creates `Notification` with `actionUrl` pointing to conversation
+- [x] Sidebar Messaging item shows unread count badge
+- [x] Conversation `unreadCount` increments on patient message; decrements on staff read
+- [x] Conversation status auto-updates per FR-506 (open on patient message, awaiting reply on staff response)
+- [x] Supabase Realtime connection errors fail gracefully (polling fallback acceptable for v1) _(polling-only v1; optional Supabase when env vars set)_
 
 ---
 
@@ -509,3 +509,4 @@ M0  Prerequisites
 |---------|------|---------|
 | 1.0 | 2026-06-14 | Initial implementation plan with 14 milestones |
 | 1.1 | 2026-06-14 | M4 patient portal complete; M5 web chat widget scaffolded (realtime deferred to M6) |
+| 1.2 | 2026-06-14 | M5 session fix + M6 realtime via 2s polling, staff notifications, sidebar unread badge |

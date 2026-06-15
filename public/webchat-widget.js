@@ -2,7 +2,7 @@
   'use strict';
 
   var STORAGE_KEY = 'kids018_webchat';
-  var POLL_MS = 5000;
+  var POLL_MS = 2000;
   var script = document.currentScript;
   var apiBase = (script && script.getAttribute('data-api-base')) || '';
 
