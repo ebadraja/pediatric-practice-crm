@@ -65,7 +65,11 @@ export function AssignmentDialog({ open, onOpenChange, onAssign }: AssignmentDia
         <div className="space-y-4 py-2">
           <div className="space-y-2">
             <Label htmlFor="assignee">Staff member</Label>
-            <Select value={selectedId} onValueChange={setSelectedId} disabled={loading}>
+            <Select
+              value={selectedId}
+              onValueChange={(v) => setSelectedId(v ?? '')}
+              disabled={loading}
+            >
               <SelectTrigger id="assignee">
                 <SelectValue placeholder={loading ? 'Loading staff...' : 'Select staff member'} />
               </SelectTrigger>

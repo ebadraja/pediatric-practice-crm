@@ -64,6 +64,20 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
     }
   }, [inbox, search, showToast])
 
+  const fetchPatientContext = useCallback(async (patientId: string) => {
+    setPatientLoading(true)
+    try {
+      const res = await fetch(`/api/patients/${patientId}`)
+      if (!res.ok) throw new Error('Failed to load patient')
+      const data = await res.json()
+      setPatientContext(data)
+    } catch {
+      setPatientContext(null)
+    } finally {
+      setPatientLoading(false)
+    }
+  }, [])
+
   const fetchMessages = useCallback(
     async (conversationId: string, markRead = true) => {
       setThreadLoading(true)
@@ -99,20 +113,6 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
     },
     [showToast, fetchPatientContext],
   )
-
-  const fetchPatientContext = useCallback(async (patientId: string) => {
-    setPatientLoading(true)
-    try {
-      const res = await fetch(`/api/patients/${patientId}`)
-      if (!res.ok) throw new Error('Failed to load patient')
-      const data = await res.json()
-      setPatientContext(data)
-    } catch {
-      setPatientContext(null)
-    } finally {
-      setPatientLoading(false)
-    }
-  }, [])
 
   useEffect(() => {
     void fetchConversations()

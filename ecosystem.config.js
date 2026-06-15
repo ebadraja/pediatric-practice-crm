@@ -1,13 +1,16 @@
 /**
  * PM2 Ecosystem Config
  * Runs two processes on the VPS:
- *   1. kids018-crm     — Next.js web server  (existing)
- *   2. kids018-worker  — Email queue worker  (new)
+ *   1. kids018-crm     — Next.js web server
+ *   2. kids018-worker  — Email queue worker
  *
- * Usage:
- *   pm2 start ecosystem.config.js
- *   pm2 save
- *   pm2 startup
+ * NOTE: Process names are kids018-crm / kids018-worker (there is no kids018-server).
+ * Git remote default branch is master (not main).
+ *
+ * Deploy on VPS:
+ *   bash scripts/deploy-production.sh
+ *   — or manually: git pull origin master && npm install && npx prisma generate &&
+ *     npx prisma migrate deploy && npm run build && pm2 restart kids018-crm kids018-worker
  */
 
 module.exports = {
