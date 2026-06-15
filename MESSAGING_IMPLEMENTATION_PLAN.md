@@ -162,11 +162,11 @@ M0  Prerequisites
 **Goal:** Standalone mobile-first portal for parents/guardians — no CRM chrome.
 
 **Scope:**
-- `app/(portal)/layout.tsx` — minimal branding (logo, practice name from Settings)
-- `app/(portal)/page.tsx` — phone entry
-- `app/(portal)/verify/page.tsx` — DOB verification
-- `app/(portal)/chat/page.tsx` — conversation view
-- `app/(portal)/chat/[token]/page.tsx` — magic link entry
+- `app/portal/layout.tsx` — minimal branding (logo, practice name from Settings) _(route group `(portal)` optional; public URLs are `/portal/*`)_
+- `app/portal/page.tsx` — phone entry
+- `app/portal/verify/page.tsx` — redirects to main auth flow (DOB step inline in `PortalAuth`)
+- `app/portal/chat/page.tsx` — conversation view
+- `app/portal/chat/[token]/page.tsx` — magic link entry
 - `app/api/portal/auth/route.ts` — magic link gen, SMS code, DOB verify
 - `app/api/portal/session/route.ts` — validate portal session token
 - `app/api/portal/messages/route.ts` — patient send/receive (scoped to own conversation)
@@ -174,21 +174,21 @@ M0  Prerequisites
 - `components/portal/PortalAuth.tsx`, `PortalChat.tsx`, `PortalHeader.tsx`
 - Patient must select `MessageReason` when starting a new thread
 
-**Files touched:** `app/(portal)/**`, `app/api/portal/**`, `components/portal/**`, `lib/messaging/portalAuth.ts`
+**Files touched:** `app/portal/**`, `app/api/portal/**`, `components/portal/**`, `lib/messaging/portalAuth.ts`
 
 ### Acceptance Criteria
 
-- [ ] Portal renders without CRM sidebar or staff header
-- [ ] Patient receives magic link (email/SMS stub OK in dev); clicking opens verify flow
-- [ ] DOB verification succeeds for matching patient; fails gracefully for mismatch
-- [ ] After verify, patient sees chat-style conversation history
-- [ ] Patient can send a message; it appears in staff CRM inbox (M3)
-- [ ] Patient can select reason (Scheduling, Refill, Question, Urgent, etc.) on new conversation
-- [ ] Session persists 30 days on same device (cookie/token); re-verify DOB after expiry
-- [ ] Fallback flow: portal URL → phone → SMS code → DOB verify
-- [ ] Internal staff notes are **never** returned by portal API
-- [ ] Portal is mobile-responsive; touch targets ≥ 44px
-- [ ] `PatientPortalSession` record created with hashed token and expiry
+- [x] Portal renders without CRM sidebar or staff header
+- [x] Patient receives magic link (email/SMS stub OK in dev); clicking opens verify flow _(via `createMagicLinkSession` + `/portal/chat/[token]`)_
+- [x] DOB verification succeeds for matching patient; fails gracefully for mismatch
+- [x] After verify, patient sees chat-style conversation history
+- [x] Patient can send a message; it appears in staff CRM inbox (M3)
+- [x] Patient can select reason (Scheduling, Refill, Question, Urgent, etc.) on new conversation
+- [x] Session persists 30 days on same device (cookie/token); re-verify DOB after expiry
+- [x] Fallback flow: portal URL → phone → SMS code → DOB verify
+- [x] Internal staff notes are **never** returned by portal API
+- [x] Portal is mobile-responsive; touch targets ≥ 44px
+- [x] `PatientPortalSession` record created with hashed token and expiry
 
 ---
 
@@ -204,20 +204,20 @@ M0  Prerequisites
 - Channel: `WEB_CHAT`; tag messages in CRM thread
 - Offline mode: outside business hours → capture message + set expectations
 
-**Files touched:** `public/webchat-widget.js`, `app/api/webchat/**`, `lib/messaging/patientMatcher.ts`
+**Files touched:** `public/webchat-widget.js`, `app/api/webchat/**`, `lib/messaging/patientMatcher.ts`, `lib/messaging/webchatSession.ts`, `lib/messaging/businessHours.ts`
 
 ### Acceptance Criteria
 
-- [ ] Widget loads on external HTML page via one `<script>` tag
-- [ ] New visitor prompted for name, phone, reason before first message
-- [ ] Visitor message creates conversation (or appends to existing by phone match)
-- [ ] Message appears in CRM unified inbox with WEB_CHAT channel indicator
-- [ ] Staff reply from CRM delivered to widget in real time while visitor is on page (via M6 realtime)
-- [ ] Widget matches existing patient by phone when record exists
-- [ ] Unknown phone creates conversation linked to unmatched state for staff to link/create patient
-- [ ] Offline mode shows appropriate message outside configured business hours
-- [ ] Widget bundle < 50KB gzipped
-- [ ] Basic rate limiting on widget message endpoint
+- [x] Widget loads on external HTML page via one `<script>` tag
+- [x] New visitor prompted for name, phone, reason before first message
+- [x] Visitor message creates conversation (or appends to existing by phone match)
+- [x] Message appears in CRM unified inbox with WEB_CHAT channel indicator
+- [ ] Staff reply from CRM delivered to widget in real time while visitor is on page (via M6 realtime) _(polling stub: 5s interval until M6)_
+- [x] Widget matches existing patient by phone when record exists
+- [x] Unknown phone creates conversation linked to unmatched state for staff to link/create patient _(placeholder patient with medical note)_
+- [x] Offline mode shows appropriate message outside configured business hours
+- [ ] Widget bundle < 50KB gzipped _(verify at deploy)_
+- [x] Basic rate limiting on widget message endpoint
 
 ---
 
@@ -508,3 +508,4 @@ M0  Prerequisites
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-06-14 | Initial implementation plan with 14 milestones |
+| 1.1 | 2026-06-14 | M4 patient portal complete; M5 web chat widget scaffolded (realtime deferred to M6) |
