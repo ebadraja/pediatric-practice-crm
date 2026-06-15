@@ -285,7 +285,7 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
       <div className="flex flex-1 min-h-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 mx-4 md:mx-6 lg:mx-8 rounded-t-xl overflow-hidden shadow-sm">
         {/* Left panel — conversation list */}
         <div
-          className={`w-full lg:w-[280px] shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 min-h-0 min-w-0 ${
+          className={`w-full lg:w-[280px] shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 min-h-0 ${
             showMobileThread ? 'hidden lg:flex' : 'flex'
           }`}
         >
@@ -357,6 +357,10 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
             onSendNote={handleSendNote}
             onAssign={() => setAssignOpen(true)}
             onStatusChange={handleStatusChange}
+            onFormLinkSent={() => {
+              if (selectedId) void fetchMessages(selectedId, false)
+              showToast('Form link sent', 'success')
+            }}
           />
         </div>
 

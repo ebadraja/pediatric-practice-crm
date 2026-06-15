@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { APPLE_HEALTH_PLANS } from "@/lib/insurance-plans"
+import { appendSystemMessage } from "@/lib/messaging/systemMessages"
 
 export const dynamic = "force-dynamic"
 
@@ -428,6 +429,12 @@ async function toolBookAppointment(args: Record<string, unknown>): Promise<strin
       )
     ).catch(err => console.error("[VAPI TOOL] book appointment notification failed:", err))
 
+  void appendSystemMessage({
+    patientId: patient.id,
+    content: `Appointment booked via voice agent: ${visitType} on ${dateDisplay} at ${timeDisplay}.`,
+    metadata: { source: 'vapi', event: 'appointment_booked', visitType, startTime: startTime.toISOString() },
+  }).catch((err) => console.error("[VAPI TOOL] book appointment system message failed:", err))
+
   return `Appointment booked: ${visitType} for ${patient.firstName} ${patient.lastName} on ${dateDisplay} at ${timeDisplay}. Confirmation will be sent.`
 }
 
@@ -492,6 +499,12 @@ async function toolCancelAppointment(args: Record<string, unknown>): Promise<str
         )
       )
     ).catch(err => console.error("[VAPI TOOL] cancel appointment notification failed:", err))
+
+  void appendSystemMessage({
+    patientId: patient.id,
+    content: `Appointment cancelled via voice agent on ${dateDisplay}. Reason: ${reason}`,
+    metadata: { source: 'vapi', event: 'appointment_cancelled', appointmentId: appointment.id, reason },
+  }).catch((err) => console.error("[VAPI TOOL] cancel appointment system message failed:", err))
 
   return `Cancelled ${patient.firstName} ${patient.lastName}'s appointment on ${dateDisplay}. Would they like to reschedule?`
 }

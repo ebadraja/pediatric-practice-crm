@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { auth } from "@/auth"
 import { fetchGcalEvents, GCAL_TYPE_LABELS, type ClassifiedGcalEvent } from "@/lib/google-calendar"
+import { computeMessagingKpis } from "@/lib/messaging/timeline"
 
 export async function GET() {
   try {
@@ -38,6 +39,7 @@ export async function GET() {
       escalatedToday,
       avgDurationResult,
       recentCalls,
+      messagingKpis,
     ] = await Promise.all([
       // Practice settings
       prisma.settings.findFirst({ select: { practiceName: true } }),
@@ -117,6 +119,8 @@ export async function GET() {
           patient: { select: { firstName: true, lastName: true } },
         },
       }),
+
+      computeMessagingKpis(),
     ])
 
     // Google Calendar events (last 30 days through end of today) — the practice's
@@ -192,6 +196,9 @@ export async function GET() {
         chatbotsToday: chatsToday,
         avgCallDurationSeconds: Math.round(avgDurationSecs),
         escalatedToday,
+        messagesToday: messagingKpis.messagesToday,
+        openConversations: messagingKpis.openConversations,
+        avgFirstResponseMinutes: messagingKpis.avgFirstResponseMinutes,
       },
       recentCalls,
       todaySchedule: mergedSchedule,

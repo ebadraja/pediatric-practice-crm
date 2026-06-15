@@ -10,6 +10,7 @@ import prisma from "@/lib/prisma";
 import { getMappingForForm } from "@/lib/hippatizer/fieldMappings";
 import { findBestPatientMatch, findPatientMatches, type PatientMatch } from "@/lib/hippatizer/patientMatcher";
 import { logWebhook, logError } from "@/lib/logger";
+import { appendSystemMessage } from "@/lib/messaging/systemMessages";
 
 export const dynamic = "force-dynamic";
 
@@ -359,6 +360,19 @@ export async function processWebhookPayload(payload: NormalizedPayload) {
   });
 
   await createFormSubmissionNotifications(intakeForm.id, intakeFormStatus, extracted);
+
+  if (linkedPatientId) {
+    void appendSystemMessage({
+      patientId: linkedPatientId,
+      content: `Intake form completed: ${form_title}`,
+      metadata: {
+        source: 'hippatizer',
+        formId: intakeForm.id,
+        viewLink: view_link,
+        status: intakeFormStatus,
+      },
+    }).catch((err) => logError("hippatizer system message failed", err));
+  }
 
   return {
     success: true,

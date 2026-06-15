@@ -19,7 +19,19 @@ This plan breaks the messaging module into **milestones** ordered by dependency.
 | **Phase 2** — SMS & automation | M8 → M11 | Twilio (or Telnyx) + file storage |
 | **Phase 3** — Advanced features | M12 → M13 | Optional upgrades only |
 
-**Architecture principle:** Extend existing patterns — Next.js App Router, Prisma, NextAuth (staff), BullMQ worker, shadcn/ui, `(dashboard)` layout for staff, separate `(portal)` layout for patients.
+**Architecture principle:** Extend existing patterns — Next.js App Router, Prisma, NextAuth (staff), BullMQ worker, shadcn/ui, `(dashboard)` layout for staff, `app/portal/` for patients.
+
+---
+
+## Current Status (June 2026)
+
+| Milestone | Status |
+|-----------|--------|
+| M0–M7 | **Complete** — Phase 1 web messaging foundation shipped |
+| M8 | **Blocked** — requires Twilio account + signed HIPAA BAA |
+| M9 | **Deferred** — SMS automations need M8 |
+| M10 | **Complete** — unified timeline, integrations, dashboard KPIs |
+| M11+ | **Pending** — file exchange, broadcasts, advanced features |
 
 ---
 
@@ -290,6 +302,8 @@ M0  Prerequisites
 
 ## M8 — SMS via Twilio (Phase 2 Start)
 
+> **Prerequisite gate:** Do not start M8 until Twilio (or Telnyx) is provisioned **and** a HIPAA BAA is signed. Until then, all patient messaging stays on **portal + web chat** channels only.
+
 **Goal:** Two-way SMS on a dedicated practice number.
 
 **Scope:**
@@ -321,6 +335,8 @@ M0  Prerequisites
 ---
 
 ## M9 — Automated Messaging Workflows
+
+> **Without M8:** Implement only **PORTAL** channel automations (e.g. welcome message in conversation thread). Skip SMS triggers until Twilio + BAA.
 
 **Goal:** Event-driven SMS/portal messages; coordinate with email engine.
 
@@ -365,13 +381,13 @@ M0  Prerequisites
 
 ### Acceptance Criteria
 
-- [ ] Timeline shows messages, appointments, call logs, emails, intake submissions in chronological order
-- [ ] Vapi booking creates system message in patient conversation
-- [ ] Vapi cancellation creates system message in patient conversation
-- [ ] Staff can send HIPPAtizer form link from composer; patient receives as FORM_LINK message
-- [ ] Form submission webhook creates system message ("Intake form completed: …")
-- [ ] Dashboard shows messages today, open conversation count, average first-response time
-- [ ] Timeline accessible from patient detail and/or messaging context panel
+- [x] Timeline shows messages, appointments, call logs, emails, intake submissions in chronological order
+- [x] Vapi booking creates system message in patient conversation
+- [x] Vapi cancellation creates system message in patient conversation
+- [x] Staff can send HIPPAtizer form link from composer; patient receives as FORM_LINK message
+- [x] Form submission webhook creates system message ("Intake form completed: …")
+- [x] Dashboard shows messages today, open conversation count, average first-response time
+- [x] Timeline accessible from patient detail and/or messaging context panel
 
 ---
 
@@ -511,3 +527,5 @@ M0  Prerequisites
 | 1.1 | 2026-06-14 | M4 patient portal complete; M5 web chat widget scaffolded (realtime deferred to M6) |
 | 1.2 | 2026-06-14 | M5 session fix + M6 realtime via 2s polling, staff notifications, sidebar unread badge |
 | 1.3 | 2026-06-14 | M7 templates, shared inboxes, settings tab — **Phase 1 complete** |
+| 1.4 | 2026-06-14 | InboxTabs: show all shared inboxes; Phase 2 path documented (M10 next without Twilio) |
+| 1.5 | 2026-06-14 | M10 unified timeline, Vapi/HIPPAtizer system messages, dashboard KPIs, form-link composer — **M10 complete**; M8/M9+ pending (Twilio/BAA) |

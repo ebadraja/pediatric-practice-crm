@@ -1,8 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns'
-import { ExternalLink, Phone, User } from 'lucide-react'
+import { ExternalLink, History, Phone, User } from 'lucide-react'
+import { PatientTimeline } from '@/components/messaging/PatientTimeline'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -26,6 +28,8 @@ interface PatientContextPanelProps {
 }
 
 export function PatientContextPanel({ patient, loading, collapsed, onToggle }: PatientContextPanelProps) {
+  const [panelTab, setPanelTab] = useState<'context' | 'timeline'>('context')
+
   if (collapsed) {
     return (
       <div className="hidden xl:flex w-10 border-l border-slate-200 dark:border-slate-800 items-start justify-center pt-3">
@@ -38,13 +42,43 @@ export function PatientContextPanel({ patient, loading, collapsed, onToggle }: P
 
   return (
     <aside className="hidden lg:flex w-[300px] shrink-0 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 min-h-0">
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Patient Context</h3>
-        {onToggle && (
-          <Button type="button" variant="ghost" size="sm" className="xl:hidden" onClick={onToggle}>
-            Hide
-          </Button>
-        )}
+      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Patient</h3>
+          {onToggle && (
+            <Button type="button" variant="ghost" size="sm" className="xl:hidden" onClick={onToggle}>
+              Hide
+            </Button>
+          )}
+        </div>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => setPanelTab('context')}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium',
+              panelTab === 'context'
+                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
+            )}
+          >
+            <User className="h-3 w-3" />
+            Context
+          </button>
+          <button
+            type="button"
+            onClick={() => setPanelTab('timeline')}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium',
+              panelTab === 'timeline'
+                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
+            )}
+          >
+            <History className="h-3 w-3" />
+            Timeline
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5 text-sm">
@@ -56,6 +90,8 @@ export function PatientContextPanel({ patient, loading, collapsed, onToggle }: P
           </div>
         ) : !patient ? (
           <p className="text-slate-500 dark:text-slate-400">Select a conversation to view patient details.</p>
+        ) : panelTab === 'timeline' ? (
+          <PatientTimeline patientId={patient.id} />
         ) : (
           <>
             <section>
