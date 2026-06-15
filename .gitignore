@@ -39,6 +39,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# secrets / local config (contains live API keys)
+YOUR_HIPPATIZER_CONFIG.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

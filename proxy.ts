@@ -1,12 +1,23 @@
 import { auth } from "@/auth"
 
+/** Routes that must stay public (no staff session). */
+function isPublicRoute(pathname: string): boolean {
+  if (pathname.includes("/api/webhooks")) return true
+  if (pathname.includes("/api/auth")) return true
+  // Patient portal API (magic link, session, scoped messages) — M4
+  if (pathname.startsWith("/api/portal")) return true
+  // Website chat widget API — M5
+  if (pathname.startsWith("/api/webchat")) return true
+  // Patient portal pages — M4 (app/portal/* or future route group paths)
+  if (pathname.startsWith("/portal")) return true
+  return false
+}
+
 export default auth(async (req) => {
   const session = req.auth
   const pathname = req.nextUrl.pathname
 
-  // Public routes — no auth required
-  if (pathname.includes("/api/webhooks")) return
-  if (pathname.includes("/api/auth")) return
+  if (isPublicRoute(pathname)) return
 
   const isLoggedIn = !!session?.user
   const isOnLogin = pathname === "/login"
