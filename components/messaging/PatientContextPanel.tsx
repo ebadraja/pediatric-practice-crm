@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { format } from 'date-fns'
 import { ExternalLink, Phone, User } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import type { PatientContextData } from '@/types/messaging'
 
 function calculateAge(dob: string) {
@@ -77,12 +78,13 @@ export function PatientContextPanel({ patient, loading, collapsed, onToggle }: P
                 {patient.email && <p>{patient.email}</p>}
                 {patient.insuranceProvider && <p>Insurance: {patient.insuranceProvider}</p>}
               </div>
-              <Button asChild variant="outline" size="sm" className="mt-3 w-full">
-                <Link href={`/patients/${patient.id}`}>
-                  <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                  Open patient record
-                </Link>
-              </Button>
+              <Link
+                href={`/patients/${patient.id}`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3 w-full')}
+              >
+                <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                Open patient record
+              </Link>
             </section>
 
             <section>
