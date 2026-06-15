@@ -9,10 +9,10 @@ import { resolveWebChatPatient } from '@/lib/messaging/patientMatcher'
 import { getOrCreatePatientConversation } from '@/lib/messaging/portalAuth'
 import { webchatMessageBody } from '@/lib/messaging/webchatSchemas'
 import {
-  getWebchatSessionFromCookies,
+  resolveWebchatSession,
   setWebchatSessionCookie,
 } from '@/lib/messaging/webchatSession'
-import { normalizePhone } from '@/lib/messaging/portalAuth'
+import { normalizePhone, phonesMatch } from '@/lib/messaging/portalAuth'
 import { isWithinBusinessHours } from '@/lib/messaging/businessHours'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +32,7 @@ function isRateLimited(key: string): boolean {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getWebchatSessionFromCookies()
+    const session = await resolveWebchatSession(request)
     if (!session) {
       return NextResponse.json({ messages: [], conversationId: null })
     }
@@ -48,8 +48,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ messages: [], conversationId: null })
     }
 
-    const patientPhone = conversation.patient.phone ?? conversation.patient.parentPhone ?? ''
-    if (normalizePhone(patientPhone) !== normalizePhone(session.phone)) {
+    const patientPhones = [
+      conversation.patient.phone,
+      conversation.patient.parentPhone,
+    ].filter((p): p is string => Boolean(p))
+
+    const phoneMatches = patientPhones.some((p) => phonesMatch(p, session.phone))
+    if (!phoneMatches) {
       return NextResponse.json({ error: 'Session mismatch' }, { status: 403 })
     }
 

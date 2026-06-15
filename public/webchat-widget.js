@@ -92,6 +92,21 @@
     document.head.appendChild(style);
   }
 
+  function persistSession(data) {
+    if (!data) return;
+    if (data.conversationId) state.conversationId = data.conversationId;
+    if (data.sessionToken) state.sessionToken = data.sessionToken;
+    saveState(state);
+  }
+
+  function messageApiUrl() {
+    var url = apiUrl('/api/webchat/message');
+    if (state.sessionToken) {
+      url += '?sessionToken=' + encodeURIComponent(state.sessionToken);
+    }
+    return url;
+  }
+
   function renderMessages(messages) {
     if (!messagesEl) return;
     messagesEl.innerHTML = '';
@@ -106,11 +121,12 @@
   }
 
   function fetchMessages() {
-    return fetch(apiUrl('/api/webchat/message'), { credentials: 'include' })
+    return fetch(messageApiUrl(), { credentials: 'include' })
       .then(function (r) {
         return r.json();
       })
       .then(function (data) {
+        if (data.error) throw new Error(data.error);
         if (data.conversationId) {
           state.conversationId = data.conversationId;
           saveState(state);
@@ -248,7 +264,7 @@
     formEl = el('div', 'kw-footer');
     panel.appendChild(formEl);
 
-    if (state.conversationId && state.visitorName && state.visitorPhone) {
+    if ((state.conversationId || state.sessionToken) && state.visitorName && state.visitorPhone) {
       buildChatComposer(function (text) {
         sendMessage({
           visitorName: state.visitorName,
@@ -256,7 +272,8 @@
           reason: state.reason || 'OTHER',
           content: text,
         })
-          .then(function () {
+          .then(function (data) {
+            persistSession(data);
             fetchMessages();
           })
           .catch(function (err) {
@@ -275,14 +292,19 @@
         state.reason = data.reason;
         saveState(state);
         sendMessage(data)
-          .then(function () {
+          .then(function (data) {
+            persistSession(data);
             buildChatComposer(function (text) {
               sendMessage({
                 visitorName: state.visitorName,
                 phone: state.visitorPhone,
                 reason: state.reason || 'OTHER',
                 content: text,
-              }).then(fetchMessages);
+              })
+                .then(function (res) {
+                  persistSession(res);
+                  fetchMessages();
+                });
             });
             fetchMessages().then(startPolling);
           })
@@ -300,7 +322,7 @@
   function togglePanel() {
     open = !open;
     panel.classList.toggle('open', open);
-    if (open && state.conversationId) fetchMessages();
+    if (open && (state.conversationId || state.sessionToken)) fetchMessages();
   }
 
   fetch(apiUrl('/api/webchat/init'))

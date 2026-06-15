@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto'
 import { cookies } from 'next/headers'
+import type { NextRequest } from 'next/server'
 
 export const WEBCHAT_COOKIE_NAME = 'webchat_session'
 const COOKIE_MAX_AGE = 24 * 60 * 60
@@ -62,6 +63,17 @@ export async function getWebchatSessionFromCookies() {
   const raw = cookieStore.get(WEBCHAT_COOKIE_NAME)?.value
   if (!raw) return null
   return parseWebchatSessionToken(raw)
+}
+
+/** Cookie first; fall back to signed `sessionToken` query param for widget polling. */
+export async function resolveWebchatSession(request: NextRequest) {
+  const fromCookie = await getWebchatSessionFromCookies()
+  if (fromCookie) return fromCookie
+
+  const token = request.nextUrl.searchParams.get('sessionToken')
+  if (token) return parseWebchatSessionToken(token)
+
+  return null
 }
 
 export function newClientSessionId(): string {
