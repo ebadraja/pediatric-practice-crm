@@ -115,14 +115,14 @@ M0  Prerequisites
 
 ### Acceptance Criteria
 
-- [ ] Authenticated staff can list conversations with pagination and inbox filters
-- [ ] Staff can open a conversation and retrieve message history in chronological order
-- [ ] Staff can send a text message; it persists encrypted in `Message.content`
-- [ ] Staff can post an internal note; API marks `isInternalNote: true`
-- [ ] Staff can assign conversation to user or shared inbox; assignment log row created
-- [ ] Staff can PATCH conversation status: OPEN → RESOLVED → ARCHIVED (and reopen)
-- [ ] Unauthenticated requests to messaging API return 401
-- [ ] `AuditLog` records MESSAGE_SENT and CONVERSATION_ASSIGNED actions
+- [x] Authenticated staff can list conversations with pagination and inbox filters
+- [x] Staff can open a conversation and retrieve message history in chronological order
+- [x] Staff can send a text message; it persists encrypted in `Message.content`
+- [x] Staff can post an internal note; API marks `isInternalNote: true`
+- [x] Staff can assign conversation to user or shared inbox; assignment log row created
+- [x] Staff can PATCH conversation status: OPEN → RESOLVED → ARCHIVED (and reopen)
+- [x] Unauthenticated requests to messaging API return 401
+- [x] `AuditLog` records MESSAGE_SENT and CONVERSATION_ASSIGNED actions
 
 ---
 
@@ -144,16 +144,16 @@ M0  Prerequisites
 
 ### Acceptance Criteria
 
-- [ ] Messaging appears in sidebar; navigates to `/messaging`
-- [ ] Three-panel layout renders: inbox list (left), thread (center), patient context (right)
-- [ ] Inbox tabs work: All, Unassigned, My Inbox (shared inboxes added in M7)
-- [ ] Clicking a conversation loads thread; selected state visible in list
-- [ ] Staff can compose and send a reply from UI; thread updates without full page reload
-- [ ] Internal notes render with amber/lock styling; visually distinct from patient-visible messages
-- [ ] Channel badges shown on messages (WEB_CHAT, PORTAL, SYSTEM placeholders until M4/M5)
-- [ ] Patient context panel shows linked patient record, upcoming appointments, recent call logs
-- [ ] Deep link `/messaging/[conversationId]` opens correct conversation
-- [ ] Mobile: usable layout (list ↔ thread toggle or stacked view)
+- [x] Messaging appears in sidebar; navigates to `/messaging`
+- [x] Three-panel layout renders: inbox list (left), thread (center), patient context (right)
+- [x] Inbox tabs work: All, Unassigned, My Inbox (shared inboxes added in M7)
+- [x] Clicking a conversation loads thread; selected state visible in list
+- [x] Staff can compose and send a reply from UI; thread updates without full page reload
+- [x] Internal notes render with amber/lock styling; visually distinct from patient-visible messages
+- [x] Channel badges shown on messages (WEB_CHAT, PORTAL, SYSTEM placeholders until M4/M5)
+- [x] Patient context panel shows linked patient record, upcoming appointments, recent call logs
+- [x] Deep link `/messaging/[conversationId]` opens correct conversation
+- [x] Mobile: usable layout (list ↔ thread toggle or stacked view)
 
 ---
 

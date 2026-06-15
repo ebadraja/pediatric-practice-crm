@@ -21,6 +21,7 @@ import {
   LogOut,
   Mail,
   Zap,
+  Inbox,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ const navItems = [
   { name: "Appointments", href: "/appointments", icon: Calendar },
   { name: "Call Logs", href: "/call-logs", icon: Phone },
   { name: "Chat Logs", href: "/chat-logs", icon: MessageSquare },
+  { name: "Messaging", href: "/messaging", icon: Inbox },
   { name: "Intake Forms", href: "/intake-forms", icon: FileText },
   { name: "Email Campaigns", href: "/email/campaigns", icon: Mail },
   ...(ENABLE_EMAIL_AUTOMATION ? [{ name: "Email Automation", href: "/email/automation", icon: Zap }] : []),
@@ -83,7 +85,9 @@ function SidebarContent({ isMobile = false }) {
       )}>
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href;
+          const isActive =
+            pathname === item.href ||
+            (item.href === "/messaging" && pathname.startsWith("/messaging"));
           
           return (
             <Link
