@@ -1,4 +1,7 @@
 import prisma from '@/lib/prisma'
+import type { Role } from '@/lib/generated/prisma/client'
+
+const MESSAGING_NOTIFY_ROLES: Role[] = ['ADMIN', 'STAFF']
 
 type NewMessageNotifyInput = {
   conversationId: string
@@ -28,7 +31,7 @@ async function activeStaffRecipients(assignedToId?: string | null) {
   return prisma.user.findMany({
     where: {
       isActive: true,
-      role: { in: ['ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'] },
+      role: { in: MESSAGING_NOTIFY_ROLES },
     },
     select: { id: true },
   })
