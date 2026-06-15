@@ -32,8 +32,10 @@ import {
   RefreshCw,
   ExternalLink,
   Mail,
+  Inbox,
 } from 'lucide-react';
 import { WebhookTestingComponent } from '@/components/webhook-testing';
+import { MessagingSettingsTab } from '@/components/messaging/MessagingSettingsTab';
 
 interface SettingsState {
   practiceInfo: {
@@ -576,6 +578,7 @@ function SettingsPage() {
     { id: 'google-calendar', label: 'Google Calendar', icon: Calendar },
     { id: 'email', label: 'Email (Gmail)', icon: Mail },
     { id: 'hippatizer', label: 'Intake Forms (Hippatizer)', icon: FileText },
+    { id: 'messaging', label: 'Patient Messaging', icon: Inbox },
     { id: 'webhook-test', label: 'Test Webhook', icon: Zap },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security & Compliance', icon: Lock },
@@ -1653,6 +1656,9 @@ function SettingsPage() {
               </Card>
             </div>
           )}
+
+          {/* ── Patient Messaging ── */}
+          {activeTab === 'messaging' && <MessagingSettingsTab />}
 
           {/* ── Webhook Testing ── */}
           {activeTab === 'webhook-test' && (

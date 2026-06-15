@@ -24,6 +24,8 @@ export const listConversationsQuery = z.object({
   sharedInboxId: z.string().optional(),
   status: conversationStatus.optional(),
   search: z.string().optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 })
@@ -58,3 +60,19 @@ export const listMessagesQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })
+
+export const createTemplateBody = z.object({
+  name: z.string().min(1).max(120),
+  category: z.string().min(1).max(80),
+  body: z.string().min(1).max(10000),
+  channel: z.enum(['SMS', 'PORTAL', 'BOTH']).default('BOTH'),
+})
+
+export const updateTemplateBody = createTemplateBody.partial()
+
+export const createSharedInboxBody = z.object({
+  name: z.string().min(1).max(80),
+  description: z.string().max(500).optional(),
+})
+
+export const updateSharedInboxBody = createSharedInboxBody.partial()

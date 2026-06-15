@@ -17,6 +17,7 @@ import type {
   InboxFilter,
   PatientContextData,
   SerializedMessage,
+  SharedInboxSummary,
 } from '@/types/messaging'
 
 interface MessagingInboxProps {
@@ -28,8 +29,12 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
   const { showToast } = useToast()
 
   const [inbox, setInbox] = useState<InboxFilter>('all')
+  const [sharedInboxId, setSharedInboxId] = useState<string | null>(null)
+  const [sharedInboxes, setSharedInboxes] = useState<SharedInboxSummary[]>([])
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId ?? null)
   const [selectedConversation, setSelectedConversation] = useState<ConversationSummary | null>(null)
@@ -53,6 +58,12 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
         limit: '50',
       })
       if (search.trim()) params.set('search', search.trim())
+      if (inbox === 'shared' && sharedInboxId) {
+        params.set('inbox', 'shared')
+        params.set('sharedInboxId', sharedInboxId)
+      }
+      if (dateFrom) params.set('dateFrom', dateFrom)
+      if (dateTo) params.set('dateTo', dateTo)
 
       const res = await fetch(`/api/messaging/conversations?${params}`)
       if (!res.ok) throw new Error('Failed to load conversations')
@@ -63,7 +74,7 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
     } finally {
       if (!silent) setListLoading(false)
     }
-  }, [inbox, search, showToast])
+  }, [inbox, sharedInboxId, search, dateFrom, dateTo, showToast])
 
   const pollThread = useCallback(async (conversationId: string) => {
     try {
@@ -125,6 +136,20 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
     },
     [showToast, fetchPatientContext],
   )
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/api/messaging/shared-inboxes')
+        if (res.ok) {
+          const data = await res.json()
+          setSharedInboxes(data.data ?? [])
+        }
+      } catch {
+        // Non-fatal
+      }
+    })()
+  }, [])
 
   useEffect(() => {
     void fetchConversations()
@@ -264,16 +289,40 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
             showMobileThread ? 'hidden lg:flex' : 'flex'
           }`}
         >
-          <InboxTabs active={inbox} onChange={setInbox} />
-          <div className="p-2 border-b border-slate-200 dark:border-slate-800">
+          <InboxTabs
+            active={inbox}
+            sharedInboxId={sharedInboxId}
+            sharedInboxes={sharedInboxes}
+            onChange={(nextInbox, nextSharedId) => {
+              setInbox(nextInbox)
+              setSharedInboxId(nextSharedId ?? null)
+            }}
+          />
+          <div className="p-2 border-b border-slate-200 dark:border-slate-800 space-y-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && setSearch(searchInput)}
-                placeholder="Search patients..."
+                placeholder="Search patients or messages..."
                 className="pl-8 h-9"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-8 text-xs"
+                aria-label="From date"
+              />
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-8 text-xs"
+                aria-label="To date"
               />
             </div>
           </div>

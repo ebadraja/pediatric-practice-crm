@@ -6,14 +6,17 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
+import { TemplatePicker } from '@/components/messaging/TemplatePicker'
+
 interface MessageComposerProps {
   disabled?: boolean
   sending?: boolean
+  patientId?: string | null
   onSend: (content: string) => Promise<void>
   onSendNote: (content: string) => Promise<void>
 }
 
-export function MessageComposer({ disabled, sending, onSend, onSendNote }: MessageComposerProps) {
+export function MessageComposer({ disabled, sending, patientId, onSend, onSendNote }: MessageComposerProps) {
   const [content, setContent] = useState('')
   const [mode, setMode] = useState<'reply' | 'note'>('reply')
 
@@ -66,6 +69,14 @@ export function MessageComposer({ disabled, sending, onSend, onSendNote }: Messa
           Internal Note
         </button>
       </div>
+
+      {mode === 'reply' && (
+        <TemplatePicker
+          patientId={patientId ?? null}
+          disabled={disabled || sending}
+          onInsert={(text) => setContent((prev) => (prev ? `${prev}\n\n${text}` : text))}
+        />
+      )}
 
       <div className="flex gap-2 items-end">
         <Textarea

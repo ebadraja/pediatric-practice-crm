@@ -1,4 +1,24 @@
-export type InboxFilter = 'all' | 'unassigned' | 'mine'
+export type InboxFilter = 'all' | 'unassigned' | 'mine' | 'shared'
+
+export interface SharedInboxSummary {
+  id: string
+  name: string
+  description: string | null
+  isDefault: boolean
+  isSubscribed: boolean
+  memberCount: number
+  conversationCount: number
+}
+
+export interface MessageTemplateSummary {
+  id: string
+  name: string
+  category: string
+  body: string
+  channel: string
+  isLocked: boolean
+  usageCount: number
+}
 
 export type ConversationStatus = 'OPEN' | 'AWAITING_REPLY' | 'RESOLVED' | 'ARCHIVED'
 

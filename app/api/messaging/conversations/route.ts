@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { inbox, sharedInboxId, status, search, page, limit } = parsed.data
+    const { inbox, sharedInboxId, status, search, dateFrom, dateTo, page, limit } = parsed.data
     const where: Prisma.ConversationWhereInput = {}
 
     if (status) where.status = status
@@ -73,6 +73,24 @@ export async function GET(request: NextRequest) {
         { patient: { parentName: { contains: term, mode: 'insensitive' } } },
         { lastMessagePreview: { contains: term, mode: 'insensitive' } },
       ]
+    }
+
+    if (dateFrom || dateTo) {
+      const lastMessageAt: Prisma.DateTimeFilter = {}
+      if (dateFrom) {
+        const from = new Date(dateFrom)
+        if (!isNaN(from.getTime())) lastMessageAt.gte = from
+      }
+      if (dateTo) {
+        const to = new Date(dateTo)
+        if (!isNaN(to.getTime())) {
+          to.setHours(23, 59, 59, 999)
+          lastMessageAt.lte = to
+        }
+      }
+      if (Object.keys(lastMessageAt).length > 0) {
+        where.lastMessageAt = lastMessageAt
+      }
     }
 
     const [conversations, total] = await Promise.all([

@@ -268,23 +268,23 @@ M0  Prerequisites
 
 ### Acceptance Criteria
 
-- [ ] Staff can create/edit/delete message templates with merge tags
-- [ ] Template picker in composer inserts body and resolves tags for preview
-- [ ] Admin can create shared inbox; staff can subscribe/unsubscribe
-- [ ] Inbox tabs include shared inboxes (Scheduling, Refills, etc.)
-- [ ] Messages routed to correct inbox based on patient-selected reason
-- [ ] Settings Messaging tab saves and loads `messagingEnabled`, widget config, business hours
-- [ ] Search returns conversations matching patient name, phone, or message content
-- [ ] **Phase 1 complete:** all Phase 1 acceptance criteria from requirements doc pass (see checklist below)
+- [x] Staff can create/edit/delete message templates with merge tags
+- [x] Template picker in composer inserts body and resolves tags for preview
+- [x] Admin can create shared inbox; staff can subscribe/unsubscribe
+- [x] Inbox tabs include shared inboxes (Scheduling, Refills, etc.)
+- [x] Messages routed to correct inbox based on patient-selected reason
+- [x] Settings Messaging tab saves and loads `messagingEnabled`, widget config, business hours
+- [x] Search returns conversations matching patient name, phone, or message content
+- [x] **Phase 1 complete:** all Phase 1 acceptance criteria from requirements doc pass (see checklist below)
 
 ### Phase 1 Final Checklist
 
-- [ ] Staff accesses Messaging from sidebar and manages conversations end-to-end
-- [ ] Patient uses magic link + DOB → sends/receives messages in portal
-- [ ] Website visitor uses widget → staff sees message in inbox
-- [ ] Assignment, internal notes, templates, shared inboxes all functional
-- [ ] Real-time delivery and notifications working
-- [ ] No new external service dependencies required
+- [x] Staff accesses Messaging from sidebar and manages conversations end-to-end
+- [x] Patient uses magic link + DOB → sends/receives messages in portal
+- [x] Website visitor uses widget → staff sees message in inbox
+- [x] Assignment, internal notes, templates, shared inboxes all functional
+- [x] Real-time delivery and notifications working
+- [x] No new external service dependencies required
 
 ---
 
@@ -510,3 +510,4 @@ M0  Prerequisites
 | 1.0 | 2026-06-14 | Initial implementation plan with 14 milestones |
 | 1.1 | 2026-06-14 | M4 patient portal complete; M5 web chat widget scaffolded (realtime deferred to M6) |
 | 1.2 | 2026-06-14 | M5 session fix + M6 realtime via 2s polling, staff notifications, sidebar unread badge |
+| 1.3 | 2026-06-14 | M7 templates, shared inboxes, settings tab — **Phase 1 complete** |

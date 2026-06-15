@@ -1,9 +1,9 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import type { InboxFilter } from '@/types/messaging'
+import type { InboxFilter, SharedInboxSummary } from '@/types/messaging'
 
-const TABS: { id: InboxFilter; label: string }[] = [
+const BASE_TABS: { id: InboxFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'unassigned', label: 'Unassigned' },
   { id: 'mine', label: 'My Inbox' },
@@ -11,27 +11,57 @@ const TABS: { id: InboxFilter; label: string }[] = [
 
 interface InboxTabsProps {
   active: InboxFilter
-  onChange: (inbox: InboxFilter) => void
+  sharedInboxId: string | null
+  sharedInboxes: SharedInboxSummary[]
+  onChange: (inbox: InboxFilter, sharedInboxId?: string | null) => void
 }
 
-export function InboxTabs({ active, onChange }: InboxTabsProps) {
+export function InboxTabs({
+  active,
+  sharedInboxId,
+  sharedInboxes,
+  onChange,
+}: InboxTabsProps) {
+  const subscribed = sharedInboxes.filter((i) => i.isSubscribed)
+  const sharedTabs = subscribed.length > 0 ? subscribed : sharedInboxes.filter((i) => i.isDefault)
+
   return (
-    <div className="flex gap-1 p-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onChange(tab.id)}
-          className={cn(
-            'flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
-            active === tab.id
-              ? 'bg-blue-600 text-white'
-              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
-          )}
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="flex gap-1 p-2 overflow-x-auto">
+        {BASE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id, null)}
+            className={cn(
+              'shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+              active === tab.id
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+        {sharedTabs.map((inbox) => {
+          const isActive = active === 'shared' && sharedInboxId === inbox.id
+          return (
+            <button
+              key={inbox.id}
+              type="button"
+              onClick={() => onChange('shared', inbox.id)}
+              className={cn(
+                'shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+                isActive
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
+              )}
+            >
+              {inbox.name}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

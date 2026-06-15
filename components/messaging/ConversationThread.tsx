@@ -143,6 +143,7 @@ export function ConversationThread({
         <MessageComposer
           disabled={conversation.status === 'ARCHIVED'}
           sending={sending}
+          patientId={conversation.patientId}
           onSend={onSend}
           onSendNote={onSendNote}
         />
