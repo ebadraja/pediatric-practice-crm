@@ -76,7 +76,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return !!session?.user
     },
 
-    jwt({ token, user }) {
+    jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id
         token.role = user.role
@@ -84,6 +84,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.lastName = user.lastName
         token.jobTitle = user.jobTitle
         token.avatar = user.avatar
+      }
+      // Allow client-side update() calls to refresh mutable profile fields
+      if (trigger === 'update' && session && typeof session === 'object') {
+        if ('avatar' in session) token.avatar = (session as { avatar?: string }).avatar
       }
       return token
     },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -106,8 +106,11 @@ const textareaCls = "w-full px-3 py-2 border border-slate-300 dark:border-slate-
 const labelCls = "block text-sm font-medium text-slate-900 dark:text-slate-100 mb-2";
 
 function SettingsPage() {
-  const { data: session } = useSession();
+  const { data: session, update: updateSession } = useSession();
   const searchParams = useSearchParams();
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') ?? 'practice');
   const [loading, setLoading] = useState(true);
@@ -482,6 +485,42 @@ function SettingsPage() {
   const handleSettingChange = (section: keyof SettingsState, field: string, value: any) => {
     setSettings((prev) => ({ ...prev, [section]: { ...prev[section], [field]: value } }));
     setHasChanges(true);
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input so picking the same file again re-triggers onChange
+    e.target.value = '';
+    if (!file) return;
+
+    setAvatarError(null);
+
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+      setAvatarError('Use a PNG, JPG, WEBP, or GIF image.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setAvatarError('Image must be 2MB or smaller.');
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const res = await fetch('/api/account/avatar', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        setAvatarError(data.error || 'Failed to upload avatar.');
+        return;
+      }
+      // Refresh the session so the new avatar shows everywhere immediately
+      await updateSession({ avatar: data.avatar });
+    } catch {
+      setAvatarError('Failed to upload avatar.');
+    } finally {
+      setAvatarUploading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -1824,10 +1863,33 @@ function SettingsPage() {
                 <CardContent className="space-y-4">
                   <div>
                     <label className={labelCls}>Avatar</label>
-                    <div className="w-20 h-20 rounded-lg bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl font-semibold mb-2">
-                      {[session?.user?.firstName?.[0], session?.user?.lastName?.[0]].filter(Boolean).join('').toUpperCase() || '?'}
+                    <div className="w-20 h-20 rounded-lg bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl font-semibold mb-2 overflow-hidden">
+                      {session?.user?.avatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={session.user.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        [session?.user?.firstName?.[0], session?.user?.lastName?.[0]].filter(Boolean).join('').toUpperCase() || '?'
+                      )}
                     </div>
-                    <Button variant="outline" size="sm" className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Change Avatar</Button>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="hidden"
+                      onChange={handleAvatarChange}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={avatarUploading}
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                      {avatarUploading ? 'Uploading…' : 'Change Avatar'}
+                    </Button>
+                    {avatarError && (
+                      <p className="text-sm text-red-600 dark:text-red-400 mt-2">{avatarError}</p>
+                    )}
                   </div>
                   {[
                     { label: 'Name', type: 'text', value: `${session?.user?.firstName ?? ''} ${session?.user?.lastName ?? ''}`.trim() },

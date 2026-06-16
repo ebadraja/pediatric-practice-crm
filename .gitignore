@@ -33,6 +33,9 @@ yarn-error.log*
 # application logs (webhook.log, error.log)
 /logs
 
+# user uploads (avatars, etc.)
+/public/uploads
+
 # env files (can opt-in for committing if needed)
 .env*
 
