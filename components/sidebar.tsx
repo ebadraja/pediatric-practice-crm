@@ -48,7 +48,13 @@ const navItems = [
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
-function SidebarContent({ isMobile = false, messagingUnreadCount = 0 }: { isMobile?: boolean; messagingUnreadCount?: number }) {
+function SidebarContent({
+  isMobile = false,
+  badgeCounts = {},
+}: {
+  isMobile?: boolean;
+  badgeCounts?: Record<string, number>;
+}) {
   const pathname = usePathname();
   const { data: session } = useSession();
 
@@ -88,7 +94,9 @@ function SidebarContent({ isMobile = false, messagingUnreadCount = 0 }: { isMobi
           const isActive =
             pathname === item.href ||
             (item.href === "/messaging" && pathname.startsWith("/messaging"));
-          
+
+          const badgeCount = badgeCounts[item.href] ?? 0;
+
           return (
             <Link
               key={item.href}
@@ -105,9 +113,9 @@ function SidebarContent({ isMobile = false, messagingUnreadCount = 0 }: { isMobi
                 isActive ? "text-white" : "text-slate-400"
               )} />
               <span className="flex-1">{item.name}</span>
-              {item.href === "/messaging" && messagingUnreadCount > 0 && (
+              {badgeCount > 0 && (
                 <span className="min-w-[1.25rem] h-5 px-1.5 flex items-center justify-center rounded-full bg-blue-600 text-[10px] font-semibold text-white">
-                  {messagingUnreadCount > 99 ? "99+" : messagingUnreadCount}
+                  {badgeCount > 99 ? "99+" : badgeCount}
                 </span>
               )}
             </Link>
@@ -158,6 +166,8 @@ export function Sidebar() {
   const [notifications, setNotifications] = useState<SidebarNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [messagingUnreadCount, setMessagingUnreadCount] = useState(0);
+  // New-item counts keyed by nav href (appointments, call/chat logs, intake forms)
+  const [navCounts, setNavCounts] = useState<Record<string, number>>({});
 
   const formatTime = (date: Date): string => {
     const diffMs = Date.now() - date.getTime();
@@ -204,12 +214,39 @@ export function Sidebar() {
     }
   };
 
+  // Fetch "new item" counts for the other tabs. Each endpoint is independent —
+  // a single failure leaves the others (and the previous value) untouched.
+  const fetchNavCounts = async () => {
+    const sources: { href: string; url: string }[] = [
+      { href: "/appointments", url: "/api/appointments/new-count" },
+      { href: "/call-logs", url: "/api/call-logs/new-count" },
+      { href: "/chat-logs", url: "/api/chat-logs/new-count" },
+      { href: "/intake-forms", url: "/api/intake-forms/new-count" },
+    ];
+
+    await Promise.all(
+      sources.map(async ({ href, url }) => {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            setNavCounts((prev) => ({ ...prev, [href]: data.count ?? 0 }));
+          }
+        } catch (error) {
+          console.error(`Failed to fetch count for ${href}:`, error);
+        }
+      })
+    );
+  };
+
   useEffect(() => {
     fetchNotifications();
     fetchMessagingUnread();
+    fetchNavCounts();
     const interval = setInterval(() => {
       fetchNotifications();
       fetchMessagingUnread();
+      fetchNavCounts();
     }, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -225,11 +262,16 @@ export function Sidebar() {
     }
   };
 
+  const badgeCounts: Record<string, number> = {
+    ...navCounts,
+    "/messaging": messagingUnreadCount,
+  };
+
   return (
     <>
       {/* Desktop Sidebar - Hidden on mobile/tablet */}
       <aside className="hidden lg:flex w-64 bg-slate-950 text-white h-screen fixed left-0 top-0 flex-col border-r border-slate-900/50">
-        <SidebarContent messagingUnreadCount={messagingUnreadCount} />
+        <SidebarContent badgeCounts={badgeCounts} />
       </aside>
 
       {/* Mobile Menu Button - Shown on mobile/tablet */}
@@ -239,7 +281,7 @@ export function Sidebar() {
             <Menu className="h-5 w-5 text-slate-700 dark:text-slate-300" />
           </SheetTrigger>
           <SheetContent side="left" className="w-72 bg-slate-950 text-white p-0 flex flex-col">
-            <SidebarContent isMobile={true} messagingUnreadCount={messagingUnreadCount} />
+            <SidebarContent isMobile={true} badgeCounts={badgeCounts} />
           </SheetContent>
         </Sheet>
 
