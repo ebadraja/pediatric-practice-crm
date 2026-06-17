@@ -1,7 +1,7 @@
 'use client'
 
-import { MessagingInbox } from '@/components/messaging/MessagingInbox'
+import { MessagingPageContent } from '@/components/messaging/MessagingPageContent'
 
 export default function MessagingPage() {
-  return <MessagingInbox />
+  return <MessagingPageContent />
 }
