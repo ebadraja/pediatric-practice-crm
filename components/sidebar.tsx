@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -47,6 +47,35 @@ const navItems = [
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
+
+// Tabs that show a "new since you last opened it" badge. Each badge counts only
+// items that arrived after the timestamp we stored the last time this browser
+// viewed that tab, and clears to 0 when the tab is opened.
+const NAV_COUNT_SOURCES: { href: string; url: string }[] = [
+  { href: "/appointments", url: "/api/appointments/new-count" },
+  { href: "/call-logs", url: "/api/call-logs/new-count" },
+  { href: "/chat-logs", url: "/api/chat-logs/new-count" },
+  { href: "/intake-forms", url: "/api/intake-forms/new-count" },
+];
+
+const lastSeenKey = (href: string) => `nav-lastseen:${href}`;
+
+// Returns the stored "last viewed" timestamp for a tab. The first time we ever
+// look at a tab we seed it with "now" so the pre-existing backlog is never
+// counted as new — only genuinely new arrivals after this point show up.
+function getLastSeen(href: string): string {
+  if (typeof window === "undefined") return new Date().toISOString();
+  const stored = window.localStorage.getItem(lastSeenKey(href));
+  if (stored) return stored;
+  const now = new Date().toISOString();
+  window.localStorage.setItem(lastSeenKey(href), now);
+  return now;
+}
+
+function markSeen(href: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(lastSeenKey(href), new Date().toISOString());
+}
 
 function SidebarContent({
   isMobile = false,
@@ -162,6 +191,13 @@ interface SidebarNotification {
 export function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const router = useRouter();
+  const pathname = usePathname();
+  // Keep the latest pathname available inside the polling closure (which is
+  // created once) so the currently-open tab is always treated as "seen".
+  const pathnameRef = useRef(pathname);
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<SidebarNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -214,20 +250,22 @@ export function Sidebar() {
     }
   };
 
-  // Fetch "new item" counts for the other tabs. Each endpoint is independent —
-  // a single failure leaves the others (and the previous value) untouched.
+  // Fetch "new since last opened" counts for the other tabs. Each endpoint is
+  // independent — a single failure leaves the others (and the previous value)
+  // untouched. The tab the user is currently viewing is kept marked as seen so
+  // its badge stays at 0 while open.
   const fetchNavCounts = async () => {
-    const sources: { href: string; url: string }[] = [
-      { href: "/appointments", url: "/api/appointments/new-count" },
-      { href: "/call-logs", url: "/api/call-logs/new-count" },
-      { href: "/chat-logs", url: "/api/chat-logs/new-count" },
-      { href: "/intake-forms", url: "/api/intake-forms/new-count" },
-    ];
+    const currentPath = pathnameRef.current;
 
     await Promise.all(
-      sources.map(async ({ href, url }) => {
+      NAV_COUNT_SOURCES.map(async ({ href, url }) => {
+        const isActive =
+          currentPath === href || currentPath.startsWith(`${href}/`);
+        if (isActive) markSeen(href);
+
         try {
-          const res = await fetch(url);
+          const since = encodeURIComponent(getLastSeen(href));
+          const res = await fetch(`${url}?since=${since}`);
           if (res.ok) {
             const data = await res.json();
             setNavCounts((prev) => ({ ...prev, [href]: data.count ?? 0 }));
@@ -238,6 +276,18 @@ export function Sidebar() {
       })
     );
   };
+
+  // When the user opens one of the tracked tabs, immediately mark it seen and
+  // clear its badge (the next poll keeps it at 0 while they stay on the page).
+  useEffect(() => {
+    const active = NAV_COUNT_SOURCES.find(
+      (s) => pathname === s.href || pathname.startsWith(`${s.href}/`)
+    );
+    if (active) {
+      markSeen(active.href);
+      setNavCounts((prev) => ({ ...prev, [active.href]: 0 }));
+    }
+  }, [pathname]);
 
   useEffect(() => {
     fetchNotifications();

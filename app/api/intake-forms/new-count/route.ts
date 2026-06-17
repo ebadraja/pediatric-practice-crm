@@ -1,13 +1,15 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { auth } from "@/auth"
 
 export const dynamic = "force-dynamic"
 
-// ── GET /api/intake-forms/new-count ───────────────────────────────────────────
-// Count of newly received intake forms (status RECEIVED, not soft-deleted).
-// Powers the sidebar badge. Respects the same view access control as the list
-// endpoint — returns 0 for users without intake-form view permission.
+// ── GET /api/intake-forms/new-count?since=<ISO> ───────────────────────────────
+// Count of intake forms received after the `since` timestamp (the time the staff
+// member last opened the Intake Forms tab). Counts only still-unprocessed forms
+// (status RECEIVED, not soft-deleted). Powers the sidebar "new" badge. Read-only.
+// Respects the same view access control as the list endpoint — returns 0 for
+// users without intake-form view permission. Missing/invalid `since` => "now".
 
 async function checkAccess(session: any) {
   if (!session?.user?.id) return false
@@ -18,7 +20,7 @@ async function checkAccess(session: any) {
   return !!ac?.canView
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await auth()
     if (!session?.user?.id) {
@@ -29,8 +31,16 @@ export async function GET() {
       return NextResponse.json({ count: 0 })
     }
 
+    const sinceParam = request.nextUrl.searchParams.get("since")
+    const parsed = sinceParam ? new Date(sinceParam) : new Date()
+    const since = isNaN(parsed.getTime()) ? new Date() : parsed
+
     const count = await prisma.intakeForm.count({
-      where: { status: "RECEIVED", deletedAt: null },
+      where: {
+        status: "RECEIVED",
+        deletedAt: null,
+        createdAt: { gt: since },
+      },
     })
 
     return NextResponse.json({ count })
