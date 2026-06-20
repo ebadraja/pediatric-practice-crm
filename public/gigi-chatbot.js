@@ -53,6 +53,7 @@
 
   var state = loadState();
   var open = false;
+  var mounted = false;
   var root, bubble, panel, messagesEl, inputEl, sendBtn, typingEl;
   var calendarState = null;
 
@@ -71,6 +72,15 @@
       if (raw.lastActive && Date.now() - raw.lastActive > SESSION_TTL_MS) {
         localStorage.removeItem(STORAGE_KEY);
         return {};
+      }
+      if (raw.messages && raw.messages.length) {
+        var deduped = [];
+        raw.messages.forEach(function (m) {
+          var prev = deduped[deduped.length - 1];
+          if (prev && prev.type === m.type && prev.content === m.content) return;
+          deduped.push(m);
+        });
+        raw.messages = deduped;
       }
       return raw;
     } catch (_err) {
@@ -130,13 +140,13 @@
     var style = document.createElement('style');
     style.id = 'gigi-chatbot-styles';
     style.textContent =
-      '#gigi-chatbot-root{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;z-index:99999}' +
-      '#gigi-bubble{position:fixed;bottom:24px;right:24px;width:70px;height:70px;border-radius:50%;border:3px solid #fff;cursor:pointer;box-shadow:0 8px 24px rgba(124,58,237,.35);background:#7C3AED;color:#fff;font-size:28px;display:flex;align-items:center;justify-content:center;overflow:hidden;transition:transform .2s ease}' +
+      '#gigi-chatbot-root{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif}' +
+      '#gigi-bubble{position:fixed!important;bottom:24px;right:24px;z-index:2147483646!important;width:70px;height:70px;border-radius:50%;border:3px solid #fff;cursor:pointer;box-shadow:0 8px 24px rgba(124,58,237,.35);background:#7C3AED;color:#fff;font-size:28px;display:flex;align-items:center;justify-content:center;overflow:hidden;transition:transform .2s ease;margin:0;padding:0}' +
       '#gigi-bubble:hover{transform:scale(1.1)}' +
       '#gigi-bubble img{width:100%;height:100%;object-fit:cover}' +
       '#gigi-bubble .gigi-badge{position:absolute;top:2px;right:2px;width:12px;height:12px;background:#EF4444;border-radius:50%;border:2px solid #fff;display:none}' +
       '#gigi-bubble.has-unread .gigi-badge{display:block}' +
-      '#gigi-panel{position:fixed;bottom:104px;right:24px;width:400px;height:600px;background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:none;flex-direction:column;overflow:hidden}' +
+      '#gigi-panel{position:fixed!important;bottom:104px;right:24px;z-index:2147483647!important;width:400px;height:600px;max-height:calc(100vh - 120px);background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:none;flex-direction:column;overflow:hidden;margin:0}' +
       '#gigi-panel.open{display:flex}' +
       '.gigi-header{background:linear-gradient(135deg,#7C3AED,#A855F7);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px}' +
       '.gigi-header-avatar{width:40px;height:40px;border-radius:50%;background:#fff;overflow:hidden;flex-shrink:0}' +
@@ -271,6 +281,7 @@
   }
 
   function renderQuickActions() {
+    if (!messagesEl || messagesEl.querySelector('.gigi-chips')) return;
     var wrap = el('div', 'gigi-chips');
     QUICK_ACTIONS.forEach(function (qa) {
       var chip = el('button', 'gigi-chip', qa.label);
@@ -288,11 +299,27 @@
     scrollMessages();
   }
 
+  function renderThreadFromState() {
+    if (!messagesEl) return;
+    messagesEl.innerHTML = '';
+    ensureMessages();
+    state.messages.forEach(renderMessage);
+    if (
+      state.messages.length === 1 &&
+      state.messages[0].type === 'bot' &&
+      state.messages[0].content === GREETING
+    ) {
+      renderQuickActions();
+    }
+    var cal = document.getElementById('gigi-calendar-card');
+    if (cal) messagesEl.appendChild(cal);
+    scrollMessages();
+  }
+
   function showGreetingIfNeeded() {
     ensureMessages();
     if (state.hasSeenGreeting && state.messages.length > 0) {
-      state.messages.forEach(renderMessage);
-      scrollMessages();
+      renderThreadFromState();
       return;
     }
     state.hasSeenGreeting = true;
@@ -441,6 +468,7 @@
       };
       grid.appendChild(btn);
     });
+    card.appendChild(grid);
     addBackButton(card);
   }
 
@@ -727,6 +755,12 @@
   }
 
   function mountWidget() {
+    if (mounted || document.getElementById('gigi-bubble')) {
+      mounted = true;
+      return;
+    }
+    mounted = true;
+
     if (!apiBase) {
       console.warn('[GIGI] data-api-url is recommended on the script tag for chat API calls.');
     }
@@ -738,6 +772,7 @@
 
     root = el('div');
     root.id = 'gigi-chatbot-root';
+    root.style.display = 'none';
 
     bubble = el('button');
     bubble.id = 'gigi-bubble';
@@ -818,9 +853,8 @@
     footer.className = 'gigi-footer';
     panel.appendChild(footer);
 
-    root.appendChild(bubble);
-    root.appendChild(panel);
-    document.body.appendChild(root);
+    document.body.appendChild(bubble);
+    document.body.appendChild(panel);
 
     setTimeout(function () {
       bubble.classList.remove('gigi-pulse');
