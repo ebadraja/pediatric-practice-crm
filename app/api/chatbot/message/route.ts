@@ -5,7 +5,13 @@ import {
   rejectChatbotOrigin,
 } from "@/lib/chatbot/cors"
 import { chatbotMessageLimit, isRateLimited } from "@/lib/chatbot/rateLimit"
-import { getUpcomingSlotOptions, replyMentionsAvailability } from "@/lib/chatbot/slots"
+import {
+  getDaySlotOptions,
+  isBookingMessage,
+  parsePreferredDate,
+  replyAsksForDate,
+  replyMentionsAvailability,
+} from "@/lib/chatbot/slots"
 
 export const dynamic = "force-dynamic"
 
@@ -24,13 +30,6 @@ interface VapiChatResponse {
   message?: string
 }
 
-interface BookingContext {
-  active?: boolean
-  patientType?: "new" | "existing"
-  contactName?: string
-  contactPhone?: string
-}
-
 function resolveAssistantId(): string | null {
   return process.env.GIGI_ASSISTANT_ID ?? process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID ?? null
 }
@@ -42,18 +41,6 @@ function extractReply(data: VapiChatResponse): string {
   if (parts.length > 0) return parts.join("\n")
   if (typeof data.message === "string" && data.message.trim()) return data.message.trim()
   return "I'm sorry, I couldn't generate a reply. Please try again or call us at (253) 400-4479."
-}
-
-function buildVapiInput(message: string, ctx?: BookingContext): string {
-  if (!ctx?.active) return message
-
-  const parts: string[] = ["[Website chat booking]"]
-  if (ctx.patientType === "new") parts.push("Patient type: NEW patient (not yet in our system).")
-  if (ctx.patientType === "existing") parts.push("Patient type: EXISTING patient (look up their record).")
-  if (ctx.contactName) parts.push(`Contact name: ${ctx.contactName}.`)
-  if (ctx.contactPhone) parts.push(`Contact phone: ${ctx.contactPhone}.`)
-  parts.push(message)
-  return parts.join(" ")
 }
 
 export async function OPTIONS(request: NextRequest) {
@@ -83,7 +70,7 @@ export async function POST(request: NextRequest) {
     sessionId?: string
     message?: string
     previousChatId?: string
-    bookingContext?: BookingContext
+    bookingActive?: boolean
   }
   try {
     body = await request.json()
@@ -93,7 +80,7 @@ export async function POST(request: NextRequest) {
 
   const sessionId = String(body.sessionId ?? "").trim()
   const message   = String(body.message ?? "").trim()
-  const bookingContext = body.bookingContext
+  const bookingActive = Boolean(body.bookingActive) || isBookingMessage(message)
 
   if (!sessionId) {
     return chatbotJsonResponse({ error: "sessionId is required" }, origin, { status: 400 })
@@ -112,17 +99,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const vapiInput = buildVapiInput(message, bookingContext)
     const vapiBody: Record<string, unknown> = {
       assistantId,
-      input: vapiInput,
+      input: message,
       assistantOverrides: {
         variableValues: {
           now: new Date().toISOString(),
           channel: "website_chat",
-          ...(bookingContext?.patientType && { patientType: bookingContext.patientType }),
-          ...(bookingContext?.contactName && { contactName: bookingContext.contactName }),
-          ...(bookingContext?.contactPhone && { contactPhone: bookingContext.contactPhone }),
         },
       },
     }
@@ -151,17 +134,14 @@ export async function POST(request: NextRequest) {
     }
 
     const reply = extractReply(data)
+    const preferredDate = parsePreferredDate(message)
 
-    const bookingActive = Boolean(bookingContext?.active)
-    const showSlots =
-      bookingActive &&
-      (replyMentionsAvailability(reply) ||
-        /\b(when|date|time|schedule|book|appointment)\b/i.test(message))
-
+    // After parent gives a preferred date, show that day's times (same data as check_availability tool)
     let slots = undefined
-    if (showSlots) {
+    if (bookingActive && preferredDate) {
       try {
-        slots = await getUpcomingSlotOptions(7)
+        const daySlots = await getDaySlotOptions(preferredDate)
+        if (daySlots) slots = [daySlots]
       } catch (err) {
         console.error("[POST /api/chatbot/message] slot fetch failed:", err)
       }
@@ -172,6 +152,8 @@ export async function POST(request: NextRequest) {
         reply,
         chatId: data.id ?? null,
         ...(bookingActive ? { bookingActive: true } : {}),
+        ...(replyAsksForDate(reply) ? { asksForDate: true } : {}),
+        ...(replyMentionsAvailability(reply) && preferredDate ? { preferredDate } : {}),
         ...(slots && slots.length > 0 ? { slots } : {}),
       },
       origin

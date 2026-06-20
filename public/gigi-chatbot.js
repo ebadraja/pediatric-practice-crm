@@ -22,7 +22,7 @@
   }
 
   var QUICK_ACTIONS = [
-    { label: 'Book an Appointment', action: 'book' },
+    { label: 'Book an Appointment', message: 'I would like to book an appointment.' },
     { label: 'Insurance Questions', message: 'I have a question about insurance coverage.' },
     { label: 'Office Hours', message: 'What are your office hours?' },
     { label: 'Contact Us', message: 'How can I contact the office?' },
@@ -39,8 +39,8 @@
   var state = loadState();
   var open = false;
   var mounted = false;
-  var bubble, panel, messagesEl, inputEl, sendBtn, typingEl;
-  var bookingFlow = null;
+  var launcher, bubble, panel, messagesEl, inputEl, sendBtn, typingEl;
+  var bookingActive = false;
 
   function apiUrl(path) {
     return apiBase.replace(/\/$/, '') + path;
@@ -67,7 +67,7 @@
         });
         raw.messages = deduped;
       }
-      if (raw.bookingFlow) bookingFlow = raw.bookingFlow;
+      if (raw.bookingActive) bookingActive = true;
       return raw;
     } catch (_err) {
       return {};
@@ -77,7 +77,7 @@
   function saveState() {
     state.lastActive = Date.now();
     if (!state.sessionId) state.sessionId = uuid();
-    state.bookingFlow = bookingFlow;
+    state.bookingActive = bookingActive;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_err) {}
@@ -103,15 +103,18 @@
     var style = document.createElement('style');
     style.id = 'gigi-chatbot-styles';
     style.textContent =
-      '#gigi-bubble{position:fixed!important;bottom:24px;right:24px;z-index:2147483646!important;width:72px;height:72px;border:none!important;border-radius:50%;cursor:pointer;background:transparent!important;box-shadow:0 4px 20px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;overflow:visible;margin:0;padding:0}' +
-      '#gigi-bubble:hover{transform:scale(1.08)}' +
-      '#gigi-bubble .gigi-avatar-img{width:72px;height:72px;border-radius:50%;object-fit:contain;display:block;background:transparent}' +
-      '#gigi-bubble .gigi-badge{position:absolute;top:0;right:0;width:14px;height:14px;background:#EF4444;border-radius:50%;border:2px solid #fff;display:none}' +
+      '#gigi-launcher{position:fixed!important;bottom:20px;right:20px;z-index:2147483646!important;display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif}' +
+      '#gigi-launcher-label{font-size:11px;font-weight:700;color:#7C3AED;letter-spacing:.04em;text-transform:uppercase;pointer-events:none;text-shadow:0 1px 2px rgba(255,255,255,.9)}' +
+      '#gigi-bubble{pointer-events:auto;border:none!important;background:none!important;padding:0;margin:0;cursor:pointer;line-height:0;box-shadow:none!important;border-radius:0!important;-webkit-appearance:none;appearance:none}' +
+      '#gigi-bubble:focus{outline:2px solid #7C3AED;outline-offset:3px}' +
+      '#gigi-bubble .gigi-avatar-img{display:block;width:80px;height:auto;max-height:88px;object-fit:contain;background:transparent!important;border:none!important;border-radius:0!important;filter:drop-shadow(0 4px 12px rgba(0,0,0,.2))}' +
+      '#gigi-bubble:hover .gigi-avatar-img{transform:scale(1.06);transition:transform .2s ease}' +
+      '#gigi-bubble .gigi-badge{position:absolute;top:-2px;right:-2px;width:14px;height:14px;background:#EF4444;border-radius:50%;border:2px solid #fff;display:none;pointer-events:none}' +
       '#gigi-bubble.has-unread .gigi-badge{display:block}' +
-      '#gigi-panel{position:fixed!important;bottom:108px;right:24px;z-index:2147483647!important;width:400px;height:600px;max-height:calc(100vh - 120px);background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:none;flex-direction:column;overflow:hidden;margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif}' +
+      '#gigi-panel{position:fixed!important;bottom:120px;right:20px;z-index:2147483647!important;width:400px;height:600px;max-height:calc(100vh - 140px);background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:none;flex-direction:column;overflow:hidden;margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif}' +
       '#gigi-panel.open{display:flex}' +
       '.gigi-header{background:linear-gradient(135deg,#7C3AED,#A855F7);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0}' +
-      '.gigi-header-avatar{width:40px;height:40px;border-radius:50%;overflow:hidden;flex-shrink:0;background:transparent}' +
+      '.gigi-header-avatar{width:40px;height:40px;flex-shrink:0;background:transparent}' +
       '.gigi-header-avatar img{width:100%;height:100%;object-fit:contain}' +
       '.gigi-header-info{flex:1;min-width:0}' +
       '.gigi-header-title{font-size:16px;font-weight:600}' +
@@ -124,7 +127,7 @@
       '.gigi-body{flex:1;overflow:auto;padding:12px;background:#F9FAFB}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
-      '.gigi-msg-avatar{width:28px;height:28px;border-radius:50%;flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center}' +
+      '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
       '.gigi-msg-avatar img{width:100%;height:100%;object-fit:contain}' +
       '.gigi-msg-bubble{padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word}' +
       '.gigi-msg.bot .gigi-msg-bubble{background:#F3F0FF;color:#1F2937;border-bottom-left-radius:4px}' +
@@ -142,22 +145,12 @@
       '.gigi-input{flex:1;border:1px solid #D1D5DB;border-radius:12px;padding:10px 12px;font-size:14px;resize:none;min-height:44px;font-family:inherit}' +
       '.gigi-send{width:44px;height:44px;border:none;border-radius:12px;background:#7C3AED;color:#fff;cursor:pointer;font-size:18px}' +
       '.gigi-locked-panel{padding:24px 16px;text-align:center}' +
-      '.gigi-book-card{background:#fff;border:1px solid #EDE9FE;border-radius:12px;padding:14px;margin:8px 0}' +
-      '.gigi-book-title{font-size:14px;font-weight:600;margin-bottom:10px;color:#1F2937}' +
-      '.gigi-book-row{display:flex;gap:8px;margin-bottom:10px}' +
-      '.gigi-book-btn{flex:1;border:1px solid #C4B5FD;border-radius:10px;padding:12px;font-size:13px;cursor:pointer;background:#fff;min-height:44px}' +
-      '.gigi-book-btn.primary{background:#7C3AED;color:#fff;border-color:#7C3AED}' +
-      '.gigi-book-btn:hover{background:#EDE9FE}' +
-      '.gigi-book-btn.primary:hover{background:#6D28D9}' +
-      '.gigi-field{margin-bottom:8px}' +
-      '.gigi-field label{display:block;font-size:12px;color:#6B7280;margin-bottom:4px}' +
-      '.gigi-field input{width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:8px;padding:10px;font-size:14px;min-height:44px}' +
       '.gigi-slots-card{background:#fff;border:1px solid #EDE9FE;border-radius:12px;padding:12px;margin:8px 0}' +
-      '.gigi-slots-day{font-size:12px;font-weight:600;color:#374151;margin:8px 0 6px}' +
-      '.gigi-slots-pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}' +
-      '.gigi-slot-pill{border:1px solid #C4B5FD;border-radius:999px;padding:8px 12px;font-size:12px;cursor:pointer;background:#fff;min-height:40px}' +
+      '.gigi-slots-title{font-size:13px;font-weight:600;color:#374151;margin-bottom:8px}' +
+      '.gigi-slots-pills{display:flex;flex-wrap:wrap;gap:6px}' +
+      '.gigi-slot-pill{border:1px solid #C4B5FD;border-radius:999px;padding:8px 14px;font-size:13px;cursor:pointer;background:#fff;min-height:40px}' +
       '.gigi-slot-pill:hover{background:#7C3AED;color:#fff;border-color:#7C3AED}' +
-      '@media (max-width:768px){#gigi-bubble{width:64px;height:64px;bottom:16px;right:16px}#gigi-bubble .gigi-avatar-img{width:64px;height:64px}#gigi-panel{bottom:0;right:0;left:0;width:100%;height:100vh;max-height:100vh;border-radius:0}}';
+      '@media (max-width:768px){#gigi-launcher{bottom:12px;right:12px}#gigi-bubble .gigi-avatar-img{width:68px;max-height:76px}#gigi-panel{bottom:0;right:0;left:0;width:100%;height:100vh;max-height:100vh;border-radius:0}}';
 
     document.head.appendChild(style);
   }
@@ -167,7 +160,7 @@
     var img = document.createElement('img');
     img.src = apiUrl('/gigi-avatar.png');
     img.alt = 'GIGI';
-    img.className = className ? '' : 'gigi-avatar-img';
+    if (!className) img.className = 'gigi-avatar-img';
     img.onerror = function () {
       wrap.textContent = '🦒';
     };
@@ -223,8 +216,8 @@
       var chip = el('button', 'gigi-chip', qa.label);
       chip.type = 'button';
       chip.onclick = function () {
-        if (qa.action === 'book') startBookingFlow();
-        else if (qa.message) sendUserMessage(qa.message);
+        if (/book an appointment/i.test(qa.label)) bookingActive = true;
+        sendUserMessage(qa.message);
       };
       wrap.appendChild(chip);
     });
@@ -255,44 +248,30 @@
     renderQuickActions();
   }
 
-  function getBookingContext() {
-    if (!bookingFlow || !bookingFlow.active) return undefined;
-    return {
-      active: true,
-      patientType: bookingFlow.patientType,
-      contactName: bookingFlow.contactName,
-      contactPhone: bookingFlow.contactPhone,
-    };
-  }
-
   function renderSlotPicker(slots) {
     if (!messagesEl || !slots || !slots.length) return;
     var existing = document.getElementById('gigi-slot-picker');
     if (existing) existing.remove();
 
+    var day = slots[0];
+    if (!day.times || !day.times.length) return;
+
     var card = el('div', 'gigi-slots-card');
     card.id = 'gigi-slot-picker';
-    card.appendChild(el('div', 'gigi-book-title', 'Tap a time to continue booking:'));
-
-    slots.forEach(function (day) {
-      if (!day.times || !day.times.length) return;
-      card.appendChild(el('div', 'gigi-slots-day', day.dateLabel));
-      var pills = el('div', 'gigi-slots-pills');
-      day.times.forEach(function (t) {
-        var pill = el('button', 'gigi-slot-pill', t.label);
-        pill.type = 'button';
-        pill.onclick = function () {
-          var msg =
-            'Please book an appointment on ' + day.dateLabel + ' (' + day.date + ') at ' + t.label +
-            ' for ' + (bookingFlow.contactName || 'the patient') +
-            '. Contact phone: ' + (bookingFlow.contactPhone || 'not provided') + '.';
-          sendUserMessage(msg, true);
-        };
-        pills.appendChild(pill);
-      });
-      card.appendChild(pills);
+    card.appendChild(el('div', 'gigi-slots-title', 'Available times on ' + day.dateLabel + ':'));
+    var pills = el('div', 'gigi-slots-pills');
+    day.times.forEach(function (t) {
+      var pill = el('button', 'gigi-slot-pill', t.label);
+      pill.type = 'button';
+      pill.onclick = function () {
+        sendUserMessage(
+          'Please book my appointment on ' + day.dateLabel + ' at ' + t.label + '.',
+          true
+        );
+      };
+      pills.appendChild(pill);
     });
-
+    card.appendChild(pills);
     messagesEl.appendChild(card);
     scrollMessages();
   }
@@ -304,10 +283,12 @@
       appendMessage('bot', 'Chat is not configured (missing data-api-url on the script tag).');
       return;
     }
+    if (/book|appointment|schedule/i.test(trimmed)) bookingActive = true;
     if (!skipUserBubble) appendMessage('user', trimmed);
     if (inputEl) inputEl.value = '';
     if (sendBtn) sendBtn.disabled = true;
     showTyping(true);
+    saveState();
 
     fetch(apiUrl('/api/chatbot/message'), {
       method: 'POST',
@@ -316,7 +297,7 @@
         sessionId: state.sessionId,
         message: trimmed,
         previousChatId: state.vapiChatId || undefined,
-        bookingContext: getBookingContext(),
+        bookingActive: bookingActive,
       }),
     })
       .then(function (r) {
@@ -328,6 +309,7 @@
       .then(function (data) {
         showTyping(false);
         if (data.chatId) { state.vapiChatId = data.chatId; saveState(); }
+        if (data.bookingActive) bookingActive = true;
         appendMessage('bot', data.reply || '');
         if (data.slots && data.slots.length) renderSlotPicker(data.slots);
       })
@@ -339,91 +321,6 @@
         if (sendBtn) sendBtn.disabled = false;
         if (inputEl) inputEl.focus();
       });
-  }
-
-  function removeBookingCard() {
-    var card = document.getElementById('gigi-booking-card');
-    if (card) card.remove();
-  }
-
-  function startBookingFlow() {
-    removeBookingCard();
-    bookingFlow = { active: false, step: 'type' };
-    saveState();
-
-    var card = el('div', 'gigi-book-card');
-    card.id = 'gigi-booking-card';
-    card.appendChild(el('div', 'gigi-book-title', 'Book an appointment'));
-
-    function showTypeStep() {
-      card.innerHTML = '';
-      card.appendChild(el('div', 'gigi-book-title', 'Is this for a new or existing patient?'));
-      var row = el('div', 'gigi-book-row');
-      var newBtn = el('button', 'gigi-book-btn', 'New Patient');
-      var existBtn = el('button', 'gigi-book-btn', 'Existing Patient');
-      newBtn.type = 'button';
-      existBtn.type = 'button';
-      newBtn.onclick = function () { bookingFlow.patientType = 'new'; showContactStep(); };
-      existBtn.onclick = function () { bookingFlow.patientType = 'existing'; showContactStep(); };
-      row.appendChild(newBtn);
-      row.appendChild(existBtn);
-      card.appendChild(row);
-    }
-
-    function showContactStep() {
-      card.innerHTML = '';
-      card.appendChild(el('div', 'gigi-book-title', 'Your contact info'));
-      card.appendChild(el('div', null, 'Name and phone for the person booking (parent/guardian).'));
-
-      var nameField = el('div', 'gigi-field');
-      nameField.appendChild(el('label', null, 'Your name'));
-      var nameInput = el('input');
-      nameInput.placeholder = 'Full name';
-      nameField.appendChild(nameInput);
-
-      var phoneField = el('div', 'gigi-field');
-      phoneField.appendChild(el('label', null, 'Mobile phone'));
-      var phoneInput = el('input');
-      phoneInput.type = 'tel';
-      phoneInput.placeholder = '(555) 555-5555';
-      phoneField.appendChild(phoneInput);
-
-      card.appendChild(nameField);
-      card.appendChild(phoneField);
-
-      var row = el('div', 'gigi-book-row');
-      var back = el('button', 'gigi-book-btn', 'Back');
-      var start = el('button', 'gigi-book-btn primary', 'Start with GIGI');
-      back.type = 'button';
-      start.type = 'button';
-      back.onclick = showTypeStep;
-      start.onclick = function () {
-        var name = nameInput.value.trim();
-        var phone = phoneInput.value.trim();
-        if (!name || !phone) {
-          alert('Please enter your name and phone number.');
-          return;
-        }
-        bookingFlow.contactName = name;
-        bookingFlow.contactPhone = phone;
-        bookingFlow.active = true;
-        saveState();
-        removeBookingCard();
-
-        var intro =
-          bookingFlow.patientType === 'new'
-            ? 'I would like to book an appointment. I am a NEW patient.'
-            : 'I would like to book an appointment. I am an EXISTING patient — please look up my record.';
-        sendUserMessage(intro);
-      };
-      row.appendChild(back);
-      row.appendChild(start);
-      card.appendChild(row);
-    }
-
-    showTypeStep();
-    messagesEl.appendChild(card);
-    scrollMessages();
   }
 
   function switchTab(tab) {
@@ -469,12 +366,29 @@
     saveState();
     injectStyles();
 
+    launcher = el('div');
+    launcher.id = 'gigi-launcher';
+    var label = el('span', null, 'Ask GIGI');
+    label.id = 'gigi-launcher-label';
+    launcher.appendChild(label);
+
     bubble = el('button');
     bubble.id = 'gigi-bubble';
-    bubble.setAttribute('aria-label', 'Chat with GIGI');
+    bubble.setAttribute('aria-label', 'Ask GIGI');
+    bubble.style.position = 'relative';
     bubble.onclick = togglePanel;
-    bubble.appendChild(avatarImg());
+
+    var img = document.createElement('img');
+    img.src = apiUrl('/gigi-avatar.png');
+    img.alt = 'GIGI';
+    img.className = 'gigi-avatar-img';
+    img.onerror = function () {
+      bubble.textContent = '🦒';
+    };
+    bubble.appendChild(img);
     bubble.appendChild(el('span', 'gigi-badge'));
+
+    launcher.appendChild(bubble);
 
     panel = el('div');
     panel.id = 'gigi-panel';
@@ -535,7 +449,7 @@
     footer.appendChild(sendBtn);
     panel.appendChild(footer);
 
-    document.body.appendChild(bubble);
+    document.body.appendChild(launcher);
     document.body.appendChild(panel);
     console.log('[GIGI] Widget mounted. API base:', apiBase || '(none)');
   }
