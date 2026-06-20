@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const DEFAULT_ORIGINS = [
-  "https://kids0to18.com",
-  "https://www.kids0to18.com",
+  "https://www.kids0218.com",
+  "https://kids0218.com",
+  "https://kids-0-to-18-integrative-pediatrics.webflow.io",
   "http://localhost:3000",
 ]
 

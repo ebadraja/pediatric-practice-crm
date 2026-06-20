@@ -2,7 +2,7 @@
 
 ## Overview
 
-Build an embeddable website chatbot for Kids 0-18 Integrative Pediatrics. The chatbot is **GIGI**, the practice's cartoon giraffe mascot. It embeds on the practice's Webflow website (kids0to18.com) via a single `<script>` tag.
+Build an embeddable website chatbot for Kids 0-18 Integrative Pediatrics. The chatbot is **GIGI**, the practice's cartoon giraffe mascot. It embeds on the practice's Webflow website (www.kids0218.com) via a single `<script>` tag.
 
 **Critical architectural principle: GIGI already exists.** GIGI is a fully configured Vapi assistant with:
 - A system prompt built from 1,930 real call transcripts
@@ -94,7 +94,7 @@ This is the heart of Option 2. It forwards widget messages to GIGI via Vapi's Ch
 ```typescript
 // Pseudocode
 export async function POST(req) {
-  // 1. CORS check — only allow kids0to18.com (and localhost in dev)
+  // 1. CORS check — only allow www.kids0218.com (+ Webflow staging + localhost in dev)
   // 2. Rate limit by sessionId (e.g. 30 msgs/hour)
   // 3. Forward to Vapi Chat API with PRIVATE key
   const vapiRes = await fetch('https://api.vapi.ai/chat', {
@@ -268,7 +268,7 @@ Step indicator dots at top, back button between steps, slide-left transitions.
 
 `GET /api/chatbot/availability?provider=<id>&date=<YYYY-MM-DD>&range=7`
 
-- Public (no auth), CORS-restricted to kids0to18.com.
+- Public (no auth), CORS-restricted to www.kids0218.com (+ Webflow staging).
 - Reuses the SAME availability logic as the existing `/api/appointments/availability` endpoint the voice tools use.
 - Returns ONLY slot availability — zero PHI.
 ```typescript
@@ -335,8 +335,9 @@ This is the actual Klara webchat replacement. Build only after backend messaging
 Restrict `/api/chatbot/*` to:
 ```typescript
 const CHATBOT_ALLOWED_ORIGINS = [
-  'https://kids0to18.com',
-  'https://www.kids0to18.com',
+  'https://www.kids0218.com',
+  'https://kids0218.com',
+  'https://kids-0-to-18-integrative-pediatrics.webflow.io',
   'http://localhost:3000',
 ];
 ```
@@ -368,7 +369,7 @@ Clear after 24h inactivity (Vapi sessions also expire at 24h).
 VAPI_PRIVATE_KEY=<your Vapi PRIVATE api key>     # server-side only, NEVER in widget
 GIGI_ASSISTANT_ID=<GIGI's Vapi assistant id>
 VAPI_WEBHOOK_SECRET=<existing — already set for the 9 tools>
-CHATBOT_CORS_ORIGINS=https://kids0to18.com,https://www.kids0to18.com
+CHATBOT_CORS_ORIGINS=https://www.kids0218.com,https://kids0218.com,https://kids-0-to-18-integrative-pediatrics.webflow.io,http://localhost:3000
 CHATBOT_RATE_LIMIT=30
 ```
 
@@ -402,7 +403,7 @@ CHATBOT_RATE_LIMIT=30
 - [ ] Tab 2 shows "coming soon" panel
 - [ ] Mobile = full-screen chat, large tap targets
 - [ ] Rate limiting + honeypot block abuse
-- [ ] CORS blocks non-kids0to18.com origins
+- [ ] CORS blocks non-kids0218.com origins
 - [ ] Giraffe bounce/pulse/hover animations work; reduced-motion disables them
 
 ---
