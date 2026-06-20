@@ -3,9 +3,24 @@
 
   var STORAGE_KEY = 'gigi_chatbot';
   var SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-  var script = document.currentScript;
+
+  function findScriptTag() {
+    if (document.currentScript) return document.currentScript;
+    var scripts = document.getElementsByTagName('script');
+    for (var i = scripts.length - 1; i >= 0; i--) {
+      var s = scripts[i];
+      if (s.src && /gigi-chatbot\.js(\?|$)/.test(s.src)) return s;
+    }
+    return null;
+  }
+
+  var script = findScriptTag();
   var apiBase =
     (script && (script.getAttribute('data-api-url') || script.getAttribute('data-api-base'))) || '';
+  // If data-api-url omitted, derive CRM base from script src (e.g. …/gigi-chatbot.js → …/)
+  if (!apiBase && script && script.src) {
+    apiBase = script.src.replace(/\/gigi-chatbot\.js(\?.*)?$/, '');
+  }
 
   var APPT_TYPES = [
     { id: 'WELL_CHILD_VISIT', label: 'Well-Child Visit' },
@@ -814,7 +829,12 @@
 
   // Mount immediately on DOM ready — no /api/chatbot/init gate (unlike webchat-widget.js).
   function bootGigi() {
-    mountWidget();
+    try {
+      mountWidget();
+      console.log('[GIGI] Widget mounted. API base:', apiBase || '(none)');
+    } catch (err) {
+      console.error('[GIGI] Failed to mount widget:', err);
+    }
   }
 
   if (document.readyState === 'loading') {

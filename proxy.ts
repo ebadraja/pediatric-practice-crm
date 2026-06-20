@@ -12,6 +12,14 @@ function isPublicRoute(pathname: string): boolean {
   if (pathname.startsWith("/api/chatbot")) return true
   // Patient portal pages — M4 (app/portal/* or future route group paths)
   if (pathname.startsWith("/portal")) return true
+  // Embeddable widget assets from /public — Webflow loads these without auth
+  if (
+    /^\/(gigi-chatbot\.js|gigi-avatar\.png|webchat-widget\.js|webchat-test\.html|gigi-test\.html)$/.test(
+      pathname
+    )
+  ) {
+    return true
+  }
   return false
 }
 

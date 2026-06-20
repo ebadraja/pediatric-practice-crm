@@ -15,7 +15,14 @@ export function getChatbotAllowedOrigins(): string[] {
 
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return false
-  return getChatbotAllowedOrigins().includes(origin)
+  if (getChatbotAllowedOrigins().includes(origin)) return true
+  try {
+    const host = new URL(origin).hostname
+    if (host.endsWith(".webflow.io")) return true
+  } catch {
+    // ignore malformed origin
+  }
+  return false
 }
 
 export function chatbotCorsHeaders(origin: string | null): Record<string, string> {
