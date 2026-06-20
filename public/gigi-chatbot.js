@@ -4,7 +4,8 @@
   var STORAGE_KEY = 'gigi_chatbot';
   var SESSION_TTL_MS = 24 * 60 * 60 * 1000;
   var script = document.currentScript;
-  var apiBase = (script && script.getAttribute('data-api-url')) || '';
+  var apiBase =
+    (script && (script.getAttribute('data-api-url') || script.getAttribute('data-api-base'))) || '';
 
   var APPT_TYPES = [
     { id: 'WELL_CHILD_VISIT', label: 'Well-Child Visit' },
@@ -288,6 +289,10 @@
   function sendUserMessage(text) {
     var trimmed = (text || '').trim();
     if (!trimmed) return;
+    if (!apiBase) {
+      appendMessage('bot', 'Chat is not configured (missing data-api-url on the script tag).');
+      return;
+    }
     appendMessage('user', trimmed);
     inputEl.value = '';
     sendBtn.disabled = true;
@@ -708,8 +713,7 @@
 
   function mountWidget() {
     if (!apiBase) {
-      console.warn('[GIGI] data-api-url is required on the script tag.');
-      return;
+      console.warn('[GIGI] data-api-url is recommended on the script tag for chat API calls.');
     }
 
     if (!state.sessionId) state.sessionId = uuid();
@@ -808,9 +812,14 @@
     }, 10000);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', mountWidget);
-  } else {
+  // Mount immediately on DOM ready — no /api/chatbot/init gate (unlike webchat-widget.js).
+  function bootGigi() {
     mountWidget();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootGigi);
+  } else {
+    bootGigi();
   }
 })();

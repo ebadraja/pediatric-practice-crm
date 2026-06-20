@@ -8,6 +8,8 @@ function isPublicRoute(pathname: string): boolean {
   if (pathname.startsWith("/api/portal")) return true
   // Website chat widget API — M5
   if (pathname.startsWith("/api/webchat")) return true
+  // GIGI website chatbot API
+  if (pathname.startsWith("/api/chatbot")) return true
   // Patient portal pages — M4 (app/portal/* or future route group paths)
   if (pathname.startsWith("/portal")) return true
   return false
