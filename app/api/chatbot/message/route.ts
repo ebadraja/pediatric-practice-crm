@@ -5,6 +5,7 @@ import {
   rejectChatbotOrigin,
 } from "@/lib/chatbot/cors"
 import { chatbotMessageLimit, isRateLimited } from "@/lib/chatbot/rateLimit"
+import { getUpcomingSlotOptions, replyMentionsAvailability } from "@/lib/chatbot/slots"
 
 export const dynamic = "force-dynamic"
 
@@ -23,6 +24,13 @@ interface VapiChatResponse {
   message?: string
 }
 
+interface BookingContext {
+  active?: boolean
+  patientType?: "new" | "existing"
+  contactName?: string
+  contactPhone?: string
+}
+
 function resolveAssistantId(): string | null {
   return process.env.GIGI_ASSISTANT_ID ?? process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID ?? null
 }
@@ -36,12 +44,16 @@ function extractReply(data: VapiChatResponse): string {
   return "I'm sorry, I couldn't generate a reply. Please try again or call us at (253) 400-4479."
 }
 
-function detectBookingAction(reply: string): "show_calendar" | undefined {
-  const t = reply.toLowerCase()
-  if (/\b(book|schedule|pick a time|choose a (date|time)|calendar|available (slot|time))\b/.test(t)) {
-    return "show_calendar"
-  }
-  return undefined
+function buildVapiInput(message: string, ctx?: BookingContext): string {
+  if (!ctx?.active) return message
+
+  const parts: string[] = ["[Website chat booking]"]
+  if (ctx.patientType === "new") parts.push("Patient type: NEW patient (not yet in our system).")
+  if (ctx.patientType === "existing") parts.push("Patient type: EXISTING patient (look up their record).")
+  if (ctx.contactName) parts.push(`Contact name: ${ctx.contactName}.`)
+  if (ctx.contactPhone) parts.push(`Contact phone: ${ctx.contactPhone}.`)
+  parts.push(message)
+  return parts.join(" ")
 }
 
 export async function OPTIONS(request: NextRequest) {
@@ -67,7 +79,12 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  let body: { sessionId?: string; message?: string; previousChatId?: string }
+  let body: {
+    sessionId?: string
+    message?: string
+    previousChatId?: string
+    bookingContext?: BookingContext
+  }
   try {
     body = await request.json()
   } catch {
@@ -76,6 +93,7 @@ export async function POST(request: NextRequest) {
 
   const sessionId = String(body.sessionId ?? "").trim()
   const message   = String(body.message ?? "").trim()
+  const bookingContext = body.bookingContext
 
   if (!sessionId) {
     return chatbotJsonResponse({ error: "sessionId is required" }, origin, { status: 400 })
@@ -94,12 +112,17 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const vapiInput = buildVapiInput(message, bookingContext)
     const vapiBody: Record<string, unknown> = {
       assistantId,
-      input: message,
+      input: vapiInput,
       assistantOverrides: {
         variableValues: {
           now: new Date().toISOString(),
+          channel: "website_chat",
+          ...(bookingContext?.patientType && { patientType: bookingContext.patientType }),
+          ...(bookingContext?.contactName && { contactName: bookingContext.contactName }),
+          ...(bookingContext?.contactPhone && { contactPhone: bookingContext.contactPhone }),
         },
       },
     }
@@ -128,13 +151,28 @@ export async function POST(request: NextRequest) {
     }
 
     const reply = extractReply(data)
-    const action = detectBookingAction(reply)
+
+    const bookingActive = Boolean(bookingContext?.active)
+    const showSlots =
+      bookingActive &&
+      (replyMentionsAvailability(reply) ||
+        /\b(when|date|time|schedule|book|appointment)\b/i.test(message))
+
+    let slots = undefined
+    if (showSlots) {
+      try {
+        slots = await getUpcomingSlotOptions(7)
+      } catch (err) {
+        console.error("[POST /api/chatbot/message] slot fetch failed:", err)
+      }
+    }
 
     return chatbotJsonResponse(
       {
         reply,
         chatId: data.id ?? null,
-        ...(action ? { action } : {}),
+        ...(bookingActive ? { bookingActive: true } : {}),
+        ...(slots && slots.length > 0 ? { slots } : {}),
       },
       origin
     )
