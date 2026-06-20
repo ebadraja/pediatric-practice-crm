@@ -12,6 +12,7 @@ import {
   replyAsksForDate,
   replyMentionsAvailability,
 } from "@/lib/chatbot/slots"
+import { persistWebsiteChatTurn } from "@/lib/chatbot/persistChatLog"
 
 export const dynamic = "force-dynamic"
 
@@ -71,6 +72,7 @@ export async function POST(request: NextRequest) {
     message?: string
     previousChatId?: string
     bookingActive?: boolean
+    sourcePage?: string
   }
   try {
     body = await request.json()
@@ -135,6 +137,19 @@ export async function POST(request: NextRequest) {
 
     const reply = extractReply(data)
     const preferredDate = parsePreferredDate(message)
+
+    const ip =
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+      request.headers.get("x-real-ip") ??
+      null
+
+    void persistWebsiteChatTurn({
+      sessionId,
+      userMessage: message,
+      botReply: reply,
+      sourcePage: body.sourcePage ?? request.headers.get("referer"),
+      requestIp: ip,
+    }).catch((err) => console.error("[POST /api/chatbot/message] chat log persist failed:", err))
 
     // After parent gives a preferred date, show that day's times (same data as check_availability tool)
     let slots = undefined

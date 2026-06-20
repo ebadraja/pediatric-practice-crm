@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const ALLOWED_TYPES = new Set([
   "refill_request", "callback_request", "intake_forms_requested", "transfer_context",
-  "appointment_booked", "appointment_cancelled", "call_received", "form_submitted",
+  "appointment_booked", "appointment_cancelled", "call_received", "chat_received", "form_submitted",
   "patient_matched", "draft_approved", "error", "info",
   "new_message", "message_assigned", "conversation_escalated", "broadcast_completed",
 ])
@@ -157,6 +157,7 @@ function typeToIcon(type: string): string {
     form_submitted: 'form', patient_matched: 'check', draft_approved: 'check',
     warning: 'alert', error: 'error',
     new_message: 'message', message_assigned: 'message',
+    chat_received: 'message', call_received: 'phone',
   };
   return iconMap[type] || 'info';
 }

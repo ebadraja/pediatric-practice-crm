@@ -314,6 +314,7 @@
         message: trimmed,
         previousChatId: state.vapiChatId || undefined,
         bookingActive: bookingActive,
+        sourcePage: typeof window !== 'undefined' ? window.location.href : undefined,
       }),
     })
       .then(function (r) {
@@ -388,7 +389,7 @@
 
     var callout = el('div', 'gigi-callout');
     var calloutText = el('span', 'gigi-callout-text');
-    calloutText.appendChild(document.createTextNode('Ask GIGI! '));
+    calloutText.appendChild(document.createTextNode('Hi, I’m GIGI! '));
     var sparkle = el('span', 'gigi-callout-sparkle', '✨');
     calloutText.appendChild(sparkle);
     callout.appendChild(calloutText);
