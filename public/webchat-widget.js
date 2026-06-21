@@ -12,7 +12,7 @@
   }
 
   function boot() {
-    var coreScriptUrl = apiUrl('/webchat-core.js?v=2');
+    var coreScriptUrl = apiUrl('/webchat-core.js?v=4');
 
     function start(config) {
       if (config.enabled === false) return;

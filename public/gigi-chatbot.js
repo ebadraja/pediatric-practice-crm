@@ -110,9 +110,13 @@
   }
 
   function injectStyles() {
-    if (document.getElementById('gigi-chatbot-styles')) return;
+    if (document.getElementById('gigi-chatbot-styles-v3')) return;
+    ['gigi-chatbot-styles-v1', 'gigi-chatbot-styles-v2'].forEach(function (id) {
+      var old = document.getElementById(id);
+      if (old) old.remove();
+    });
     var style = document.createElement('style');
-    style.id = 'gigi-chatbot-styles';
+    style.id = 'gigi-chatbot-styles-v3';
     style.textContent =
       '#gigi-launcher{position:fixed!important;bottom:24px;right:24px;z-index:2147483646!important;display:flex;flex-direction:row;align-items:center;gap:10px;pointer-events:none;font-family:Nunito,ui-rounded,"Segoe UI",system-ui,sans-serif}' +
       '.gigi-callout{pointer-events:none;position:relative;background:#fff;border-radius:20px;padding:14px 20px;box-shadow:0 6px 28px rgba(124,58,237,.18),0 2px 8px rgba(0,0,0,.06);animation:gigi-callout-float 3s ease-in-out infinite;transform-origin:center right}' +
@@ -142,13 +146,11 @@
       '.gigi-tabs{display:flex;border-bottom:1px solid #EDE9FE;background:#FAFAFA;flex-shrink:0}' +
       '.gigi-tab{flex:1;padding:10px 8px;border:none;background:transparent;font-size:13px;font-weight:500;color:#6B7280;cursor:pointer;border-bottom:2px solid transparent}' +
       '.gigi-tab.active{color:#7C3AED;border-bottom-color:#7C3AED;background:#fff}' +
-      '.gigi-body{flex:1;overflow:auto;padding:12px;background:#F9FAFB}' +
-      '.gigi-tab-panels{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;position:relative}' +
-      '.gigi-tab-panel{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}' +
+      '.gigi-tab-panels{flex:1;min-height:0;position:relative;overflow:hidden}' +
+      '.gigi-tab-panel{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#F9FAFB}' +
       '.gigi-tab-panel.gigi-tab-hidden{display:none!important}' +
-      '#gigi-tab-messaging.gigi-messaging-panel{overflow:hidden!important;padding:0!important}' +
-      '#gigi-tab-messaging.gigi-body{overflow:hidden!important;padding:0!important}' +
-      '.gigi-messaging-panel{display:flex;flex-direction:column;flex:1;min-height:0}' +
+      '.gigi-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:12px;background:#F9FAFB;scrollbar-gutter:stable}' +
+      '.gigi-messaging-panel{padding:0}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
       '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
@@ -353,7 +355,7 @@
       return Promise.resolve(window.Kids018Webchat);
     }
     return new Promise(function (resolve, reject) {
-      var src = apiUrl('/webchat-core.js?v=2');
+      var src = apiUrl('/webchat-core.js?v=4');
       var existing = document.querySelector('script[src="' + src + '"]');
       if (existing) {
         if (window.Kids018Webchat) {
@@ -548,11 +550,14 @@
 
     var tabPanels = el('div', 'gigi-tab-panels');
 
-    messagesEl = el('div', 'gigi-body gigi-tab-panel');
-    messagesEl.id = 'gigi-tab-gigi';
-    tabPanels.appendChild(messagesEl);
+    var gigiTab = el('div', 'gigi-tab-panel');
+    gigiTab.id = 'gigi-tab-gigi';
+    messagesEl = el('div', 'gigi-scroll');
+    messagesEl.id = 'gigi-thread';
+    gigiTab.appendChild(messagesEl);
+    tabPanels.appendChild(gigiTab);
 
-    var msgView = el('div', 'gigi-body gigi-tab-panel gigi-messaging-panel gigi-tab-hidden');
+    var msgView = el('div', 'gigi-tab-panel gigi-messaging-panel gigi-tab-hidden');
     msgView.id = 'gigi-tab-messaging';
     tabPanels.appendChild(msgView);
 

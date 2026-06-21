@@ -39,7 +39,7 @@ function isRateLimited(key: string): boolean {
 }
 
 export async function OPTIONS(request: NextRequest) {
-  return handleChatbotPreflight(request) ?? new NextResponse(null, { status: 405 })
+  return handleChatbotPreflight(request, WEBCHAT_CORS) ?? new NextResponse(null, { status: 405 })
 }
 
 export async function GET(request: NextRequest) {

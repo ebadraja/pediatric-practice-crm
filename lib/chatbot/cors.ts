@@ -65,13 +65,16 @@ export function chatbotJsonResponse(
   return withChatbotCors(NextResponse.json(body, { status: init?.status ?? 200 }), origin, options)
 }
 
-export function handleChatbotPreflight(request: NextRequest): NextResponse | null {
+export function handleChatbotPreflight(
+  request: NextRequest,
+  options?: { credentials?: boolean },
+): NextResponse | null {
   if (request.method !== "OPTIONS") return null
   const origin = request.headers.get("origin")
   if (!isOriginAllowed(origin)) {
     return new NextResponse(null, { status: 403 })
   }
-  return withChatbotCors(new NextResponse(null, { status: 204 }), origin)
+  return withChatbotCors(new NextResponse(null, { status: 204 }), origin, options)
 }
 
 export function rejectChatbotOrigin(origin: string | null): NextResponse | null {

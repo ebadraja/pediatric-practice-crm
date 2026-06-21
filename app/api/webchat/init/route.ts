@@ -8,6 +8,8 @@ import {
 
 export const dynamic = 'force-dynamic'
 
+const WEBCHAT_CORS = { credentials: true as const }
+
 type WidgetConfig = {
   enabled?: boolean
   welcomeMessage?: string
@@ -17,7 +19,7 @@ type WidgetConfig = {
 }
 
 export async function OPTIONS(request: NextRequest) {
-  return handleChatbotPreflight(request) ?? new NextResponse(null, { status: 405 })
+  return handleChatbotPreflight(request, WEBCHAT_CORS) ?? new NextResponse(null, { status: 405 })
 }
 
 export async function GET(request: NextRequest) {
@@ -52,9 +54,11 @@ export async function GET(request: NextRequest) {
         isOnline: online,
       },
       origin,
+      undefined,
+      WEBCHAT_CORS,
     )
   } catch (error) {
     console.error('[GET /api/webchat/init]', error)
-    return chatbotJsonResponse({ error: 'Failed to load widget config' }, origin, { status: 500 })
+    return chatbotJsonResponse({ error: 'Failed to load widget config' }, origin, { status: 500 }, WEBCHAT_CORS)
   }
 }

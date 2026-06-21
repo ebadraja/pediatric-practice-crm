@@ -138,8 +138,16 @@
       if (embedded && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
     }
 
+    function userFacingError(err) {
+      var msg = err && err.message ? err.message : '';
+      if (msg === 'Failed to fetch' || /network/i.test(msg)) {
+        return 'Could not reach the messaging server. Please try again or call (253) 400-4479.';
+      }
+      return msg || 'Could not send message';
+    }
+
     function fetchMessages() {
-      return fetch(messageApiUrl(), { credentials: 'include' })
+      return fetch(messageApiUrl())
         .then(function (r) {
           return r.json();
         })
@@ -169,7 +177,6 @@
     function sendMessage(payload) {
       return fetch(apiUrl('/api/webchat/message'), {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       }).then(function (r) {
@@ -291,7 +298,7 @@
               fetchMessages();
             })
             .catch(function (err) {
-              alert(err.message || 'Could not send message');
+              alert(userFacingError(err));
             });
         });
         fetchMessages().then(startPolling);
@@ -320,13 +327,13 @@
                     fetchMessages();
                   })
                   .catch(function (err) {
-                    alert(err.message || 'Could not send message');
+                    alert(userFacingError(err));
                   });
               });
               fetchMessages().then(startPolling);
             })
             .catch(function (err) {
-              alert(err.message || 'Could not send message');
+              alert(userFacingError(err));
             });
         });
       }
@@ -381,7 +388,7 @@
 
     function mountEmbedded() {
       if (!container) return;
-      injectStyles(brandColor, 'kids018-webchat-embed-styles-v2');
+      injectStyles(brandColor, 'kids018-webchat-embed-styles-v3');
 
       container.innerHTML = '';
       container.style.flex = '1';
