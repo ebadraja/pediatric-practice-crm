@@ -18,7 +18,6 @@ export async function GET() {
       select: {
         practiceName: true,
         practicePhone: true,
-        messagingEnabled: true,
         messagingBusinessHours: true,
         webChatWidgetConfig: true,
       },
@@ -29,7 +28,8 @@ export async function GET() {
     const online = isWithinBusinessHours(hours as never)
 
     return NextResponse.json({
-      enabled: settings?.messagingEnabled !== false && widget.enabled !== false,
+      // Public webchat (GIGI + standalone widget) — widget config only, not staff CRM toggle
+      enabled: widget.enabled !== false,
       practiceName: settings?.practiceName ?? 'Kids 0-18 Integrated Pediatrics',
       practicePhone: settings?.practicePhone ?? null,
       welcomeMessage:

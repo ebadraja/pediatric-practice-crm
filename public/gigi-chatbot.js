@@ -143,7 +143,10 @@
       '.gigi-tab{flex:1;padding:10px 8px;border:none;background:transparent;font-size:13px;font-weight:500;color:#6B7280;cursor:pointer;border-bottom:2px solid transparent}' +
       '.gigi-tab.active{color:#7C3AED;border-bottom-color:#7C3AED;background:#fff}' +
       '.gigi-body{flex:1;overflow:auto;padding:12px;background:#F9FAFB}' +
-      '.gigi-messaging-panel{display:flex!important;flex-direction:column!important;overflow:hidden!important;padding:0!important;background:#F9FAFB}' +
+      '.gigi-tab-panels{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}' +
+      '.gigi-tab-panel{flex:1;min-height:0;overflow:hidden}' +
+      '.gigi-tab-panel.gigi-tab-hidden{display:none!important}' +
+      '.gigi-messaging-panel{display:flex;flex-direction:column;overflow:hidden;padding:0!important;background:#F9FAFB}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
       '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
@@ -438,13 +441,13 @@
     var footer = document.querySelector('.gigi-footer');
     if (tab === 'gigi') {
       if (webchatCtrl) webchatCtrl.stopPolling();
-      if (gigiView) gigiView.style.display = '';
-      if (msgView) msgView.style.display = 'none';
+      if (gigiView) gigiView.classList.remove('gigi-tab-hidden');
+      if (msgView) msgView.classList.add('gigi-tab-hidden');
       if (footer) footer.style.display = '';
     } else {
-      if (gigiView) gigiView.style.display = 'none';
+      if (gigiView) gigiView.classList.add('gigi-tab-hidden');
       if (msgView) {
-        msgView.style.display = 'flex';
+        msgView.classList.remove('gigi-tab-hidden');
         initMessagingTab(msgView);
       }
       if (footer) footer.style.display = 'none';
@@ -541,14 +544,17 @@
     tabs.appendChild(tabMsg);
     panel.appendChild(tabs);
 
-    messagesEl = el('div', 'gigi-body');
-    messagesEl.id = 'gigi-tab-gigi';
-    panel.appendChild(messagesEl);
+    var tabPanels = el('div', 'gigi-tab-panels');
 
-    var msgView = el('div', 'gigi-body gigi-messaging-panel');
+    messagesEl = el('div', 'gigi-body gigi-tab-panel');
+    messagesEl.id = 'gigi-tab-gigi';
+    tabPanels.appendChild(messagesEl);
+
+    var msgView = el('div', 'gigi-body gigi-tab-panel gigi-messaging-panel gigi-tab-hidden');
     msgView.id = 'gigi-tab-messaging';
-    msgView.style.display = 'none';
-    panel.appendChild(msgView);
+    tabPanels.appendChild(msgView);
+
+    panel.appendChild(tabPanels);
 
     var footer = el('div', 'gigi-footer');
     inputEl = el('textarea', 'gigi-input');

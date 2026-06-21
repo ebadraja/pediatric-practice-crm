@@ -16,7 +16,8 @@
 import fs from "fs";
 import path from "path";
 
-const LOG_DIR = process.env.LOG_DIR || path.join(process.cwd(), "logs");
+const LOG_DIR =
+  process.env.LOG_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), "logs");
 
 const WEBHOOK_LOG = "webhook.log";
 const ERROR_LOG = "error.log";

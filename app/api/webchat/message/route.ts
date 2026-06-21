@@ -107,9 +107,10 @@ export async function POST(request: NextRequest) {
     }
 
     const settings = await prisma.settings.findFirst({
-      select: { messagingBusinessHours: true, messagingEnabled: true },
+      select: { messagingBusinessHours: true, webChatWidgetConfig: true },
     })
-    if (settings?.messagingEnabled === false) {
+    const widget = (settings?.webChatWidgetConfig ?? {}) as { enabled?: boolean }
+    if (widget.enabled === false) {
       return NextResponse.json({ error: 'Messaging is temporarily unavailable.' }, { status: 503 })
     }
 
