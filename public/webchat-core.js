@@ -3,6 +3,7 @@
 
   var STORAGE_KEY = 'kids018_webchat';
   var POLL_MS = 2000;
+  var VERSION = '2026.06.21-intake-gate';
 
   function loadState() {
     try {
@@ -39,12 +40,17 @@
   }
 
   function canResumeChat(state) {
-    return hasVisitorIdentity(state) && hasSessionTokens(state);
+    return state.intakeCompleted === true && hasVisitorIdentity(state) && hasSessionTokens(state);
   }
 
   function clearSessionTokens(state) {
     delete state.conversationId;
     delete state.sessionToken;
+  }
+
+  function resetVisitorSession(state) {
+    clearSessionTokens(state);
+    delete state.intakeCompleted;
   }
 
   function el(tag, className, text) {
@@ -78,7 +84,7 @@
   function injectStyles(color, styleId) {
     var id = styleId || 'kids018-webchat-styles';
     if (document.getElementById(id)) return;
-    ['kids018-webchat-embed-styles-v3', 'kids018-webchat-embed-styles-v4', 'kids018-webchat-embed-styles-v5'].forEach(function (oldId) {
+    ['kids018-webchat-embed-styles-v3', 'kids018-webchat-embed-styles-v4', 'kids018-webchat-embed-styles-v5', 'kids018-webchat-embed-styles-v6'].forEach(function (oldId) {
       var old = document.getElementById(oldId);
       if (old) old.remove();
     });
@@ -88,16 +94,18 @@
       '#kids018-webchat-root{position:fixed;z-index:2147483000;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}' +
       '#kids018-webchat-bubble{width:56px;height:56px;border-radius:9999px;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.18);color:#fff;font-size:22px}' +
       '#kids018-webchat-panel{position:fixed;bottom:88px;right:20px;width:min(360px,calc(100vw - 24px));height:min(520px,calc(100vh - 120px));background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.2);display:none;flex-direction:column;overflow:hidden}' +
-      '#kids018-webchat-panel.open{display:flex}' +
+      '#kids018-webchat-panel.open{display:flex;flex-direction:column}' +
+      '.kw-panel-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:12px;background:#f8fafc;scrollbar-gutter:stable}' +
+      '.kw-panel-scroll .kw-body,.kw-embed-scroll .kw-body{flex:none;overflow:visible;padding:0;background:transparent}' +
+      '.kw-intake{padding-bottom:12px}' +
       '.kw-embed-root{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;pointer-events:auto;touch-action:manipulation;background:#F9FAFB;font-family:Nunito,Inter,-apple-system,BlinkMacSystemFont,sans-serif}' +
       '.kw-embed-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:12px;background:#F9FAFB;scrollbar-gutter:stable}' +
       '.kw-embed-root .kw-header{padding:10px 12px;font-size:13px;flex-shrink:0;background:#F3F0FF!important;color:#5B21B6!important;border-bottom:1px solid #EDE9FE}' +
       '.kw-embed-root .kw-body{flex:none;overflow:visible;padding:0;background:transparent}' +
       '.kw-embed-root .kw-intake{padding-bottom:12px}' +
       '.kw-intake-title{font-size:14px;font-weight:600;color:#374151;margin:0 0 10px}' +
-      '.kw-embed-root .kw-footer.kw-footer-hidden{display:none!important}' +
+      '.kw-footer.kw-footer-hidden,.kw-embed-root .kw-footer.kw-footer-hidden{display:none!important}' +
       '.kw-header{padding:14px 16px;color:#fff;font-weight:600;font-size:15px;flex-shrink:0}' +
-      '.kw-body{flex:1;overflow:auto;padding:12px;background:#f8fafc}' +
       '.kw-msg{max-width:85%;margin:6px 0;padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.4;word-break:break-word}' +
       '.kw-msg.patient{margin-left:auto;background:' +
       color +
@@ -131,9 +139,19 @@
     var container = options.container || null;
 
     var state = normalizeLoadedState(loadState());
-    if (hasSessionTokens(state) && !hasVisitorIdentity(state)) {
-      clearSessionTokens(state);
+    if (!state.intakeCompleted) {
+      resetVisitorSession(state);
       saveState(state);
+    } else if (hasSessionTokens(state) && !hasVisitorIdentity(state)) {
+      resetVisitorSession(state);
+      saveState(state);
+    }
+
+    if (typeof console !== 'undefined' && console.log) {
+      console.log('[Kids018Webchat] v' + VERSION, embedded ? 'embedded' : 'standalone', {
+        intakeCompleted: !!state.intakeCompleted,
+        hasSession: hasSessionTokens(state),
+      });
     }
     var pollTimer = null;
     var root = null;
@@ -152,6 +170,16 @@
       if (!data) return;
       if (data.conversationId) state.conversationId = data.conversationId;
       if (data.sessionToken) state.sessionToken = data.sessionToken;
+      if (visitor) {
+        if (visitor.visitorName) state.visitorName = visitor.visitorName;
+        if (visitor.phone) state.visitorPhone = visitor.phone;
+        if (visitor.reason) state.reason = visitor.reason;
+      }
+      saveState(state);
+    }
+
+    function markIntakeCompleted(visitor) {
+      state.intakeCompleted = true;
       if (visitor) {
         if (visitor.visitorName) state.visitorName = visitor.visitorName;
         if (visitor.phone) state.visitorPhone = visitor.phone;
@@ -179,7 +207,7 @@
         messagesEl.appendChild(bubble);
       });
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      if (embedded && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+      if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
     }
 
     function userFacingError(err) {
@@ -233,7 +261,7 @@
 
     function prepareIntakeView() {
       if (messagesEl) messagesEl.innerHTML = '';
-      if (embedded && scrollEl) {
+      if (scrollEl) {
         var oldIntake = scrollEl.querySelector('.kw-intake');
         if (oldIntake) oldIntake.remove();
       }
@@ -246,8 +274,10 @@
 
     function buildIntakeForm(onSubmit) {
       formEl.innerHTML = '';
-      if (embedded && scrollEl) {
+      if (scrollEl) {
         formEl.classList.add('kw-footer-hidden');
+        var staleIntake = scrollEl.querySelector('.kw-intake');
+        if (staleIntake) staleIntake.remove();
       }
 
       var name = el('input');
@@ -282,7 +312,7 @@
       }
 
       var fieldsHost = formEl;
-      if (embedded && scrollEl) {
+      if (scrollEl) {
         fieldsHost = el('div', 'kw-intake');
         fieldsHost.appendChild(el('div', 'kw-intake-title', 'Before we connect you'));
         scrollEl.appendChild(fieldsHost);
@@ -307,7 +337,7 @@
         });
       };
       actions.appendChild(send);
-      if (embedded && scrollEl) {
+      if (scrollEl) {
         fieldsHost.appendChild(actions);
         requestAnimationFrame(function () {
           scrollEl.scrollTop = scrollEl.scrollHeight;
@@ -319,7 +349,7 @@
 
     function buildChatComposer(onSubmit) {
       formEl.innerHTML = '';
-      if (embedded && scrollEl) {
+      if (scrollEl) {
         var intake = scrollEl.querySelector('.kw-intake');
         if (intake) intake.remove();
         formEl.classList.remove('kw-footer-hidden');
@@ -361,6 +391,7 @@
         saveState(state);
         sendMessage(data)
           .then(function (res) {
+            markIntakeCompleted(data);
             persistSession(res, data);
             showChatComposer();
           })
@@ -399,10 +430,8 @@
 
     function wireComposer() {
       if (!canResumeChat(state)) {
-        if (hasSessionTokens(state)) {
-          clearSessionTokens(state);
-          saveState(state);
-        }
+        resetVisitorSession(state);
+        saveState(state);
         showIntakeComposer();
         return;
       }
@@ -413,17 +442,18 @@
         })
         .then(function (data) {
           if (data.error || !data.conversationId) {
-            clearSessionTokens(state);
+            resetVisitorSession(state);
             saveState(state);
             showIntakeComposer();
             return;
           }
           state.conversationId = data.conversationId;
+          state.intakeCompleted = true;
           saveState(state);
           return showChatComposer();
         })
         .catch(function () {
-          clearSessionTokens(state);
+          resetVisitorSession(state);
           saveState(state);
           showIntakeComposer();
         });
@@ -459,8 +489,10 @@
       }
 
       panel.appendChild(header);
+      scrollEl = el('div', 'kw-panel-scroll');
       messagesEl = el('div', 'kw-body');
-      panel.appendChild(messagesEl);
+      scrollEl.appendChild(messagesEl);
+      panel.appendChild(scrollEl);
 
       formEl = el('div', 'kw-footer');
       panel.appendChild(formEl);
@@ -474,7 +506,7 @@
 
     function mountEmbedded() {
       if (!container) return;
-      injectStyles(brandColor, 'kids018-webchat-embed-styles-v6');
+      injectStyles(brandColor, 'kids018-webchat-embed-styles-v7');
 
       container.innerHTML = '';
       container.style.flex = '1';
@@ -515,7 +547,7 @@
     function togglePanel() {
       open = !open;
       if (panel) panel.classList.toggle('open', open);
-      if (open && (state.conversationId || state.sessionToken)) fetchMessages();
+      if (open && canResumeChat(state)) fetchMessages();
     }
 
     if (embedded) {
@@ -568,6 +600,7 @@
 
   global.Kids018Webchat = {
     _loaded: true,
+    VERSION: VERSION,
     STORAGE_KEY: STORAGE_KEY,
     POLL_MS: POLL_MS,
     clearStoredSession: function () {

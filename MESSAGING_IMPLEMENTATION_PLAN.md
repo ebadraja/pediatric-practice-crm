@@ -221,7 +221,7 @@ M0  Prerequisites
 ### Acceptance Criteria
 
 - [x] Widget loads on external HTML page via one `<script>` tag
-- [x] New visitor prompted for name, phone, reason before first message
+- [x] New visitor prompted for name, phone, reason before first message _(client gate: `intakeCompleted` in `kids018_webchat` localStorage; chat mode only after successful first POST)_
 - [x] Visitor message creates conversation (or appends to existing by phone match)
 - [x] Message appears in CRM unified inbox with WEB_CHAT channel indicator
 - [x] Staff reply from CRM delivered to widget in real time while visitor is on page _(2s polling via M6)_
