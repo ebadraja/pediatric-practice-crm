@@ -129,7 +129,7 @@
       '@keyframes gigi-sparkle{0%,100%{opacity:1;transform:scale(1) rotate(0deg)}50%{opacity:.85;transform:scale(1.15) rotate(8deg)}}' +
       '@keyframes gigi-badge-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}' +
       '@media (prefers-reduced-motion:reduce){.gigi-callout,.gigi-callout-sparkle,#gigi-bubble .gigi-badge{animation:none!important}}' +
-      '#gigi-panel{position:fixed!important;bottom:130px;right:24px;z-index:2147483647!important;width:400px;height:600px;max-height:calc(100vh - 150px);background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:none;flex-direction:column;overflow:hidden;margin:0;font-family:Nunito,Inter,-apple-system,BlinkMacSystemFont,sans-serif}' +
+      '#gigi-panel{position:fixed!important;bottom:130px;right:24px;z-index:2147483647!important;width:400px;height:600px;max-height:calc(100vh - 150px);background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:none;flex-direction:column;overflow:hidden;margin:0;font-family:Nunito,Inter,-apple-system,BlinkMacSystemFont,sans-serif;pointer-events:auto;touch-action:manipulation}' +
       '#gigi-panel.open{display:flex}' +
       '.gigi-header{background:linear-gradient(135deg,#7C3AED,#A855F7);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0}' +
       '.gigi-header-avatar{width:40px;height:40px;flex-shrink:0;background:transparent}' +
@@ -143,10 +143,12 @@
       '.gigi-tab{flex:1;padding:10px 8px;border:none;background:transparent;font-size:13px;font-weight:500;color:#6B7280;cursor:pointer;border-bottom:2px solid transparent}' +
       '.gigi-tab.active{color:#7C3AED;border-bottom-color:#7C3AED;background:#fff}' +
       '.gigi-body{flex:1;overflow:auto;padding:12px;background:#F9FAFB}' +
-      '.gigi-tab-panels{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}' +
-      '.gigi-tab-panel{flex:1;min-height:0;overflow:hidden}' +
+      '.gigi-tab-panels{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;position:relative}' +
+      '.gigi-tab-panel{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}' +
       '.gigi-tab-panel.gigi-tab-hidden{display:none!important}' +
-      '.gigi-messaging-panel{display:flex;flex-direction:column;overflow:hidden;padding:0!important;background:#F9FAFB}' +
+      '#gigi-tab-messaging.gigi-messaging-panel{overflow:hidden!important;padding:0!important}' +
+      '#gigi-tab-messaging.gigi-body{overflow:hidden!important;padding:0!important}' +
+      '.gigi-messaging-panel{display:flex;flex-direction:column;flex:1;min-height:0}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
       '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
@@ -351,7 +353,7 @@
       return Promise.resolve(window.Kids018Webchat);
     }
     return new Promise(function (resolve, reject) {
-      var src = apiUrl('/webchat-core.js');
+      var src = apiUrl('/webchat-core.js?v=2');
       var existing = document.querySelector('script[src="' + src + '"]');
       if (existing) {
         if (window.Kids018Webchat) {

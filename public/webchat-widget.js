@@ -12,7 +12,7 @@
   }
 
   function boot() {
-    var coreSrc = apiUrl('/webchat-core.js');
+    var coreScriptUrl = apiUrl('/webchat-core.js?v=2');
 
     function start(config) {
       if (config.enabled === false) return;
@@ -31,7 +31,7 @@
     }
 
     var s = document.createElement('script');
-    s.src = coreSrc;
+    s.src = coreScriptUrl;
     s.async = true;
     s.onload = function () {
       fetch(apiUrl('/api/webchat/init'))

@@ -56,11 +56,13 @@
       '#kids018-webchat-bubble{width:56px;height:56px;border-radius:9999px;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.18);color:#fff;font-size:22px}' +
       '#kids018-webchat-panel{position:fixed;bottom:88px;right:20px;width:min(360px,calc(100vw - 24px));height:min(520px,calc(100vh - 120px));background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.2);display:none;flex-direction:column;overflow:hidden}' +
       '#kids018-webchat-panel.open{display:flex}' +
-      '.kw-embed-root{display:flex;flex-direction:column;height:100%;min-height:0;background:#F9FAFB;font-family:Nunito,Inter,-apple-system,BlinkMacSystemFont,sans-serif}' +
+      '.kw-embed-root{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;position:relative;pointer-events:auto;touch-action:manipulation;background:#F9FAFB;font-family:Nunito,Inter,-apple-system,BlinkMacSystemFont,sans-serif}' +
+      '.kw-embed-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:12px;background:#F9FAFB}' +
+      '.kw-embed-root .kw-header{padding:10px 12px;font-size:13px;flex-shrink:0;background:#F3F0FF!important;color:#5B21B6!important;border-bottom:1px solid #EDE9FE}' +
+      '.kw-embed-root .kw-body{flex:none;overflow:visible;padding:0;background:transparent}' +
+      '.kw-embed-root .kw-intake{padding-bottom:4px}' +
       '.kw-header{padding:14px 16px;color:#fff;font-weight:600;font-size:15px;flex-shrink:0}' +
-      '.kw-embed-root .kw-header{background:linear-gradient(135deg,#7C3AED,#A855F7)}' +
       '.kw-body{flex:1;overflow:auto;padding:12px;background:#f8fafc}' +
-      '.kw-embed-root .kw-body{background:#F9FAFB}' +
       '.kw-msg{max-width:85%;margin:6px 0;padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.4;word-break:break-word}' +
       '.kw-msg.patient{margin-left:auto;background:' +
       color +
@@ -73,7 +75,8 @@
       '.kw-field{margin-bottom:8px}' +
       '.kw-field label{display:block;font-size:12px;color:#64748b;margin-bottom:4px}' +
       '.kw-field input,.kw-field select,.kw-field textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px;font-size:14px;font-family:inherit}' +
-      '.kw-embed-root .kw-field input,.kw-embed-root .kw-field select,.kw-embed-root .kw-field textarea{border-color:#D1D5DB;border-radius:12px}' +
+      '.kw-embed-root .kw-field input,.kw-embed-root .kw-field select,.kw-embed-root .kw-field textarea{border-color:#D1D5DB;border-radius:12px;touch-action:manipulation}' +
+      '.kw-embed-root .kw-btn{min-height:44px;touch-action:manipulation}' +
       '.kw-actions{display:flex;gap:8px;margin-top:8px}' +
       '.kw-btn{flex:1;border:none;border-radius:8px;padding:10px 12px;font-size:14px;cursor:pointer;font-family:inherit}' +
       '.kw-embed-root .kw-btn{border-radius:12px}' +
@@ -98,6 +101,7 @@
     var panel = null;
     var messagesEl = null;
     var formEl = null;
+    var scrollEl = null;
     var open = false;
     var destroyed = false;
 
@@ -131,6 +135,7 @@
         messagesEl.appendChild(bubble);
       });
       messagesEl.scrollTop = messagesEl.scrollHeight;
+      if (embedded && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
     }
 
     function fetchMessages() {
@@ -177,14 +182,21 @@
 
     function buildIntakeForm(onSubmit) {
       formEl.innerHTML = '';
+      if (embedded && scrollEl) {
+        var oldIntake = scrollEl.querySelector('.kw-intake');
+        if (oldIntake) oldIntake.remove();
+      }
+
       var name = el('input');
       name.placeholder = 'Your name';
       name.value = state.visitorName || '';
+      name.autocomplete = 'name';
 
       var phone = el('input');
       phone.type = 'tel';
       phone.placeholder = 'Phone number';
       phone.value = state.visitorPhone || '';
+      phone.autocomplete = 'tel';
 
       var reason = el('select');
       ['SCHEDULING', 'REFILL', 'QUESTION', 'URGENT', 'INSURANCE', 'RECORDS', 'OTHER'].forEach(function (r) {
@@ -206,10 +218,16 @@
         return wrap;
       }
 
-      formEl.appendChild(field('Name', name));
-      formEl.appendChild(field('Phone', phone));
-      formEl.appendChild(field('Reason', reason));
-      formEl.appendChild(field('Message', message));
+      var fieldsHost = formEl;
+      if (embedded && scrollEl) {
+        fieldsHost = el('div', 'kw-intake');
+        scrollEl.appendChild(fieldsHost);
+      }
+
+      fieldsHost.appendChild(field('Name', name));
+      fieldsHost.appendChild(field('Phone', phone));
+      fieldsHost.appendChild(field('Reason', reason));
+      fieldsHost.appendChild(field('Message', message));
 
       var actions = el('div', 'kw-actions');
       var send = el('button', 'kw-btn primary', 'Send message');
@@ -224,10 +242,18 @@
       };
       actions.appendChild(send);
       formEl.appendChild(actions);
+
+      if (embedded && scrollEl) {
+        scrollEl.scrollTop = 0;
+      }
     }
 
     function buildChatComposer(onSubmit) {
       formEl.innerHTML = '';
+      if (embedded && scrollEl) {
+        var intake = scrollEl.querySelector('.kw-intake');
+        if (intake) intake.remove();
+      }
       var message = el('textarea');
       message.rows = 2;
       message.placeholder = 'Type a message...';
@@ -355,15 +381,16 @@
 
     function mountEmbedded() {
       if (!container) return;
-      injectStyles(brandColor, 'kids018-webchat-embed-styles');
+      injectStyles(brandColor, 'kids018-webchat-embed-styles-v2');
 
       container.innerHTML = '';
+      container.style.flex = '1';
+      container.style.minHeight = '0';
       container.style.display = 'flex';
       container.style.flexDirection = 'column';
-      container.style.minHeight = '0';
-      container.style.height = '100%';
       container.style.padding = '0';
       container.style.overflow = 'hidden';
+      container.style.position = 'relative';
 
       root = el('div', 'kw-embed-root');
       container.appendChild(root);
@@ -373,18 +400,20 @@
       }
 
       var header = el('div', 'kw-header');
-      header.appendChild(el('div', null, 'Secure messaging'));
-      var subtitle = el('div', null, 'Our care team replies during business hours');
-      subtitle.style.cssText = 'font-size:11px;font-weight:400;opacity:.9;margin-top:2px';
+      header.appendChild(el('div', null, 'Message our care team'));
+      var subtitle = el('div', null, 'We reply during business hours');
+      subtitle.style.cssText = 'font-size:11px;font-weight:400;opacity:.85;margin-top:2px';
       header.appendChild(subtitle);
       root.appendChild(header);
 
+      scrollEl = el('div', 'kw-embed-scroll');
       messagesEl = el('div', 'kw-body');
       if (config.welcomeMessage && !state.conversationId && !state.sessionToken) {
         var welcome = el('div', 'kw-msg staff', config.welcomeMessage);
         messagesEl.appendChild(welcome);
       }
-      root.appendChild(messagesEl);
+      scrollEl.appendChild(messagesEl);
+      root.appendChild(scrollEl);
 
       formEl = el('div', 'kw-footer');
       root.appendChild(formEl);
