@@ -18,6 +18,35 @@
     } catch (e) {}
   }
 
+  function normalizeLoadedState(raw) {
+    var next = raw || {};
+    if (next.phone && !next.visitorPhone) next.visitorPhone = next.phone;
+    if (typeof next.visitorName === 'string') next.visitorName = next.visitorName.trim();
+    if (typeof next.visitorPhone === 'string') next.visitorPhone = next.visitorPhone.trim();
+    return next;
+  }
+
+  function hasVisitorIdentity(state) {
+    return !!(
+      state.visitorName &&
+      state.visitorPhone &&
+      state.visitorPhone.replace(/\D/g, '').length >= 10
+    );
+  }
+
+  function hasSessionTokens(state) {
+    return !!(state.conversationId || state.sessionToken);
+  }
+
+  function canResumeChat(state) {
+    return hasVisitorIdentity(state) && hasSessionTokens(state);
+  }
+
+  function clearSessionTokens(state) {
+    delete state.conversationId;
+    delete state.sessionToken;
+  }
+
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -49,7 +78,7 @@
   function injectStyles(color, styleId) {
     var id = styleId || 'kids018-webchat-styles';
     if (document.getElementById(id)) return;
-    ['kids018-webchat-embed-styles-v3', 'kids018-webchat-embed-styles-v4'].forEach(function (oldId) {
+    ['kids018-webchat-embed-styles-v3', 'kids018-webchat-embed-styles-v4', 'kids018-webchat-embed-styles-v5'].forEach(function (oldId) {
       var old = document.getElementById(oldId);
       if (old) old.remove();
     });
@@ -65,6 +94,7 @@
       '.kw-embed-root .kw-header{padding:10px 12px;font-size:13px;flex-shrink:0;background:#F3F0FF!important;color:#5B21B6!important;border-bottom:1px solid #EDE9FE}' +
       '.kw-embed-root .kw-body{flex:none;overflow:visible;padding:0;background:transparent}' +
       '.kw-embed-root .kw-intake{padding-bottom:12px}' +
+      '.kw-intake-title{font-size:14px;font-weight:600;color:#374151;margin:0 0 10px}' +
       '.kw-embed-root .kw-footer.kw-footer-hidden{display:none!important}' +
       '.kw-header{padding:14px 16px;color:#fff;font-weight:600;font-size:15px;flex-shrink:0}' +
       '.kw-body{flex:1;overflow:auto;padding:12px;background:#f8fafc}' +
@@ -100,7 +130,11 @@
     var brandColor = options.brandColor || config.primaryColor || '#2563eb';
     var container = options.container || null;
 
-    var state = loadState();
+    var state = normalizeLoadedState(loadState());
+    if (hasSessionTokens(state) && !hasVisitorIdentity(state)) {
+      clearSessionTokens(state);
+      saveState(state);
+    }
     var pollTimer = null;
     var root = null;
     var panel = null;
@@ -114,10 +148,15 @@
       return apiBase + path;
     }
 
-    function persistSession(data) {
+    function persistSession(data, visitor) {
       if (!data) return;
       if (data.conversationId) state.conversationId = data.conversationId;
       if (data.sessionToken) state.sessionToken = data.sessionToken;
+      if (visitor) {
+        if (visitor.visitorName) state.visitorName = visitor.visitorName;
+        if (visitor.phone) state.visitorPhone = visitor.phone;
+        if (visitor.reason) state.reason = visitor.reason;
+      }
       saveState(state);
     }
 
@@ -192,11 +231,22 @@
       });
     }
 
-    function buildIntakeForm(onSubmit) {
-      formEl.innerHTML = '';
+    function prepareIntakeView() {
+      if (messagesEl) messagesEl.innerHTML = '';
       if (embedded && scrollEl) {
         var oldIntake = scrollEl.querySelector('.kw-intake');
         if (oldIntake) oldIntake.remove();
+      }
+    }
+
+    function maybeShowWelcome() {
+      if (!messagesEl || !config.welcomeMessage || messagesEl.children.length) return;
+      messagesEl.appendChild(el('div', 'kw-msg staff', config.welcomeMessage));
+    }
+
+    function buildIntakeForm(onSubmit) {
+      formEl.innerHTML = '';
+      if (embedded && scrollEl) {
         formEl.classList.add('kw-footer-hidden');
       }
 
@@ -234,7 +284,10 @@
       var fieldsHost = formEl;
       if (embedded && scrollEl) {
         fieldsHost = el('div', 'kw-intake');
+        fieldsHost.appendChild(el('div', 'kw-intake-title', 'Before we connect you'));
         scrollEl.appendChild(fieldsHost);
+      } else {
+        fieldsHost.appendChild(el('div', 'kw-intake-title', 'Before we connect you'));
       }
 
       fieldsHost.appendChild(field('Name', name));
@@ -294,59 +347,86 @@
       formEl.appendChild(actions);
     }
 
-    function wireComposer() {
-      if ((state.conversationId || state.sessionToken) && state.visitorName && state.visitorPhone) {
-        buildChatComposer(function (text) {
-          sendMessage({
-            visitorName: state.visitorName,
-            phone: state.visitorPhone,
-            reason: state.reason || 'OTHER',
-            content: text,
+    function showIntakeComposer() {
+      stopPolling();
+      prepareIntakeView();
+      buildIntakeForm(function (data) {
+        if (!data.visitorName || !data.phone || !data.content) {
+          alert('Please complete all fields.');
+          return;
+        }
+        state.visitorName = data.visitorName;
+        state.visitorPhone = data.phone;
+        state.reason = data.reason;
+        saveState(state);
+        sendMessage(data)
+          .then(function (res) {
+            persistSession(res, data);
+            showChatComposer();
           })
-            .then(function (data) {
-              persistSession(data);
-              fetchMessages();
-            })
-            .catch(function (err) {
-              alert(userFacingError(err));
+          .catch(function (err) {
+            alert(userFacingError(err));
+          });
+      });
+    }
+
+    function showChatComposer() {
+      buildChatComposer(function (text) {
+        sendMessage({
+          visitorName: state.visitorName,
+          phone: state.visitorPhone,
+          reason: state.reason || 'OTHER',
+          content: text,
+        })
+          .then(function (data) {
+            persistSession(data, {
+              visitorName: state.visitorName,
+              phone: state.visitorPhone,
+              reason: state.reason,
             });
-        });
-        fetchMessages().then(startPolling);
-      } else {
-        buildIntakeForm(function (data) {
-          if (!data.visitorName || !data.phone || !data.content) {
-            alert('Please complete all fields.');
+            fetchMessages();
+          })
+          .catch(function (err) {
+            alert(userFacingError(err));
+          });
+      });
+      return fetchMessages()
+        .then(function () {
+          if (messagesEl && !messagesEl.children.length) maybeShowWelcome();
+        })
+        .then(startPolling);
+    }
+
+    function wireComposer() {
+      if (!canResumeChat(state)) {
+        if (hasSessionTokens(state)) {
+          clearSessionTokens(state);
+          saveState(state);
+        }
+        showIntakeComposer();
+        return;
+      }
+
+      fetch(messageApiUrl())
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (data.error || !data.conversationId) {
+            clearSessionTokens(state);
+            saveState(state);
+            showIntakeComposer();
             return;
           }
-          state.visitorName = data.visitorName;
-          state.visitorPhone = data.phone;
-          state.reason = data.reason;
+          state.conversationId = data.conversationId;
           saveState(state);
-          sendMessage(data)
-            .then(function (res) {
-              persistSession(res);
-              buildChatComposer(function (text) {
-                sendMessage({
-                  visitorName: state.visitorName,
-                  phone: state.visitorPhone,
-                  reason: state.reason || 'OTHER',
-                  content: text,
-                })
-                  .then(function (r) {
-                    persistSession(r);
-                    fetchMessages();
-                  })
-                  .catch(function (err) {
-                    alert(userFacingError(err));
-                  });
-              });
-              fetchMessages().then(startPolling);
-            })
-            .catch(function (err) {
-              alert(userFacingError(err));
-            });
+          return showChatComposer();
+        })
+        .catch(function () {
+          clearSessionTokens(state);
+          saveState(state);
+          showIntakeComposer();
         });
-      }
     }
 
     function mountStandalone() {
@@ -380,10 +460,6 @@
 
       panel.appendChild(header);
       messagesEl = el('div', 'kw-body');
-      if (config.welcomeMessage && !state.conversationId) {
-        var welcome = el('div', 'kw-msg staff', config.welcomeMessage);
-        messagesEl.appendChild(welcome);
-      }
       panel.appendChild(messagesEl);
 
       formEl = el('div', 'kw-footer');
@@ -398,7 +474,7 @@
 
     function mountEmbedded() {
       if (!container) return;
-      injectStyles(brandColor, 'kids018-webchat-embed-styles-v5');
+      injectStyles(brandColor, 'kids018-webchat-embed-styles-v6');
 
       container.innerHTML = '';
       container.style.flex = '1';
@@ -427,10 +503,6 @@
 
       scrollEl = el('div', 'kw-embed-scroll');
       messagesEl = el('div', 'kw-body');
-      if (config.welcomeMessage && !state.conversationId && !state.sessionToken) {
-        var welcome = el('div', 'kw-msg staff', config.welcomeMessage);
-        messagesEl.appendChild(welcome);
-      }
       scrollEl.appendChild(messagesEl);
       root.appendChild(scrollEl);
 
@@ -498,6 +570,11 @@
     _loaded: true,
     STORAGE_KEY: STORAGE_KEY,
     POLL_MS: POLL_MS,
+    clearStoredSession: function () {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (e) {}
+    },
     create: createController,
     loadScript: loadScript,
     mountStandalone: function (options) {

@@ -355,7 +355,7 @@
       return Promise.resolve(window.Kids018Webchat);
     }
     return new Promise(function (resolve, reject) {
-      var src = apiUrl('/webchat-core.js?v=5');
+      var src = apiUrl('/webchat-core.js?v=6');
       var existing = document.querySelector('script[src="' + src + '"]');
       if (existing) {
         if (window.Kids018Webchat) {
