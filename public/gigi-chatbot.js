@@ -355,7 +355,7 @@
       return Promise.resolve(window.Kids018Webchat);
     }
     return new Promise(function (resolve, reject) {
-      var src = apiUrl('/webchat-core.js?v=7');
+      var src = apiUrl('/webchat-core.js?v=8');
       var existing = document.querySelector('script[src="' + src + '"]');
       if (existing) {
         if (window.Kids018Webchat) {
@@ -580,6 +580,9 @@
     document.body.appendChild(launcher);
     document.body.appendChild(panel);
     console.log('[GIGI] Widget mounted. API base:', apiBase || '(none)');
+    console.log(
+      '[GIGI] Storage: gigi_chatbot = AI tab (sessionId always recreated on load); kids018_webchat = Messaging tab only',
+    );
   }
 
   function bootGigi() {

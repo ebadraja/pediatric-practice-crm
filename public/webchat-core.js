@@ -3,7 +3,7 @@
 
   var STORAGE_KEY = 'kids018_webchat';
   var POLL_MS = 2000;
-  var VERSION = '2026.06.21-intake-gate';
+  var VERSION = '2026.06.21-session-clarity';
 
   function loadState() {
     try {
@@ -84,7 +84,7 @@
   function injectStyles(color, styleId) {
     var id = styleId || 'kids018-webchat-styles';
     if (document.getElementById(id)) return;
-    ['kids018-webchat-embed-styles-v3', 'kids018-webchat-embed-styles-v4', 'kids018-webchat-embed-styles-v5', 'kids018-webchat-embed-styles-v6'].forEach(function (oldId) {
+    ['kids018-webchat-embed-styles-v3', 'kids018-webchat-embed-styles-v4', 'kids018-webchat-embed-styles-v5', 'kids018-webchat-embed-styles-v6', 'kids018-webchat-embed-styles-v7'].forEach(function (oldId) {
       var old = document.getElementById(oldId);
       if (old) old.remove();
     });
@@ -104,6 +104,9 @@
       '.kw-embed-root .kw-body{flex:none;overflow:visible;padding:0;background:transparent}' +
       '.kw-embed-root .kw-intake{padding-bottom:12px}' +
       '.kw-intake-title{font-size:14px;font-weight:600;color:#374151;margin:0 0 10px}' +
+      '.kw-session-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:#F3F0FF;border-bottom:1px solid #EDE9FE;font-size:12px;color:#5B21B6;flex-shrink:0}' +
+      '.kw-session-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.kw-session-reset{border:none;background:transparent;color:#7C3AED;font-size:12px;cursor:pointer;text-decoration:underline;padding:4px 0;font-family:inherit;flex-shrink:0}' +
       '.kw-footer.kw-footer-hidden,.kw-embed-root .kw-footer.kw-footer-hidden{display:none!important}' +
       '.kw-header{padding:14px 16px;color:#fff;font-weight:600;font-size:15px;flex-shrink:0}' +
       '.kw-msg{max-width:85%;margin:6px 0;padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.4;word-break:break-word}' +
@@ -261,6 +264,10 @@
 
     function prepareIntakeView() {
       if (messagesEl) messagesEl.innerHTML = '';
+      if (root) {
+        var sessionBar = root.querySelector('.kw-session-bar');
+        if (sessionBar) sessionBar.remove();
+      }
       if (scrollEl) {
         var oldIntake = scrollEl.querySelector('.kw-intake');
         if (oldIntake) oldIntake.remove();
@@ -347,6 +354,45 @@
       }
     }
 
+    function renderSessionBar() {
+      if (!root) return;
+      var existing = root.querySelector('.kw-session-bar');
+      if (existing) existing.remove();
+      if (!state.visitorName) return;
+
+      var bar = el('div', 'kw-session-bar');
+      bar.appendChild(el('span', 'kw-session-label', 'Messaging as ' + state.visitorName));
+      var reset = el('button', 'kw-session-reset', 'New conversation');
+      reset.type = 'button';
+      reset.onclick = function () {
+        resetConversation();
+      };
+      bar.appendChild(reset);
+
+      var header = root.querySelector('.kw-header');
+      if (header && header.parentNode) {
+        if (header.nextSibling) {
+          header.parentNode.insertBefore(bar, header.nextSibling);
+        } else {
+          header.parentNode.appendChild(bar);
+        }
+      }
+    }
+
+    function resetConversation() {
+      stopPolling();
+      resetVisitorSession(state);
+      delete state.visitorName;
+      delete state.visitorPhone;
+      delete state.reason;
+      saveState(state);
+      if (root) {
+        var sessionBar = root.querySelector('.kw-session-bar');
+        if (sessionBar) sessionBar.remove();
+      }
+      showIntakeComposer();
+    }
+
     function buildChatComposer(onSubmit) {
       formEl.innerHTML = '';
       if (scrollEl) {
@@ -402,6 +448,7 @@
     }
 
     function showChatComposer() {
+      renderSessionBar();
       buildChatComposer(function (text) {
         sendMessage({
           visitorName: state.visitorName,
@@ -506,7 +553,7 @@
 
     function mountEmbedded() {
       if (!container) return;
-      injectStyles(brandColor, 'kids018-webchat-embed-styles-v7');
+      injectStyles(brandColor, 'kids018-webchat-embed-styles-v8');
 
       container.innerHTML = '';
       container.style.flex = '1';
@@ -560,6 +607,14 @@
       refresh: fetchMessages,
       startPolling: startPolling,
       stopPolling: stopPolling,
+      resetConversation: resetConversation,
+      getState: function () {
+        return {
+          intakeCompleted: !!state.intakeCompleted,
+          hasSession: hasSessionTokens(state),
+          visitorName: state.visitorName || null,
+        };
+      },
       destroy: function () {
         destroyed = true;
         stopPolling();
@@ -608,6 +663,7 @@
         localStorage.removeItem(STORAGE_KEY);
       } catch (e) {}
     },
+    GIGI_STORAGE_KEY: 'gigi_chatbot',
     create: createController,
     loadScript: loadScript,
     mountStandalone: function (options) {
