@@ -150,7 +150,7 @@
       '.gigi-tab-panel{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#F9FAFB}' +
       '.gigi-tab-panel.gigi-tab-hidden{display:none!important}' +
       '.gigi-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:12px;background:#F9FAFB;scrollbar-gutter:stable}' +
-      '.gigi-messaging-panel{padding:0}' +
+      '.gigi-messaging-panel{padding:0;overflow:hidden}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
       '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
@@ -355,7 +355,7 @@
       return Promise.resolve(window.Kids018Webchat);
     }
     return new Promise(function (resolve, reject) {
-      var src = apiUrl('/webchat-core.js?v=4');
+      var src = apiUrl('/webchat-core.js?v=5');
       var existing = document.querySelector('script[src="' + src + '"]');
       if (existing) {
         if (window.Kids018Webchat) {
