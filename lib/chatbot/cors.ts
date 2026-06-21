@@ -25,20 +25,31 @@ function isOriginAllowed(origin: string | null): boolean {
   return false
 }
 
-export function chatbotCorsHeaders(origin: string | null): Record<string, string> {
+export function chatbotCorsHeaders(
+  origin: string | null,
+  options?: { credentials?: boolean },
+): Record<string, string> {
   if (!origin || !isOriginAllowed(origin)) {
     return {}
   }
-  return {
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
   }
+  if (options?.credentials) {
+    headers["Access-Control-Allow-Credentials"] = "true"
+  }
+  return headers
 }
 
-export function withChatbotCors(response: NextResponse, origin: string | null): NextResponse {
-  const headers = chatbotCorsHeaders(origin)
+export function withChatbotCors(
+  response: NextResponse,
+  origin: string | null,
+  options?: { credentials?: boolean },
+): NextResponse {
+  const headers = chatbotCorsHeaders(origin, options)
   for (const [key, value] of Object.entries(headers)) {
     response.headers.set(key, value)
   }
@@ -48,9 +59,10 @@ export function withChatbotCors(response: NextResponse, origin: string | null): 
 export function chatbotJsonResponse(
   body: unknown,
   origin: string | null,
-  init?: { status?: number }
+  init?: { status?: number },
+  options?: { credentials?: boolean },
 ): NextResponse {
-  return withChatbotCors(NextResponse.json(body, { status: init?.status ?? 200 }), origin)
+  return withChatbotCors(NextResponse.json(body, { status: init?.status ?? 200 }), origin, options)
 }
 
 export function handleChatbotPreflight(request: NextRequest): NextResponse | null {

@@ -15,8 +15,15 @@ import {
 import { normalizePhone, phonesMatch } from '@/lib/messaging/portalAuth'
 import { isWithinBusinessHours } from '@/lib/messaging/businessHours'
 import { notifyStaffNewMessage } from '@/lib/messaging/notifications'
+import {
+  chatbotJsonResponse,
+  handleChatbotPreflight,
+  withChatbotCors,
+} from '@/lib/chatbot/cors'
 
 export const dynamic = 'force-dynamic'
+
+const WEBCHAT_CORS = { credentials: true as const }
 
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 20
@@ -31,11 +38,17 @@ function isRateLimited(key: string): boolean {
   return false
 }
 
+export async function OPTIONS(request: NextRequest) {
+  return handleChatbotPreflight(request) ?? new NextResponse(null, { status: 405 })
+}
+
 export async function GET(request: NextRequest) {
+  const origin = request.headers.get('origin')
+
   try {
     const session = await resolveWebchatSession(request)
     if (!session) {
-      return NextResponse.json({ messages: [], conversationId: null })
+      return chatbotJsonResponse({ messages: [], conversationId: null }, origin, undefined, WEBCHAT_CORS)
     }
 
     const conversation = await prisma.conversation.findUnique({
@@ -46,7 +59,7 @@ export async function GET(request: NextRequest) {
     })
 
     if (!conversation) {
-      return NextResponse.json({ messages: [], conversationId: null })
+      return chatbotJsonResponse({ messages: [], conversationId: null }, origin, undefined, WEBCHAT_CORS)
     }
 
     const patientPhones = [
@@ -56,7 +69,7 @@ export async function GET(request: NextRequest) {
 
     const phoneMatches = patientPhones.some((p) => phonesMatch(p, session.phone))
     if (!phoneMatches) {
-      return NextResponse.json({ error: 'Session mismatch' }, { status: 403 })
+      return chatbotJsonResponse({ error: 'Session mismatch' }, origin, { status: 403 }, WEBCHAT_CORS)
     }
 
     const messages = await prisma.message.findMany({
@@ -68,42 +81,61 @@ export async function GET(request: NextRequest) {
       take: 200,
     })
 
-    return NextResponse.json({
-      conversationId: conversation.id,
-      messages: messages.map((m) => ({
-        id: m.id,
-        senderType: m.senderType,
-        channel: m.channel,
-        content: decrypt(m.content),
-        createdAt: m.createdAt,
-      })),
-    })
+    return chatbotJsonResponse(
+      {
+        conversationId: conversation.id,
+        messages: messages.map((m) => ({
+          id: m.id,
+          senderType: m.senderType,
+          channel: m.channel,
+          content: decrypt(m.content),
+          createdAt: m.createdAt,
+        })),
+      },
+      origin,
+      undefined,
+      WEBCHAT_CORS,
+    )
   } catch (error) {
     console.error('[GET /api/webchat/message]', error)
-    return NextResponse.json({ error: 'Failed to load messages' }, { status: 500 })
+    return chatbotJsonResponse({ error: 'Failed to load messages' }, origin, { status: 500 }, WEBCHAT_CORS)
   }
 }
 
 export async function POST(request: NextRequest) {
+  const origin = request.headers.get('origin')
+
   try {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
     if (isRateLimited(ip)) {
-      return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 })
+      return chatbotJsonResponse(
+        { error: 'Too many requests. Please wait a moment.' },
+        origin,
+        { status: 429 },
+        WEBCHAT_CORS,
+      )
     }
 
     const body = await request.json()
     const parsed = webchatMessageBody.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json(
+      return chatbotJsonResponse(
         { error: 'Invalid request', details: parsed.error.flatten() },
+        origin,
         { status: 400 },
+        WEBCHAT_CORS,
       )
     }
 
     const { visitorName, phone, reason, content } = parsed.data
     const phoneKey = normalizePhone(phone)
     if (isRateLimited(`phone:${phoneKey}`)) {
-      return NextResponse.json({ error: 'Too many messages from this number.' }, { status: 429 })
+      return chatbotJsonResponse(
+        { error: 'Too many messages from this number.' },
+        origin,
+        { status: 429 },
+        WEBCHAT_CORS,
+      )
     }
 
     const settings = await prisma.settings.findFirst({
@@ -111,7 +143,12 @@ export async function POST(request: NextRequest) {
     })
     const widget = (settings?.webChatWidgetConfig ?? {}) as { enabled?: boolean }
     if (widget.enabled === false) {
-      return NextResponse.json({ error: 'Messaging is temporarily unavailable.' }, { status: 503 })
+      return chatbotJsonResponse(
+        { error: 'Messaging is temporarily unavailable.' },
+        origin,
+        { status: 503 },
+        WEBCHAT_CORS,
+      )
     }
 
     const online = isWithinBusinessHours(settings?.messagingBusinessHours as never)
@@ -176,21 +213,25 @@ export async function POST(request: NextRequest) {
 
     const sessionToken = await setWebchatSessionCookie(conversation!.id, phoneKey)
 
-    return NextResponse.json(
-      {
-        id: message.id,
-        conversationId: conversation!.id,
-        sessionToken,
-        senderType: message.senderType,
-        channel: message.channel,
-        content,
-        createdAt: message.createdAt,
-        isOnline: online,
-      },
-      { status: 201 },
+    return withChatbotCors(
+      NextResponse.json(
+        {
+          id: message.id,
+          conversationId: conversation!.id,
+          sessionToken,
+          senderType: message.senderType,
+          channel: message.channel,
+          content,
+          createdAt: message.createdAt,
+          isOnline: online,
+        },
+        { status: 201 },
+      ),
+      origin,
+      WEBCHAT_CORS,
     )
   } catch (error) {
     console.error('[POST /api/webchat/message]', error)
-    return NextResponse.json({ error: 'Failed to send message' }, { status: 500 })
+    return chatbotJsonResponse({ error: 'Failed to send message' }, origin, { status: 500 }, WEBCHAT_CORS)
   }
 }
