@@ -41,8 +41,10 @@
   var mounted = false;
   var launcher, bubble, panel, messagesEl, inputEl, sendBtn, typingEl;
   var bookingActive = false;
-  var webchatCtrl = null;
-  var webchatMounting = false;
+
+  function portalUrl() {
+    return apiBase.replace(/\/$/, '') + '/portal';
+  }
 
   function apiUrl(path) {
     return apiBase.replace(/\/$/, '') + path;
@@ -110,13 +112,13 @@
   }
 
   function injectStyles() {
-    if (document.getElementById('gigi-chatbot-styles-v3')) return;
-    ['gigi-chatbot-styles-v1', 'gigi-chatbot-styles-v2'].forEach(function (id) {
+    if (document.getElementById('gigi-chatbot-styles-v4')) return;
+    ['gigi-chatbot-styles-v1', 'gigi-chatbot-styles-v2', 'gigi-chatbot-styles-v3'].forEach(function (id) {
       var old = document.getElementById(id);
       if (old) old.remove();
     });
     var style = document.createElement('style');
-    style.id = 'gigi-chatbot-styles-v3';
+    style.id = 'gigi-chatbot-styles-v4';
     style.textContent =
       '#gigi-launcher{position:fixed!important;bottom:24px;right:24px;z-index:2147483646!important;display:flex;flex-direction:row;align-items:center;gap:10px;pointer-events:none;font-family:Nunito,ui-rounded,"Segoe UI",system-ui,sans-serif}' +
       '.gigi-callout{pointer-events:none;position:relative;background:#fff;border-radius:20px;padding:14px 20px;box-shadow:0 6px 28px rgba(124,58,237,.18),0 2px 8px rgba(0,0,0,.06);animation:gigi-callout-float 3s ease-in-out infinite;transform-origin:center right}' +
@@ -150,7 +152,14 @@
       '.gigi-tab-panel{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#F9FAFB}' +
       '.gigi-tab-panel.gigi-tab-hidden{display:none!important}' +
       '.gigi-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:12px;background:#F9FAFB;scrollbar-gutter:stable}' +
-      '.gigi-messaging-panel{padding:0;overflow:hidden}' +
+      '.gigi-messaging-panel{padding:0;overflow:hidden;background:#F9FAFB}' +
+      '.gigi-portal-gateway{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px 24px;gap:12px}' +
+      '.gigi-portal-icon{width:56px;height:56px;border-radius:50%;background:#EDE9FE;color:#7C3AED;display:flex;align-items:center;justify-content:center;font-size:28px;line-height:1;margin-bottom:4px}' +
+      '.gigi-portal-title{margin:0;font-size:18px;font-weight:700;color:#1F2937}' +
+      '.gigi-portal-sub{margin:0;font-size:14px;line-height:1.5;color:#6B7280;max-width:280px}' +
+      '.gigi-portal-btn{margin-top:8px;width:100%;max-width:280px;min-height:48px;border:none;border-radius:12px;background:#7C3AED;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;padding:12px 16px}' +
+      '.gigi-portal-btn:hover{background:#6D28D9}' +
+      '.gigi-portal-phone{margin:8px 0 0;font-size:13px;color:#6B7280}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
       '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
@@ -350,89 +359,38 @@
       });
   }
 
-  function loadWebchatCore() {
-    if (window.Kids018Webchat && window.Kids018Webchat._loaded) {
-      return Promise.resolve(window.Kids018Webchat);
-    }
-    return new Promise(function (resolve, reject) {
-      var src = apiUrl('/webchat-core.js?v=8');
-      var existing = document.querySelector('script[src="' + src + '"]');
-      if (existing) {
-        if (window.Kids018Webchat) {
-          resolve(window.Kids018Webchat);
-        } else {
-          existing.addEventListener('load', function () {
-            resolve(window.Kids018Webchat);
-          });
-        }
-        return;
-      }
-      var s = document.createElement('script');
-      s.src = src;
-      s.async = true;
-      s.onload = function () {
-        resolve(window.Kids018Webchat);
-      };
-      s.onerror = function () {
-        reject(new Error('Failed to load webchat'));
-      };
-      document.head.appendChild(s);
-    });
-  }
-
-  function renderMessagingUnavailable(container, message) {
+  function renderMessagingPortalPanel(container) {
+    if (!container) return;
     container.innerHTML = '';
-    var box = el('div', 'gigi-locked-panel');
-    box.appendChild(el('h3', null, 'Secure Patient Messaging'));
-    box.appendChild(
+
+    var gateway = el('div', 'gigi-portal-gateway');
+
+    var iconWrap = el('div', 'gigi-portal-icon');
+    iconWrap.setAttribute('aria-hidden', 'true');
+    iconWrap.textContent = '🛡️';
+    gateway.appendChild(iconWrap);
+
+    gateway.appendChild(el('h3', 'gigi-portal-title', 'Secure Patient Messaging'));
+    gateway.appendChild(
       el(
         'p',
-        null,
-        message || 'Messaging is temporarily unavailable. Please call (253) 400-4479 or ask GIGI!',
+        'gigi-portal-sub',
+        'Message your care team securely. Your conversations are protected with phone verification.',
       ),
     );
-    container.appendChild(box);
-  }
 
-  function initMessagingTab(container) {
-    if (!apiBase) {
-      renderMessagingUnavailable(container, 'Chat is not configured (missing data-api-url on the script tag).');
-      return;
-    }
-    if (webchatCtrl) {
-      webchatCtrl.startPolling();
-      webchatCtrl.refresh();
-      return;
-    }
-    if (webchatMounting) return;
-    webchatMounting = true;
+    var openBtn = el('button', 'gigi-portal-btn', 'Open Secure Messaging');
+    openBtn.type = 'button';
+    openBtn.onclick = function () {
+      var url = apiBase ? portalUrl() : '';
+      if (!url) return;
+      window.open(url, '_blank', 'noopener,noreferrer');
+    };
+    gateway.appendChild(openBtn);
 
-    loadWebchatCore()
-      .then(function () {
-        return fetch(apiUrl('/api/webchat/init')).then(function (r) {
-          return r.json();
-        });
-      })
-      .then(function (config) {
-        webchatMounting = false;
-        if (config.enabled === false) {
-          renderMessagingUnavailable(
-            container,
-            config.offlineMessage || 'Messaging is temporarily unavailable. Please call (253) 400-4479 or ask GIGI!',
-          );
-          return;
-        }
-        webchatCtrl = window.Kids018Webchat.mountEmbedded(container, {
-          apiBase: apiBase,
-          config: config,
-          brandColor: '#7C3AED',
-        });
-      })
-      .catch(function (err) {
-        webchatMounting = false;
-        console.error('[GIGI] Messaging tab failed:', err);
-        renderMessagingUnavailable(container);
-      });
+    gateway.appendChild(el('p', 'gigi-portal-phone', 'Or call us at (253) 400-4479'));
+
+    container.appendChild(gateway);
   }
 
   function switchTab(tab) {
@@ -444,16 +402,12 @@
     var msgView = document.getElementById('gigi-tab-messaging');
     var footer = document.querySelector('.gigi-footer');
     if (tab === 'gigi') {
-      if (webchatCtrl) webchatCtrl.stopPolling();
       if (gigiView) gigiView.classList.remove('gigi-tab-hidden');
       if (msgView) msgView.classList.add('gigi-tab-hidden');
       if (footer) footer.style.display = '';
     } else {
       if (gigiView) gigiView.classList.add('gigi-tab-hidden');
-      if (msgView) {
-        msgView.classList.remove('gigi-tab-hidden');
-        initMessagingTab(msgView);
-      }
+      if (msgView) msgView.classList.remove('gigi-tab-hidden');
       if (footer) footer.style.display = 'none';
     }
   }
@@ -465,13 +419,6 @@
       bubble.classList.remove('has-unread');
       showGreetingIfNeeded();
       if (inputEl) inputEl.focus();
-      var activeMessaging = panel.querySelector('.gigi-tab.active[data-tab="messaging"]');
-      if (activeMessaging && webchatCtrl) {
-        webchatCtrl.startPolling();
-        webchatCtrl.refresh();
-      }
-    } else if (webchatCtrl) {
-      webchatCtrl.stopPolling();
     }
   }
 
@@ -559,6 +506,7 @@
 
     var msgView = el('div', 'gigi-tab-panel gigi-messaging-panel gigi-tab-hidden');
     msgView.id = 'gigi-tab-messaging';
+    renderMessagingPortalPanel(msgView);
     tabPanels.appendChild(msgView);
 
     panel.appendChild(tabPanels);
@@ -580,9 +528,7 @@
     document.body.appendChild(launcher);
     document.body.appendChild(panel);
     console.log('[GIGI] Widget mounted. API base:', apiBase || '(none)');
-    console.log(
-      '[GIGI] Storage: gigi_chatbot = AI tab (sessionId always recreated on load); kids018_webchat = Messaging tab only',
-    );
+    console.log('[GIGI] Messaging tab opens secure portal at:', apiBase ? portalUrl() : '(none)');
   }
 
   function bootGigi() {

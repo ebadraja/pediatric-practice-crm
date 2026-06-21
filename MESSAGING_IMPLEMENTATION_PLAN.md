@@ -28,8 +28,8 @@ This plan breaks the messaging module into **milestones** ordered by dependency.
 | Milestone | Status |
 |-----------|--------|
 | M0–M7 | **Complete** — Phase 1 web messaging foundation shipped |
-| M8 | **Blocked** — requires Twilio account + signed HIPAA BAA |
-| M9 | **Deferred** — SMS automations need M8 |
+| M8 | **Pending** — Twilio for notification-only SMS (OTP + portal links; no BAA required) |
+| M9 | **Deferred** — SMS notification automations need M8 |
 | M10 | **Complete** — unified timeline, integrations, dashboard KPIs |
 | M11+ | **Pending** — file exchange, broadcasts, advanced features |
 
@@ -206,28 +206,36 @@ M0  Prerequisites
 
 ## M5 — Web Chat Widget
 
-**Goal:** Embeddable website chat that feeds the unified inbox.
+**Goal:** ~~Embeddable website chat that feeds the unified inbox.~~ **Klara-aligned update (June 2026):** Production patient-facing messaging uses the **M4 patient portal** (`/portal`) — phone → SMS code → DOB → chat. The GIGI widget Messaging tab is a **portal gateway** (opens `/portal` in a new tab), not an embedded chat.
 
 **Scope:**
-- `public/webchat-widget.js` — single script tag embed (< 50KB gzipped target)
-- `app/api/webchat/init/route.ts` — widget config (branding, hours, welcome message from Settings)
-- `app/api/webchat/message/route.ts` — visitor send; creates or resumes conversation
-- Auto-match visitor to patient by phone number (`lib/messaging/patientMatcher.ts` or reuse hippatizer patterns)
-- Channel: `WEB_CHAT`; tag messages in CRM thread
-- Offline mode: outside business hours → capture message + set expectations
+- **Production surface:** Patient portal at `/portal`, linked from GIGI Messaging tab and SMS notification links
+- **GIGI Messaging tab:** Secure gateway panel → "Open Secure Messaging" → `/portal` (no embedded chat, no webchat API calls)
+- **Internal test tools only:** `public/webchat-widget.js`, `public/webchat-core.js`, `public/webchat-test.html` — for dev/QA, not patient-facing production
+- `app/api/webchat/init/route.ts` — widget config (retained for test widget)
+- `app/api/webchat/message/route.ts` — visitor send (retained for test widget)
+- Auto-match visitor to patient by phone number (`lib/messaging/patientMatcher.ts`)
+- Channel: `WEB_CHAT` for test widget; **PORTAL** for production patient messages
+- Offline mode: outside business hours → capture message + set expectations (test widget)
 
-**Files touched:** `public/webchat-widget.js`, `app/api/webchat/**`, `lib/messaging/patientMatcher.ts`, `lib/messaging/webchatSession.ts`, `lib/messaging/businessHours.ts`
+**Files touched:** `public/gigi-chatbot.js` (portal gateway), `public/webchat-widget.js` (test only), `app/api/webchat/**`, `lib/messaging/patientMatcher.ts`, `lib/messaging/webchatSession.ts`, `lib/messaging/businessHours.ts`
 
 ### Acceptance Criteria
 
-- [x] Widget loads on external HTML page via one `<script>` tag
-- [x] New visitor prompted for name, phone, reason before first message _(client gate: `intakeCompleted` in `kids018_webchat` localStorage; chat mode only after successful first POST)_
+- [x] GIGI Messaging tab shows secure gateway (not embedded chat)
+- [x] "Open Secure Messaging" opens `/portal` in new tab
+- [x] GIGI Messaging tab makes no API calls and creates no webchat localStorage keys
+- [x] `/portal` auto-redirects to `/portal/chat` when valid 30-day session exists
+- [x] First-time parent: GIGI tab → portal → phone → SMS code → DOB → chat
+- [x] Returning parent (within 30 days): GIGI tab → portal → auto-redirect → chat (2 clicks, no auth)
+- [x] Test widget loads on `webchat-test.html` via one `<script>` tag (internal QA only)
+- [x] Test widget: new visitor prompted for name, phone, reason before first message
 - [x] Visitor message creates conversation (or appends to existing by phone match)
-- [x] Message appears in CRM unified inbox with WEB_CHAT channel indicator
-- [x] Staff reply from CRM delivered to widget in real time while visitor is on page _(2s polling via M6)_
+- [x] Message appears in CRM unified inbox with channel indicator
+- [x] Staff reply delivered to portal in real time _(2s polling via M6)_
 - [x] Widget matches existing patient by phone when record exists
-- [x] Unknown phone creates conversation linked to unmatched state for staff to link/create patient _(placeholder patient with medical note)_
-- [x] Offline mode shows appropriate message outside configured business hours
+- [x] Unknown phone creates conversation linked to unmatched state for staff to link/create patient
+- [x] Offline mode shows appropriate message outside configured business hours (test widget)
 - [ ] Widget bundle < 50KB gzipped _(verify at deploy)_
 - [x] Basic rate limiting on widget message endpoint
 
@@ -293,7 +301,7 @@ M0  Prerequisites
 
 - [x] Staff accesses Messaging from sidebar and manages conversations end-to-end
 - [x] Patient uses magic link + DOB → sends/receives messages in portal
-- [x] Website visitor uses widget → staff sees message in inbox
+- [x] Website visitor opens GIGI Messaging tab → portal → staff sees message in inbox (Klara-aligned flow)
 - [x] Assignment, internal notes, templates, shared inboxes all functional
 - [x] Real-time delivery and notifications working
 - [x] No new external service dependencies required
@@ -302,43 +310,46 @@ M0  Prerequisites
 
 ## M8 — SMS via Twilio (Phase 2 Start)
 
-> **Prerequisite gate:** Do not start M8 until Twilio (or Telnyx) is provisioned **and** a HIPAA BAA is signed. Until then, all patient messaging stays on **portal + web chat** channels only.
+> **Klara-aligned update (June 2026):** SMS is **notification-only** — no PHI in SMS body. Twilio can be used **without a HIPAA BAA** for OTP codes, generic appointment reminders, and "new message" alerts with portal links. All clinical conversation content stays in the encrypted CRM, accessed via authenticated portal.
 
-**Goal:** Two-way SMS on a dedicated practice number.
+**Goal:** SMS notifications and portal OTP verification — not two-way SMS conversations with PHI.
 
 **Scope:**
-- `app/api/webhooks/twilio/route.ts` — inbound SMS + delivery status callbacks
-- `lib/messaging/smsProvider.ts` — Twilio send/receive abstraction
+- `app/api/webhooks/twilio/route.ts` — delivery status callbacks (optional inbound STOP/START only)
+- `lib/messaging/smsProvider.ts` — Twilio send abstraction
 - `services/messageQueue.ts` — BullMQ queue for outbound SMS (retry, rate limit)
 - `worker.ts` — register message queue processor alongside email worker
 - `SMSOptOut` model enforcement — STOP/START keyword handling (TCPA)
 - `Settings.smsProviderConfig` — Twilio credentials UI
-- Inbound SMS matched to patient by phone; unknown numbers create unmatched conversation
-- Rate limiting: max messages per patient per hour
+- **Portal OTP:** Replace dev SMS stub in `/api/portal/auth` with real Twilio send
+- **New message alerts:** "You have a new message from Kids 0-18 Pediatrics. Read it here: [portal-link]"
+- **Appointment reminders:** Generic, no PHI — e.g. "You have an appointment tomorrow. View details: [portal-link]"
+- Rate limiting: max OTP/notifications per phone per hour
 
-**Prerequisites:** Twilio account, HIPAA-eligible product, **BAA signed**
+**Prerequisites:** Twilio account (BAA **not required** for notification-only approach)
 
-**Files touched:** `app/api/webhooks/twilio/**`, `lib/messaging/smsProvider.ts`, `services/messageQueue.ts`, `worker.ts`, settings UI
+**Files touched:** `app/api/webhooks/twilio/**`, `lib/messaging/smsProvider.ts`, `services/messageQueue.ts`, `worker.ts`, `app/api/portal/auth/route.ts`, settings UI
 
 ### Acceptance Criteria
 
-- [ ] Practice SMS number provisioned and configured in Settings
-- [ ] Staff sends message from CRM → delivered to patient phone via SMS
-- [ ] Patient replies via SMS → appears in CRM conversation thread within 5 seconds (API)
+- [ ] Twilio configured in Settings for OTP + notifications
+- [ ] Portal OTP codes delivered via SMS (replaces dev stub)
+- [ ] New message notification SMS sent with portal link (no PHI in body)
+- [ ] Appointment reminder SMS is generic with portal link (no diagnosis/visit reason in SMS)
 - [ ] Delivery status tracked: QUEUED → SENT → DELIVERED / FAILED with reason
 - [ ] Patient texting STOP opts out; START re-subscribes; `SMSOptOut` + `Patient.smsOptOut` updated
 - [ ] Opted-out patients excluded from outbound SMS
 - [ ] SMS send failures queued for retry; graceful degradation when Twilio unavailable
-- [ ] No PHI in SMS body until BAA confirmed (or messages kept generic with portal link)
-- [ ] `externalMessageId` stores Twilio SID on `Message` records
+- [ ] **No PHI in any SMS body** (names tied to health info, diagnoses, visit reasons, clinical content)
+- [ ] `externalMessageId` stores Twilio SID on notification records where applicable
 
 ---
 
 ## M9 — Automated Messaging Workflows
 
-> **Without M8:** Implement only **PORTAL** channel automations (e.g. welcome message in conversation thread). Skip SMS triggers until Twilio + BAA.
+> **Klara-aligned update (June 2026):** Automated messaging sends **SMS notifications** (portal links, generic reminders) — not SMS conversations with PHI. In-portal automations (welcome message in thread) work without Twilio.
 
-**Goal:** Event-driven SMS/portal messages; coordinate with email engine.
+**Goal:** Event-driven portal messages + SMS notification triggers; coordinate with email engine.
 
 **Scope:**
 - `app/api/messaging/automation-rules/route.ts` — CRUD `MessagingAutomationRule`
@@ -347,21 +358,23 @@ M0  Prerequisites
 - `worker.ts` — run message scheduler
 - `services/emailScheduler.ts` — coordinate with email rules to prevent duplicate reminders
 - Idempotent execution: same event + patient + rule does not send twice
-- Optional: confirm/cancel/reschedule quick-reply handling on SMS
+- **SMS automations:** notification-only — reminders contain portal links, not appointment PHI in SMS body
+- Example SMS: "You have an appointment tomorrow. View details: [portal-link]"
 
 **Files touched:** `app/api/messaging/automation-rules/**`, `services/messageScheduler.ts`, `services/emailScheduler.ts`, `worker.ts`, settings UI
 
 ### Acceptance Criteria
 
-- [ ] Admin creates automation rule: trigger, delay, template, channel (SMS/portal/both)
-- [ ] Appointment reminder fires at configured offset before `Appointment.startTime`
+- [ ] Admin creates automation rule: trigger, delay, template, channel (portal notification / SMS notification)
+- [ ] Appointment reminder fires at configured offset; SMS version is generic with portal link only
 - [ ] No-show follow-up fires X hours after NO_SHOW status
-- [ ] New patient welcome message sends on patient record creation (when rule active)
+- [ ] New patient welcome message sends in portal thread (when rule active)
 - [ ] Intake form link auto-sent on booking for configured appointment types
 - [ ] Duplicate send prevented for same trigger event + appointment + patient
 - [ ] If email reminder already sent for same appointment, SMS reminder is skipped (coordination logic)
 - [ ] Inactive rules do not fire
 - [ ] Automation runs via worker cron without blocking Next.js request cycle
+- [ ] **No PHI in automated SMS bodies** — portal links only for sensitive content
 
 ---
 
@@ -478,10 +491,10 @@ M0  Prerequisites
 | M2 API | M3 UI, M4 portal API, M5 widget API |
 | M3 UI | M6 realtime (staff side), M7 templates |
 | M4 portal | M6 realtime (patient side), Phase 1 acceptance |
-| M5 widget | M6 realtime (widget side), Phase 1 acceptance |
+| M5 portal gateway + test widget | M6 realtime (portal + test widget), Phase 1 acceptance |
 | M6 realtime | Phase 1 acceptance |
 | M7 settings | Phase 1 complete |
-| M8 Twilio + BAA | M9 SMS automation, M12 SMS broadcasts |
+| M8 Twilio (notification-only) | M9 SMS notification automations, M12 SMS broadcasts |
 | M9 automation | M10 intake auto-send |
 | M10 integrations | Full timeline value |
 | M11 files | Phase 2 file acceptance |
@@ -529,3 +542,4 @@ M0  Prerequisites
 | 1.3 | 2026-06-14 | M7 templates, shared inboxes, settings tab — **Phase 1 complete** |
 | 1.4 | 2026-06-14 | InboxTabs: show all shared inboxes; Phase 2 path documented (M10 next without Twilio) |
 | 1.5 | 2026-06-14 | M10 unified timeline, Vapi/HIPPAtizer system messages, dashboard KPIs, form-link composer — **M10 complete**; M8/M9+ pending (Twilio/BAA) |
+| 1.6 | 2026-06-21 | **Klara-aligned architecture:** GIGI Messaging tab → portal gateway (not embedded webchat); `/portal` auto-redirect on valid session; M5/M8/M9 scope updated (portal = production surface; SMS = notification-only, no PHI) |
