@@ -41,6 +41,8 @@
   var mounted = false;
   var launcher, bubble, panel, messagesEl, inputEl, sendBtn, typingEl;
   var bookingActive = false;
+  var webchatCtrl = null;
+  var webchatMounting = false;
 
   function apiUrl(path) {
     return apiBase.replace(/\/$/, '') + path;
@@ -141,6 +143,7 @@
       '.gigi-tab{flex:1;padding:10px 8px;border:none;background:transparent;font-size:13px;font-weight:500;color:#6B7280;cursor:pointer;border-bottom:2px solid transparent}' +
       '.gigi-tab.active{color:#7C3AED;border-bottom-color:#7C3AED;background:#fff}' +
       '.gigi-body{flex:1;overflow:auto;padding:12px;background:#F9FAFB}' +
+      '.gigi-messaging-panel{display:flex!important;flex-direction:column!important;overflow:hidden!important;padding:0!important;background:#F9FAFB}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
       '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
@@ -340,6 +343,91 @@
       });
   }
 
+  function loadWebchatCore() {
+    if (window.Kids018Webchat && window.Kids018Webchat._loaded) {
+      return Promise.resolve(window.Kids018Webchat);
+    }
+    return new Promise(function (resolve, reject) {
+      var src = apiUrl('/webchat-core.js');
+      var existing = document.querySelector('script[src="' + src + '"]');
+      if (existing) {
+        if (window.Kids018Webchat) {
+          resolve(window.Kids018Webchat);
+        } else {
+          existing.addEventListener('load', function () {
+            resolve(window.Kids018Webchat);
+          });
+        }
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = function () {
+        resolve(window.Kids018Webchat);
+      };
+      s.onerror = function () {
+        reject(new Error('Failed to load webchat'));
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  function renderMessagingUnavailable(container, message) {
+    container.innerHTML = '';
+    var box = el('div', 'gigi-locked-panel');
+    box.appendChild(el('h3', null, 'Secure Patient Messaging'));
+    box.appendChild(
+      el(
+        'p',
+        null,
+        message || 'Messaging is temporarily unavailable. Please call (253) 400-4479 or ask GIGI!',
+      ),
+    );
+    container.appendChild(box);
+  }
+
+  function initMessagingTab(container) {
+    if (!apiBase) {
+      renderMessagingUnavailable(container, 'Chat is not configured (missing data-api-url on the script tag).');
+      return;
+    }
+    if (webchatCtrl) {
+      webchatCtrl.startPolling();
+      webchatCtrl.refresh();
+      return;
+    }
+    if (webchatMounting) return;
+    webchatMounting = true;
+
+    loadWebchatCore()
+      .then(function () {
+        return fetch(apiUrl('/api/webchat/init')).then(function (r) {
+          return r.json();
+        });
+      })
+      .then(function (config) {
+        webchatMounting = false;
+        if (config.enabled === false) {
+          renderMessagingUnavailable(
+            container,
+            config.offlineMessage || 'Messaging is temporarily unavailable. Please call (253) 400-4479 or ask GIGI!',
+          );
+          return;
+        }
+        webchatCtrl = window.Kids018Webchat.mountEmbedded(container, {
+          apiBase: apiBase,
+          config: config,
+          brandColor: '#7C3AED',
+        });
+      })
+      .catch(function (err) {
+        webchatMounting = false;
+        console.error('[GIGI] Messaging tab failed:', err);
+        renderMessagingUnavailable(container);
+      });
+  }
+
   function switchTab(tab) {
     var tabs = panel.querySelectorAll('.gigi-tab');
     tabs.forEach(function (t) {
@@ -349,21 +437,18 @@
     var msgView = document.getElementById('gigi-tab-messaging');
     var footer = document.querySelector('.gigi-footer');
     if (tab === 'gigi') {
+      if (webchatCtrl) webchatCtrl.stopPolling();
       if (gigiView) gigiView.style.display = '';
       if (msgView) msgView.style.display = 'none';
       if (footer) footer.style.display = '';
     } else {
       if (gigiView) gigiView.style.display = 'none';
-      if (msgView) { msgView.style.display = ''; msgView.innerHTML = ''; renderLockedTab(msgView); }
+      if (msgView) {
+        msgView.style.display = 'flex';
+        initMessagingTab(msgView);
+      }
       if (footer) footer.style.display = 'none';
     }
-  }
-
-  function renderLockedTab(container) {
-    var box = el('div', 'gigi-locked-panel');
-    box.appendChild(el('h3', null, '🔒 Secure Patient Messaging'));
-    box.appendChild(el('p', null, "Coming soon. For now, call (253) 400-4479 or ask GIGI!"));
-    container.appendChild(box);
   }
 
   function togglePanel() {
@@ -373,6 +458,13 @@
       bubble.classList.remove('has-unread');
       showGreetingIfNeeded();
       if (inputEl) inputEl.focus();
+      var activeMessaging = panel.querySelector('.gigi-tab.active[data-tab="messaging"]');
+      if (activeMessaging && webchatCtrl) {
+        webchatCtrl.startPolling();
+        webchatCtrl.refresh();
+      }
+    } else if (webchatCtrl) {
+      webchatCtrl.stopPolling();
     }
   }
 
@@ -441,7 +533,7 @@
     tabGigi.type = 'button';
     tabGigi.setAttribute('data-tab', 'gigi');
     tabGigi.onclick = function () { switchTab('gigi'); };
-    var tabMsg = el('button', 'gigi-tab', 'Messaging 🔒');
+    var tabMsg = el('button', 'gigi-tab', 'Messaging');
     tabMsg.type = 'button';
     tabMsg.setAttribute('data-tab', 'messaging');
     tabMsg.onclick = function () { switchTab('messaging'); };
@@ -453,7 +545,7 @@
     messagesEl.id = 'gigi-tab-gigi';
     panel.appendChild(messagesEl);
 
-    var msgView = el('div', 'gigi-body');
+    var msgView = el('div', 'gigi-body gigi-messaging-panel');
     msgView.id = 'gigi-tab-messaging';
     msgView.style.display = 'none';
     panel.appendChild(msgView);

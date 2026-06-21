@@ -14,7 +14,7 @@ function isPublicRoute(pathname: string): boolean {
   if (pathname.startsWith("/portal")) return true
   // Embeddable widget assets from /public — Webflow loads these without auth
   if (
-    /^\/(gigi-chatbot\.js|gigi-avatar\.png|webchat-widget\.js|webchat-test\.html|gigi-test\.html)$/.test(
+    /^\/(gigi-chatbot\.js|gigi-avatar\.png|webchat-widget\.js|webchat-core\.js|webchat-test\.html|gigi-test\.html)$/.test(
       pathname
     )
   ) {
