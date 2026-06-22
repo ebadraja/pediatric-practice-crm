@@ -23,6 +23,7 @@ const m = vi.hoisted(() => {
     emailCampaign:   { findUnique: vi.fn(), update: vi.fn() },
     user:            { findMany: vi.fn() },
     notification:    { create: vi.fn() },
+    settings:        { findFirst: vi.fn().mockResolvedValue(null) },
   }
 
   const mockResolveMergeTags = vi.fn()

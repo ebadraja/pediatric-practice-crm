@@ -1,5 +1,5 @@
 /**
- * Email Worker Process
+ * Email + SMS Worker Process
  * Run as a SEPARATE PM2 process alongside the Next.js app.
  *
  * Start manually:   npx tsx worker.ts
@@ -7,28 +7,31 @@
  *
  * This process:
  *   1. Connects to Redis
- *   2. Starts the BullMQ worker (processes email jobs)
+ *   2. Starts BullMQ workers (email + SMS jobs)
  *   3. Starts the 15-min cron scheduler (queues appointment reminders)
  *   4. Gracefully shuts down on SIGTERM / SIGINT
  */
 
 import 'dotenv/config'
 import IORedis from 'ioredis'
-import { startWorker, REDIS_URL } from './services/emailQueue'
-import { startEmailScheduler }    from './services/emailScheduler'
+import { startWorker as startEmailWorker, REDIS_URL } from './services/emailQueue'
+import { startSmsWorker } from './services/messageQueue'
+import { startEmailScheduler } from './services/emailScheduler'
 
-console.log('[worker] starting email worker process...')
+console.log('[worker] starting background worker process...')
 console.log(`[worker] Redis: ${REDIS_URL}`)
 console.log(`[worker] Email provider: ${process.env.SENDGRID_API_KEY ? 'SendGrid' : 'SMTP'}`)
+console.log(`[worker] SMS provider: ${process.env.TWILIO_ACCOUNT_SID ? 'Twilio' : 'not configured'}`)
 
 // Health-check connection (separate from BullMQ internals)
 const redisProbe = new IORedis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false })
 redisProbe.on('connect', () => console.log('[worker] Redis connected'))
-redisProbe.on('error',  (err: Error) => console.error('[worker] Redis error:', err.message))
+redisProbe.on('error', (err: Error) => console.error('[worker] Redis error:', err.message))
 
-// Start BullMQ worker
-const worker = startWorker()
-console.log('[worker] BullMQ worker started')
+// Start BullMQ workers
+const emailWorker = startEmailWorker()
+const smsWorker = startSmsWorker()
+console.log('[worker] BullMQ email + SMS workers started')
 
 // Start cron scheduler
 startEmailScheduler()
@@ -38,7 +41,7 @@ startEmailScheduler()
 async function shutdown(signal: string): Promise<void> {
   console.log(`[worker] received ${signal} — shutting down gracefully...`)
   try {
-    await worker.close()
+    await Promise.all([emailWorker.close(), smsWorker.close()])
     await redisProbe.quit()
     console.log('[worker] shutdown complete')
     process.exit(0)

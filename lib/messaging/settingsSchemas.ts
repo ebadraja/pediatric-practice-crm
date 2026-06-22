@@ -30,6 +30,13 @@ export const messagingSettingsBody = z.object({
     })
     .nullable()
     .optional(),
+  smsProviderConfig: z
+    .object({
+      sendNotificationOnStaffReply: z.boolean().optional(),
+      sendOtpCodes: z.boolean().optional(),
+    })
+    .nullable()
+    .optional(),
 })
 
 export const REASON_OPTIONS = messageReason.options

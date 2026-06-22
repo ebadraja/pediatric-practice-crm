@@ -13,6 +13,8 @@ import {
   verifySmsCodeForSession,
 } from '@/lib/messaging/portalAuth'
 import { portalAuthBody } from '@/lib/messaging/portalSchemas'
+import { getSmsProviderConfig } from '@/lib/messaging/smsSettings'
+import { queueSms } from '@/services/messageQueue'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,16 +44,33 @@ export async function POST(request: NextRequest) {
       const { rawToken, sessionId } = await createPendingPortalSession(patient.id, payload.phone)
       await attachSmsCodeToSession(sessionId, code)
 
-      // Phase 1: SMS stub — log code server-side; Twilio wired in M8
-      console.log(`[portal] verification code for ${patient.id}: ${code}`)
+      const smsConfig = await getSmsProviderConfig()
+      if (smsConfig.sendOtpCodes) {
+        try {
+          const jobId = await queueSms({
+            to: payload.phone,
+            body: `Your Kids 0-18 Pediatrics verification code is: ${code}`,
+            type: 'otp',
+            patientId: patient.id,
+          })
+          console.log(`[portal] OTP SMS queued patientId=${patient.id} jobId=${jobId}`)
+        } catch (smsErr) {
+          console.error('[portal] OTP SMS queue failed:', (smsErr as Error).message)
+          return NextResponse.json(
+            { error: 'Failed to send verification code. Please try again.' },
+            { status: 500 },
+          )
+        }
+      } else {
+        console.log(`[portal] OTP SMS disabled in settings patientId=${patient.id}`)
+      }
 
       const response: Record<string, string> = {
         sessionToken: rawToken,
         message: 'Verification code sent.',
       }
 
-      // Dev-only helper for testing without SMS
-      if (process.env.NODE_ENV === 'development') {
+      if (process.env.NODE_ENV === 'development' && !smsConfig.sendOtpCodes) {
         response.devCode = code
       }
 

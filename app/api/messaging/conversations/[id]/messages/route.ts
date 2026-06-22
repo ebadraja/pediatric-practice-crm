@@ -9,6 +9,7 @@ import {
   serializeMessage,
   STAFF_MESSAGE_DEFAULTS,
 } from '@/lib/messaging/serialize'
+import { notifyPatientOfNewMessage } from '@/lib/messaging/notifications-sms'
 
 export const dynamic = 'force-dynamic'
 
@@ -146,6 +147,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       })
 
       return created
+    })
+
+    void notifyPatientOfNewMessage({
+      patientId: conversation.patientId,
+      conversationId,
+      staffName: [staff.firstName, staff.lastName].filter(Boolean).join(' ') || undefined,
+    }).catch((err) => {
+      console.error('[sms] notifyPatientOfNewMessage failed:', (err as Error).message)
     })
 
     return NextResponse.json(serializeMessage(message), { status: 201 })

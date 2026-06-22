@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { Prisma } from '@/lib/generated/prisma/client'
 import prisma from '@/lib/prisma'
 import { messagingSettingsBody } from '@/lib/messaging/settingsSchemas'
+import { maskPhoneForDisplay, getTwilioFromNumber } from '@/lib/messaging/smsProvider'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,8 +23,11 @@ export async function GET() {
         defaultRoutingRules: true,
         webChatWidgetConfig: true,
         portalConfig: true,
+        smsProviderConfig: true,
       },
     })
+
+    const fromNumber = getTwilioFromNumber()
 
     return NextResponse.json({
       messagingEnabled: settings?.messagingEnabled ?? false,
@@ -31,6 +35,9 @@ export async function GET() {
       defaultRoutingRules: settings?.defaultRoutingRules ?? null,
       webChatWidgetConfig: settings?.webChatWidgetConfig ?? null,
       portalConfig: settings?.portalConfig ?? null,
+      smsProviderConfig: settings?.smsProviderConfig ?? null,
+      smsProvider: fromNumber ? 'Twilio' : null,
+      smsNumberMasked: fromNumber ? maskPhoneForDisplay(fromNumber) : null,
     })
   } catch (error) {
     console.error('[GET /api/settings/messaging]', error)
@@ -72,6 +79,7 @@ export async function PUT(request: NextRequest) {
         defaultRoutingRules: json(payload.defaultRoutingRules),
         webChatWidgetConfig: json(payload.webChatWidgetConfig),
         portalConfig: json(payload.portalConfig),
+        smsProviderConfig: json(payload.smsProviderConfig),
       },
       update: {
         ...(payload.messagingEnabled !== undefined
@@ -89,6 +97,9 @@ export async function PUT(request: NextRequest) {
         ...(payload.portalConfig !== undefined
           ? { portalConfig: json(payload.portalConfig) }
           : {}),
+        ...(payload.smsProviderConfig !== undefined
+          ? { smsProviderConfig: json(payload.smsProviderConfig) }
+          : {}),
       },
       select: {
         messagingEnabled: true,
@@ -96,6 +107,7 @@ export async function PUT(request: NextRequest) {
         defaultRoutingRules: true,
         webChatWidgetConfig: true,
         portalConfig: true,
+        smsProviderConfig: true,
       },
     })
 

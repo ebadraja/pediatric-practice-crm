@@ -49,6 +49,11 @@ export function MessagingSettingsTab() {
   const [portalBaseUrl, setPortalBaseUrl] = useState('')
   const [routingRules, setRoutingRules] = useState<Record<string, string>>(DEFAULT_ROUTING)
 
+  const [smsProvider, setSmsProvider] = useState<string | null>(null)
+  const [smsNumberMasked, setSmsNumberMasked] = useState<string | null>(null)
+  const [sendNotificationOnStaffReply, setSendNotificationOnStaffReply] = useState(true)
+  const [sendOtpCodes, setSendOtpCodes] = useState(true)
+
   const [templates, setTemplates] = useState<MessageTemplateSummary[]>([])
   const [inboxes, setInboxes] = useState<SharedInboxSummary[]>([])
   const [newTemplate, setNewTemplate] = useState({ name: '', category: 'General', body: '' })
@@ -73,6 +78,14 @@ export function MessagingSettingsTab() {
         const portal = (s.portalConfig ?? {}) as { baseUrl?: string }
         setPortalBaseUrl(portal.baseUrl ?? '')
         setRoutingRules({ ...DEFAULT_ROUTING, ...(s.defaultRoutingRules ?? {}) })
+        setSmsProvider(s.smsProvider ?? null)
+        setSmsNumberMasked(s.smsNumberMasked ?? null)
+        const smsCfg = (s.smsProviderConfig ?? {}) as {
+          sendNotificationOnStaffReply?: boolean
+          sendOtpCodes?: boolean
+        }
+        setSendNotificationOnStaffReply(smsCfg.sendNotificationOnStaffReply ?? true)
+        setSendOtpCodes(smsCfg.sendOtpCodes ?? true)
       }
 
       if (templatesRes.ok) {
@@ -112,6 +125,10 @@ export function MessagingSettingsTab() {
             position: 'bottom-right',
           },
           portalConfig: portalBaseUrl ? { baseUrl: portalBaseUrl } : null,
+          smsProviderConfig: {
+            sendNotificationOnStaffReply,
+            sendOtpCodes,
+          },
         }),
       })
       if (!res.ok) throw new Error('Save failed')
@@ -267,6 +284,59 @@ export function MessagingSettingsTab() {
               {saving ? 'Saving...' : 'Save Messaging Settings'}
             </Button>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="dark:bg-slate-900 dark:border-slate-700">
+        <CardHeader>
+          <CardTitle className="dark:text-slate-50">SMS (Twilio)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">SMS Provider</span>
+              <span className="text-slate-900 dark:text-slate-100 font-medium">
+                {smsProvider ?? 'Not configured'}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">SMS Number</span>
+              <span className="text-slate-900 dark:text-slate-100 font-medium font-mono">
+                {smsNumberMasked ?? '—'}
+              </span>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sendNotificationOnStaffReply}
+              onChange={(e) => setSendNotificationOnStaffReply(e.target.checked)}
+              disabled={!isAdmin}
+              className="h-4 w-4 rounded"
+            />
+            <span className="text-sm text-slate-700 dark:text-slate-300">
+              Send SMS notifications when staff replies
+            </span>
+          </label>
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sendOtpCodes}
+              onChange={(e) => setSendOtpCodes(e.target.checked)}
+              disabled={!isAdmin}
+              className="h-4 w-4 rounded"
+            />
+            <span className="text-sm text-slate-700 dark:text-slate-300">
+              Send SMS for portal verification codes
+            </span>
+          </label>
+
+          <p className="text-xs text-slate-500">
+            SMS is notification-only — no patient health information is sent in text messages.
+            Twilio credentials are configured via server environment variables.
+          </p>
         </CardContent>
       </Card>
 
