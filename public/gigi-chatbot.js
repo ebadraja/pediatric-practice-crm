@@ -112,13 +112,13 @@
   }
 
   function injectStyles() {
-    if (document.getElementById('gigi-chatbot-styles-v5')) return;
-    ['gigi-chatbot-styles-v1', 'gigi-chatbot-styles-v2', 'gigi-chatbot-styles-v3', 'gigi-chatbot-styles-v4'].forEach(function (id) {
+    if (document.getElementById('gigi-chatbot-styles-v6')) return;
+    ['gigi-chatbot-styles-v1', 'gigi-chatbot-styles-v2', 'gigi-chatbot-styles-v3', 'gigi-chatbot-styles-v4', 'gigi-chatbot-styles-v5'].forEach(function (id) {
       var old = document.getElementById(id);
       if (old) old.remove();
     });
     var style = document.createElement('style');
-    style.id = 'gigi-chatbot-styles-v5';
+    style.id = 'gigi-chatbot-styles-v6';
     style.textContent =
       '#gigi-launcher{position:fixed!important;bottom:24px;right:24px;z-index:2147483646!important;display:flex;flex-direction:row;align-items:center;gap:10px;pointer-events:none;font-family:Nunito,ui-rounded,"Segoe UI",system-ui,sans-serif}' +
       '.gigi-callout{pointer-events:none;position:relative;background:#fff;border-radius:20px;padding:14px 20px;box-shadow:0 6px 28px rgba(124,58,237,.18),0 2px 8px rgba(0,0,0,.06);animation:gigi-callout-float 3s ease-in-out infinite;transform-origin:center right}' +
@@ -152,6 +152,7 @@
       '.gigi-tab-panel{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#F9FAFB}' +
       '.gigi-tab-panel.gigi-tab-hidden{display:none!important}' +
       '.gigi-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:12px;background:#F9FAFB;scrollbar-gutter:stable}' +
+      '.gigi-beta-note{flex-shrink:0;margin:0;padding:8px 12px 10px;font-size:11px;line-height:1.45;text-align:center;color:#9CA3AF;background:#F9FAFB;border-top:1px solid #EDE9FE}' +
       '.gigi-messaging-panel{padding:0;overflow:hidden;background:#F9FAFB}' +
       '.gigi-portal-gateway{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px 24px;gap:12px}' +
       '.gigi-portal-icon{width:56px;height:56px;border-radius:50%;background:#EDE9FE;color:#7C3AED;display:flex;align-items:center;justify-content:center;font-size:28px;line-height:1;margin-bottom:4px}' +
@@ -511,6 +512,12 @@
     messagesEl = el('div', 'gigi-scroll');
     messagesEl.id = 'gigi-thread';
     gigiTab.appendChild(messagesEl);
+    var betaNote = el(
+      'p',
+      'gigi-beta-note',
+      'GIGI is in beta and still learning — please verify important details with our care team.'
+    );
+    gigiTab.appendChild(betaNote);
     tabPanels.appendChild(gigiTab);
 
     var msgView = el('div', 'gigi-tab-panel gigi-messaging-panel gigi-tab-hidden');

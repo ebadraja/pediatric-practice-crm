@@ -131,11 +131,21 @@ export function PortalChat() {
                 className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${
                   isPatient
                     ? 'bg-blue-600 text-white rounded-br-md'
-                    : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-bl-md'
+                    : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-bl-md'
                 }`}
               >
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                <p className={`text-[10px] mt-1 ${isPatient ? 'text-blue-100' : 'text-slate-400'}`}>
+                <p
+                  className={`whitespace-pre-wrap break-words ${
+                    isPatient ? 'text-white' : 'text-slate-900 dark:text-slate-100'
+                  }`}
+                >
+                  {msg.content}
+                </p>
+                <p
+                  className={`text-[10px] mt-1 ${
+                    isPatient ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
                   {format(new Date(msg.createdAt), 'h:mm a')}
                 </p>
               </div>
