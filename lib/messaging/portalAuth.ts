@@ -75,7 +75,7 @@ export async function findPatientByPhone(phone: string) {
 }
 
 type PendingMeta = {
-  step: 'awaiting_code' | 'awaiting_dob'
+  step: 'awaiting_code' | 'awaiting_dob' | 'magic_link'
   smsCodeHash?: string
 }
 
@@ -160,10 +160,25 @@ export async function createMagicLinkSession(patientId: string, phoneNumber: str
       phoneNumber: normalizePhone(phoneNumber),
       token: hashPortalToken(rawToken),
       expiresAt: new Date(Date.now() + SESSION_MS),
-      deviceFingerprint: JSON.stringify({ step: 'awaiting_dob' as const }),
+      deviceFingerprint: JSON.stringify({ step: 'magic_link' as const }),
     },
   })
   return rawToken
+}
+
+/** True when patient is mid OTP login (code sent, not yet verified). */
+export async function hasPendingOtpSession(patientId: string): Promise<boolean> {
+  const sessions = await prisma.patientPortalSession.findMany({
+    where: {
+      patientId,
+      verifiedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    select: { deviceFingerprint: true },
+    take: 10,
+  })
+
+  return sessions.some((s) => parsePendingMeta(s.deviceFingerprint)?.step === 'awaiting_code')
 }
 
 export async function setPortalSessionCookie(rawToken: string) {

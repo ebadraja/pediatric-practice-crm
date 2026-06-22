@@ -10,10 +10,12 @@ import {
   getPortalSessionByRawToken,
   isSameDateOfBirth,
   setPortalSessionCookie,
+  parsePendingMeta,
   verifySmsCodeForSession,
 } from '@/lib/messaging/portalAuth'
 import { portalAuthBody } from '@/lib/messaging/portalSchemas'
 import { getSmsProviderConfig } from '@/lib/messaging/smsSettings'
+import { formatPhoneE164 } from '@/lib/messaging/smsProvider'
 import { queueSms } from '@/services/messageQueue'
 
 export const dynamic = 'force-dynamic'
@@ -46,9 +48,16 @@ export async function POST(request: NextRequest) {
 
       const smsConfig = await getSmsProviderConfig()
       if (smsConfig.sendOtpCodes) {
+        let phoneE164: string
+        try {
+          phoneE164 = formatPhoneE164(payload.phone)
+        } catch {
+          return NextResponse.json({ error: 'Invalid phone number' }, { status: 400 })
+        }
+
         try {
           const jobId = await queueSms({
-            to: payload.phone,
+            to: phoneE164,
             body: `Your Kids 0-18 Pediatrics verification code is: ${code}`,
             type: 'otp',
             patientId: patient.id,
@@ -123,6 +132,11 @@ export async function POST(request: NextRequest) {
     if (payload.action === 'magic_link_exchange') {
       const session = await getPortalSessionByRawToken(payload.token)
       if (!session) {
+        return NextResponse.json({ error: 'Invalid or expired link' }, { status: 401 })
+      }
+
+      const meta = parsePendingMeta(session.deviceFingerprint)
+      if (meta?.step === 'awaiting_code') {
         return NextResponse.json({ error: 'Invalid or expired link' }, { status: 401 })
       }
 

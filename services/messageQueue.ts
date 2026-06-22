@@ -78,11 +78,20 @@ export async function markNotificationSent(patientId: string): Promise<void> {
 export async function processSmsJob(job: Job<SmsJobData>): Promise<void> {
   const { to, body, type, patientId } = job.data
 
-  if (type === 'notification' && patientId) {
-    const recentlySent = await wasNotificationRecentlySent(patientId)
-    if (recentlySent) {
-      console.log(`[sms-queue] skipped patientId=${patientId} reason=rate_limited`)
+  if (type === 'notification') {
+    if (body.toLowerCase().includes('verification code')) {
+      console.error(
+        `[sms-queue] blocked notification job=${job.id} patientId=${patientId ?? 'n/a'} — body looks like OTP`,
+      )
       return
+    }
+
+    if (patientId) {
+      const recentlySent = await wasNotificationRecentlySent(patientId)
+      if (recentlySent) {
+        console.log(`[sms-queue] skipped patientId=${patientId} reason=rate_limited`)
+        return
+      }
     }
   }
 
@@ -131,7 +140,15 @@ export function startSmsWorker(): Worker<SmsJobData> {
 }
 
 export async function queueSms(data: SmsJobData): Promise<string | undefined> {
+  const jobId =
+    data.type === 'otp' && data.patientId
+      ? `otp-${data.patientId}`
+      : data.type === 'notification' && data.patientId && data.conversationId
+        ? `notif-${data.patientId}-${data.conversationId}`
+        : undefined
+
   const job = await smsQueue.add(`sms-${data.type}`, data, {
+    jobId,
     attempts: 3,
     backoff: { type: 'custom', delay: 0 },
   })

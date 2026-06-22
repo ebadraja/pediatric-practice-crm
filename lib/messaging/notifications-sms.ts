@@ -1,20 +1,31 @@
 import prisma from '@/lib/prisma'
-import { findPatientByPhone, createMagicLinkSession } from '@/lib/messaging/portalAuth'
+import {
+  findPatientByPhone,
+  createMagicLinkSession,
+  hasPendingOtpSession,
+} from '@/lib/messaging/portalAuth'
+import { formatPhoneE164 } from '@/lib/messaging/smsProvider'
 import { getSmsProviderConfig } from '@/lib/messaging/smsSettings'
 import { queueSms } from '@/services/messageQueue'
 
 const ACTIVE_SESSION_MS = 5 * 60 * 1000
 
+function resolvePortalSiteBase(portalConfig: { baseUrl?: string } | null): string {
+  let base =
+    portalConfig?.baseUrl?.replace(/\/$/, '') ??
+    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ??
+    'https://srv1217658.hstgr.cloud'
+
+  // portalConfig.baseUrl may already end with /portal — avoid /portal/portal/chat/…
+  base = base.replace(/\/portal$/, '')
+  return base
+}
+
 async function getPortalBaseUrl(): Promise<string> {
   const settings = await prisma.settings.findFirst({
     select: { portalConfig: true },
   })
-  const portalConfig = (settings?.portalConfig ?? {}) as { baseUrl?: string }
-  return (
-    portalConfig.baseUrl?.replace(/\/$/, '') ??
-    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ??
-    'https://srv1217658.hstgr.cloud'
-  )
+  return resolvePortalSiteBase((settings?.portalConfig ?? {}) as { baseUrl?: string })
 }
 
 async function isPatientActiveInPortal(patientId: string): Promise<boolean> {
@@ -47,15 +58,28 @@ async function isSmsOptedOut(patientId: string): Promise<boolean> {
   return optOut !== null
 }
 
-function resolvePatientPhone(patient: {
-  phone: string | null
-  parentPhone: string | null
-}): string | null {
-  return patient.phone ?? patient.parentPhone ?? null
+/**
+ * Most recent portal-verified phone for this patient (OTP + DOB completed).
+ * Returns null when no active verified session exists — no consented SMS destination.
+ */
+async function getVerifiedPortalPhone(patientId: string): Promise<string | null> {
+  const session = await prisma.patientPortalSession.findFirst({
+    where: {
+      patientId,
+      verifiedAt: { not: null },
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { verifiedAt: 'desc' },
+    select: { phoneNumber: true },
+  })
+
+  return session?.phoneNumber ?? null
 }
 
 /**
  * Send a generic SMS notification when staff replies (no PHI in body).
+ * Never queues OTP — only the "new message" notification with a magic link.
+ * SMS goes only to a portal-verified parent/guardian phone (PatientPortalSession).
  */
 export async function notifyPatientOfNewMessage({
   patientId,
@@ -70,15 +94,6 @@ export async function notifyPatientOfNewMessage({
     return
   }
 
-  const patient = await prisma.patient.findUnique({
-    where: { id: patientId },
-    select: { phone: true, parentPhone: true },
-  })
-  if (!patient) return
-
-  const phone = resolvePatientPhone(patient)
-  if (!phone) return
-
   if (await isSmsOptedOut(patientId)) {
     return
   }
@@ -87,16 +102,34 @@ export async function notifyPatientOfNewMessage({
     return
   }
 
-  const rawToken = await createMagicLinkSession(patientId, phone)
+  // Patient mid OTP login — don't send a second SMS (avoids OTP + notification overlap)
+  if (await hasPendingOtpSession(patientId)) {
+    return
+  }
+
+  const verifiedPhone = await getVerifiedPortalPhone(patientId)
+  if (!verifiedPhone) {
+    return
+  }
+
+  let phoneE164: string
+  try {
+    phoneE164 = formatPhoneE164(verifiedPhone)
+  } catch {
+    console.error(`[sms] invalid verified portal phone patientId=${patientId}`)
+    return
+  }
+
+  const rawToken = await createMagicLinkSession(patientId, phoneE164)
   const portalBase = await getPortalBaseUrl()
   const link = `${portalBase}/portal/chat/${rawToken}`
 
-  const body =
+  const smsBody =
     `You have a new message from Kids 0-18 Pediatrics. Read it here: ${link}`
 
   await queueSms({
-    to: phone,
-    body,
+    to: phoneE164,
+    body: smsBody,
     type: 'notification',
     patientId,
     conversationId,

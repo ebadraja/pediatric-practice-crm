@@ -104,6 +104,17 @@ describe('lib/messaging/smsProvider', () => {
       expect(formatPhoneE164('1-253-400-4479')).toBe('+12534004479')
     })
 
+    it('normalizes international numbers longer than 11 digits', () => {
+      expect(formatPhoneE164('923041102372')).toBe('+923041102372')
+      expect(formatPhoneE164('+923041102372')).toBe('+923041102372')
+    })
+
+    it('does not treat 12-digit international numbers as US', () => {
+      const result = formatPhoneE164('923041102372')
+      expect(result).not.toBe('+1923041102372')
+      expect(result).not.toBe('+19230411023')
+    })
+
     it('throws on empty input', () => {
       expect(() => formatPhoneE164('')).toThrow('Invalid phone number')
     })
@@ -291,6 +302,24 @@ describe('SMS notification rate limiting', () => {
     expect(m.mockMessagesCreate).toHaveBeenCalled()
     await markNotificationSent('patient-2')
     expect(m.mockRedisSet).toHaveBeenCalled()
+  })
+
+  it('blocks notification jobs that contain OTP text', async () => {
+    m.mockRedisExists.mockResolvedValue(0)
+    m.mockMessagesCreate.mockResolvedValue({ sid: 'SM000' })
+    setTwilioClientForTests({ messages: { create: m.mockMessagesCreate } })
+
+    await processSmsJob({
+      id: 'job-bad',
+      data: {
+        to: '2534004479',
+        body: 'Your Kids 0-18 Pediatrics verification code is: 123456',
+        type: 'notification',
+        patientId: 'patient-1',
+      },
+    } as never)
+
+    expect(m.mockMessagesCreate).not.toHaveBeenCalled()
   })
 
   it('does not rate-limit OTP messages', async () => {

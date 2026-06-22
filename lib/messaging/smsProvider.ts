@@ -45,15 +45,20 @@ export function setTwilioClientForTests(client: TwilioClientLike | null): void {
 }
 
 /**
- * Normalize any US phone format to E.164 (+1XXXXXXXXXX).
+ * Normalize a phone number to E.164.
+ * - Already has + prefix → keep country digits
+ * - 10 digits → US (+1)
+ * - 11 digits starting with 1 → US (+1…)
+ * - Longer than 11 digits → international (+digits only)
  */
 export function formatPhoneE164(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
+  const trimmed = phone.trim()
+  const digits = trimmed.replace(/\D/g, '')
   if (!digits) {
     throw new Error('Invalid phone number')
   }
 
-  if (phone.trim().startsWith('+')) {
+  if (trimmed.startsWith('+')) {
     return `+${digits}`
   }
 
@@ -65,7 +70,12 @@ export function formatPhoneE164(phone: string): string {
     return `+${digits}`
   }
 
-  if (digits.length > 10) {
+  if (digits.length > 11) {
+    return `+${digits}`
+  }
+
+  // 11-digit numbers not starting with 1 (e.g. some country codes without +)
+  if (digits.length === 11) {
     return `+${digits}`
   }
 
