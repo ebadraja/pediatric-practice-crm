@@ -20,6 +20,23 @@ export interface MessageTemplateSummary {
   usageCount: number
 }
 
+export interface AutomationRuleSummary {
+  id: string
+  name: string
+  triggerEvent: string
+  delayMinutes: number
+  channel: string
+  conditions: unknown
+  isActive: boolean
+  template: {
+    id: string
+    name: string
+    body: string
+    category: string
+    channel: string
+  }
+}
+
 export type ConversationStatus = 'OPEN' | 'AWAITING_REPLY' | 'RESOLVED' | 'ARCHIVED'
 
 export type MessageChannel = 'SMS' | 'WEB_CHAT' | 'PORTAL' | 'SYSTEM'

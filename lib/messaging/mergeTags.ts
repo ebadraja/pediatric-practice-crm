@@ -45,10 +45,12 @@ export async function resolveMessagingMergeTags(
 
   if (!patient) return body
 
-  const portalBase =
-    (settings?.portalConfig as { baseUrl?: string } | null)?.baseUrl ??
-    process.env.NEXTAUTH_URL ??
+  const portalConfig = (settings?.portalConfig as { baseUrl?: string } | null)?.baseUrl
+  let portalBase =
+    portalConfig?.replace(/\/$/, '') ??
+    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ??
     'http://localhost:3000'
+  portalBase = portalBase.replace(/\/portal$/, '')
 
   const tags: Record<string, string> = {
     'patient.firstName': patient.firstName,

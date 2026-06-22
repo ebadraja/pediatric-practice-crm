@@ -32,6 +32,14 @@ vi.mock('@/lib/crypto', () => ({
   decrypt: vi.fn((v: string) => v.replace('enc:', '')),
 }))
 
+vi.mock('@/lib/messaging/automationCoordination', () => ({
+  emailOffsetToTriggerKey: (event: string, hours: number) =>
+    event === 'X_DAYS_BEFORE'
+      ? `APPOINTMENT_REMINDER:${Math.abs(hours) * 60}`
+      : `POST_VISIT:${Math.abs(hours) * 60}`,
+  wasSmsSentForTriggerKey: vi.fn().mockResolvedValue(false),
+}))
+
 // ── Import after mocks ────────────────────────────────────────────────────────
 
 import { runSchedulerOnce } from '@/services/emailScheduler'

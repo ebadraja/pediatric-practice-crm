@@ -17,6 +17,7 @@ import IORedis from 'ioredis'
 import { startWorker as startEmailWorker, REDIS_URL } from './services/emailQueue'
 import { startSmsWorker } from './services/messageQueue'
 import { startEmailScheduler } from './services/emailScheduler'
+import { startMessageScheduler } from './services/messageScheduler'
 
 console.log('[worker] starting background worker process...')
 console.log(`[worker] Redis: ${REDIS_URL}`)
@@ -33,8 +34,9 @@ const emailWorker = startEmailWorker()
 const smsWorker = startSmsWorker()
 console.log('[worker] BullMQ email + SMS workers started')
 
-// Start cron scheduler
+// Start cron schedulers
 startEmailScheduler()
+startMessageScheduler()
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 

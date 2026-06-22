@@ -76,3 +76,48 @@ export const createSharedInboxBody = z.object({
 })
 
 export const updateSharedInboxBody = createSharedInboxBody.partial()
+
+const messagingTriggerEvent = z.enum([
+  'APPOINTMENT_REMINDER',
+  'APPOINTMENT_CONFIRMED',
+  'APPOINTMENT_CANCELLED',
+  'NO_SHOW',
+  'POST_VISIT',
+  'NEW_PATIENT',
+  'INTAKE_FORM_DUE',
+  'CUSTOM',
+])
+
+export const createAutomationRuleBody = z.object({
+  name: z.string().min(1).max(120),
+  triggerEvent: messagingTriggerEvent,
+  delayMinutes: z.number().int().min(0).max(60 * 24 * 365),
+  channel: z.enum(['SMS', 'BOTH']).default('SMS'),
+  isActive: z.boolean().default(true),
+  templateBody: z.string().min(1).max(10000),
+  conditions: z.record(z.string(), z.unknown()).optional(),
+})
+
+export const updateAutomationRuleBody = z.object({
+  name: z.string().min(1).max(120).optional(),
+  triggerEvent: messagingTriggerEvent.optional(),
+  delayMinutes: z.number().int().min(0).max(60 * 24 * 365).optional(),
+  channel: z.enum(['SMS', 'BOTH']).optional(),
+  isActive: z.boolean().optional(),
+  templateBody: z.string().min(1).max(10000).optional(),
+  conditions: z.record(z.string(), z.unknown()).nullable().optional(),
+})
+
+export const AUTOMATION_TRIGGER_LABELS: Record<
+  (typeof messagingTriggerEvent.options)[number],
+  string
+> = {
+  APPOINTMENT_REMINDER: 'Appointment Reminder',
+  APPOINTMENT_CONFIRMED: 'Appointment Confirmed',
+  APPOINTMENT_CANCELLED: 'Appointment Cancelled',
+  NO_SHOW: 'No-Show Follow-Up',
+  POST_VISIT: 'Post-Visit Follow-Up',
+  NEW_PATIENT: 'New Patient Welcome',
+  INTAKE_FORM_DUE: 'Intake Form Reminder',
+  CUSTOM: 'Custom',
+}

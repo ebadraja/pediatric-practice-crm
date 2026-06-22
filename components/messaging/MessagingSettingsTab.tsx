@@ -8,7 +8,29 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useSession } from 'next-auth/react'
 import { REASON_OPTIONS } from '@/lib/messaging/settingsSchemas'
-import type { MessageTemplateSummary, SharedInboxSummary } from '@/types/messaging'
+import { AUTOMATION_TRIGGER_LABELS } from '@/lib/messaging/schemas'
+import type { AutomationRuleSummary, MessageTemplateSummary, SharedInboxSummary } from '@/types/messaging'
+
+function formatDelayLabel(triggerEvent: string, delayMinutes: number): string {
+  const hours = delayMinutes / 60
+  const timing =
+    hours >= 24 && hours % 24 === 0
+      ? `${hours / 24} day${hours / 24 === 1 ? '' : 's'}`
+      : hours >= 1
+        ? `${hours} hour${hours === 1 ? '' : 's'}`
+        : `${delayMinutes} min`
+
+  if (triggerEvent === 'APPOINTMENT_REMINDER' || triggerEvent === 'INTAKE_FORM_DUE') {
+    return `${timing} before`
+  }
+  if (triggerEvent === 'NO_SHOW' || triggerEvent === 'POST_VISIT') {
+    return `${timing} after`
+  }
+  if (triggerEvent === 'NEW_PATIENT') {
+    return 'On patient creation'
+  }
+  return timing
+}
 
 const labelCls = 'block text-sm font-medium text-slate-900 dark:text-slate-100 mb-2'
 const inputCls =
@@ -55,6 +77,9 @@ export function MessagingSettingsTab() {
   const [sendOtpCodes, setSendOtpCodes] = useState(true)
 
   const [templates, setTemplates] = useState<MessageTemplateSummary[]>([])
+  const [automationRules, setAutomationRules] = useState<AutomationRuleSummary[]>([])
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState({ delayMinutes: 0, templateBody: '' })
   const [inboxes, setInboxes] = useState<SharedInboxSummary[]>([])
   const [newTemplate, setNewTemplate] = useState({ name: '', category: 'General', body: '' })
   const [newInboxName, setNewInboxName] = useState('')
@@ -62,10 +87,11 @@ export function MessagingSettingsTab() {
   const load = async () => {
     setLoading(true)
     try {
-      const [settingsRes, templatesRes, inboxesRes] = await Promise.all([
+      const [settingsRes, templatesRes, inboxesRes, rulesRes] = await Promise.all([
         fetch('/api/settings/messaging'),
         fetch('/api/messaging/templates'),
         fetch('/api/messaging/shared-inboxes'),
+        fetch('/api/messaging/automation-rules'),
       ])
 
       if (settingsRes.ok) {
@@ -95,6 +121,10 @@ export function MessagingSettingsTab() {
       if (inboxesRes.ok) {
         const i = await inboxesRes.json()
         setInboxes(i.data ?? [])
+      }
+      if (rulesRes.ok) {
+        const r = await rulesRes.json()
+        setAutomationRules(r.data ?? [])
       }
     } finally {
       setLoading(false)
@@ -174,6 +204,39 @@ export function MessagingSettingsTab() {
   const toggleSubscribe = async (inbox: SharedInboxSummary) => {
     const method = inbox.isSubscribed ? 'DELETE' : 'POST'
     await fetch(`/api/messaging/shared-inboxes/${inbox.id}/subscribe`, { method })
+    await load()
+  }
+
+  const toggleRuleActive = async (rule: AutomationRuleSummary) => {
+    await fetch(`/api/messaging/automation-rules/${rule.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: !rule.isActive }),
+    })
+    await load()
+  }
+
+  const startEditRule = (rule: AutomationRuleSummary) => {
+    setEditingRuleId(rule.id)
+    setEditDraft({
+      delayMinutes: rule.delayMinutes,
+      templateBody: rule.template.body,
+    })
+  }
+
+  const saveRuleEdit = async (ruleId: string) => {
+    await fetch(`/api/messaging/automation-rules/${ruleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editDraft),
+    })
+    setEditingRuleId(null)
+    await load()
+  }
+
+  const deleteRule = async (ruleId: string) => {
+    if (!isAdmin) return
+    await fetch(`/api/messaging/automation-rules/${ruleId}`, { method: 'DELETE' })
     await load()
   }
 
@@ -337,6 +400,124 @@ export function MessagingSettingsTab() {
             SMS is notification-only — no patient health information is sent in text messages.
             Twilio credentials are configured via server environment variables.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card className="dark:bg-slate-900 dark:border-slate-700">
+        <CardHeader>
+          <CardTitle className="dark:text-slate-50">Automation</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Automated messages are sent only to parents who have verified their phone number
+            through the patient portal. Messages do not contain medical information — patients
+            tap a secure link to view details.
+          </p>
+
+          {automationRules.map((rule) => (
+            <div
+              key={rule.id}
+              className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-sm text-slate-900 dark:text-slate-50">{rule.name}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {AUTOMATION_TRIGGER_LABELS[rule.triggerEvent as keyof typeof AUTOMATION_TRIGGER_LABELS] ??
+                      rule.triggerEvent}
+                    {' · '}
+                    {formatDelayLabel(rule.triggerEvent, rule.delayMinutes)}
+                    {' · '}
+                    {rule.channel}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={rule.isActive}
+                      onChange={() => void toggleRuleActive(rule)}
+                      disabled={!isAdmin}
+                      className="h-3.5 w-3.5 rounded"
+                    />
+                    {rule.isActive ? 'Active' : 'Inactive'}
+                  </label>
+                  {isAdmin && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => startEditRule(rule)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-500"
+                        onClick={() => void deleteRule(rule.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {editingRuleId === rule.id ? (
+                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <div>
+                    <label className={labelCls}>Timing (minutes)</label>
+                    <Input
+                      className={`${inputCls} h-8 text-sm`}
+                      type="number"
+                      min={0}
+                      value={editDraft.delayMinutes}
+                      onChange={(e) =>
+                        setEditDraft((d) => ({
+                          ...d,
+                          delayMinutes: parseInt(e.target.value, 10) || 0,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Message body</label>
+                    <Textarea
+                      className={inputCls}
+                      value={editDraft.templateBody}
+                      onChange={(e) =>
+                        setEditDraft((d) => ({ ...d, templateBody: e.target.value }))
+                      }
+                      rows={3}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void saveRuleEdit(rule.id)}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setEditingRuleId(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 line-clamp-2">{rule.template.body}</p>
+              )}
+            </div>
+          ))}
         </CardContent>
       </Card>
 

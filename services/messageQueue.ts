@@ -15,7 +15,7 @@ export const SMS_QUEUE_NAME = 'sms-send'
 
 const NOTIFICATION_RATE_LIMIT_MS = 5 * 60 * 1000
 
-export type SmsJobType = 'otp' | 'notification'
+export type SmsJobType = 'otp' | 'notification' | 'automation'
 
 export interface SmsJobData {
   to: string
@@ -23,6 +23,8 @@ export interface SmsJobData {
   type: SmsJobType
   patientId?: string
   conversationId?: string
+  automationRuleId?: string
+  appointmentId?: string
 }
 
 export const smsQueue = new Queue<SmsJobData>(SMS_QUEUE_NAME, {
@@ -78,15 +80,15 @@ export async function markNotificationSent(patientId: string): Promise<void> {
 export async function processSmsJob(job: Job<SmsJobData>): Promise<void> {
   const { to, body, type, patientId } = job.data
 
-  if (type === 'notification') {
+  if (type === 'notification' || type === 'automation') {
     if (body.toLowerCase().includes('verification code')) {
       console.error(
-        `[sms-queue] blocked notification job=${job.id} patientId=${patientId ?? 'n/a'} — body looks like OTP`,
+        `[sms-queue] blocked ${type} job=${job.id} patientId=${patientId ?? 'n/a'} — body looks like OTP`,
       )
       return
     }
 
-    if (patientId) {
+    if (type === 'notification' && patientId) {
       const recentlySent = await wasNotificationRecentlySent(patientId)
       if (recentlySent) {
         console.log(`[sms-queue] skipped patientId=${patientId} reason=rate_limited`)
@@ -139,13 +141,19 @@ export function startSmsWorker(): Worker<SmsJobData> {
   return worker
 }
 
-export async function queueSms(data: SmsJobData): Promise<string | undefined> {
+export async function queueSms(
+  data: SmsJobData,
+  options?: { jobId?: string },
+): Promise<string | undefined> {
   const jobId =
-    data.type === 'otp' && data.patientId
+    options?.jobId ??
+    (data.type === 'otp' && data.patientId
       ? `otp-${data.patientId}`
       : data.type === 'notification' && data.patientId && data.conversationId
         ? `notif-${data.patientId}-${data.conversationId}`
-        : undefined
+        : data.type === 'automation' && data.automationRuleId
+          ? `auto-${data.automationRuleId}-${data.appointmentId ?? data.patientId}`
+          : undefined)
 
   const job = await smsQueue.add(`sms-${data.type}`, data, {
     jobId,

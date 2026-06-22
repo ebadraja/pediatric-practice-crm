@@ -25,6 +25,10 @@ import type { Prisma } from '@/lib/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { encrypt } from '@/lib/crypto'
 import { queueTransactionalEmail } from './emailQueue'
+import {
+  emailOffsetToTriggerKey,
+  wasSmsSentForTriggerKey,
+} from '@/lib/messaging/automationCoordination'
 
 // How often the scheduler runs (must match CRON_SCHEDULE window)
 const CRON_SCHEDULE   = '*/15 * * * *'   // every 15 minutes
@@ -166,6 +170,14 @@ async function runSchedulerTick(): Promise<void> {
       })
       if (alreadySent) continue
 
+      const triggerKey = emailOffsetToTriggerKey(
+        rule.triggerEvent as 'X_DAYS_BEFORE' | 'X_DAYS_AFTER',
+        rule.triggerOffsetHours!,
+      )
+      if (await wasSmsSentForTriggerKey(patient.id, appt.id, triggerKey)) {
+        continue
+      }
+
       // Build merge variables
       const variables = buildVariables(patient, {
         startTime: appt.startTime,
@@ -183,7 +195,7 @@ async function runSchedulerTick(): Promise<void> {
       await queueTransactionalEmail(
         patient.id,
         rule.templateId,
-        { ...variables, appointmentId: appt.id, ruleId: rule.id },
+        { ...variables, appointmentId: appt.id, ruleId: rule.id, triggerKey },
         encryptedEmail,
         sendAt,
       )

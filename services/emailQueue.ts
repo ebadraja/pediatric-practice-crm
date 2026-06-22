@@ -238,6 +238,7 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       provider,
       attemptsMade:  job.attemptsMade + 1,
       appointmentId: variables.appointmentId ?? null,
+      triggerKey:    variables.triggerKey ?? null,
       // sg_message_id stored as fallback for webhook matching (primary: custom_args.email_log_id)
       ...(sgMessageId ? { sg_message_id: sgMessageId } : {}),
     },
