@@ -112,13 +112,13 @@
   }
 
   function injectStyles() {
-    if (document.getElementById('gigi-chatbot-styles-v4')) return;
-    ['gigi-chatbot-styles-v1', 'gigi-chatbot-styles-v2', 'gigi-chatbot-styles-v3'].forEach(function (id) {
+    if (document.getElementById('gigi-chatbot-styles-v5')) return;
+    ['gigi-chatbot-styles-v1', 'gigi-chatbot-styles-v2', 'gigi-chatbot-styles-v3', 'gigi-chatbot-styles-v4'].forEach(function (id) {
       var old = document.getElementById(id);
       if (old) old.remove();
     });
     var style = document.createElement('style');
-    style.id = 'gigi-chatbot-styles-v4';
+    style.id = 'gigi-chatbot-styles-v5';
     style.textContent =
       '#gigi-launcher{position:fixed!important;bottom:24px;right:24px;z-index:2147483646!important;display:flex;flex-direction:row;align-items:center;gap:10px;pointer-events:none;font-family:Nunito,ui-rounded,"Segoe UI",system-ui,sans-serif}' +
       '.gigi-callout{pointer-events:none;position:relative;background:#fff;border-radius:20px;padding:14px 20px;box-shadow:0 6px 28px rgba(124,58,237,.18),0 2px 8px rgba(0,0,0,.06);animation:gigi-callout-float 3s ease-in-out infinite;transform-origin:center right}' +
@@ -160,6 +160,7 @@
       '.gigi-portal-btn{margin-top:8px;width:100%;max-width:280px;min-height:48px;border:none;border-radius:12px;background:#7C3AED;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;padding:12px 16px}' +
       '.gigi-portal-btn:hover{background:#6D28D9}' +
       '.gigi-portal-phone{margin:8px 0 0;font-size:13px;color:#6B7280}' +
+      '.gigi-portal-consent{margin:12px 0 0;font-size:11px;line-height:1.45;color:#9CA3AF;max-width:280px}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
       '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
@@ -389,6 +390,14 @@
     gateway.appendChild(openBtn);
 
     gateway.appendChild(el('p', 'gigi-portal-phone', 'Or call us at (253) 400-4479'));
+
+    gateway.appendChild(
+      el(
+        'p',
+        'gigi-portal-consent',
+        'By verifying your mobile number in our secure portal, you agree to receive SMS from Kids 0-18 Pediatrics (verification codes, appointment reminders, and new message alerts). Message and data rates may apply. Reply STOP to opt out or START to re-subscribe.',
+      ),
+    );
 
     container.appendChild(gateway);
   }
