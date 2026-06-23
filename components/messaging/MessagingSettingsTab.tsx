@@ -1,13 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Inbox, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Inbox, ClipboardList, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useSession } from 'next-auth/react'
 import { REASON_OPTIONS } from '@/lib/messaging/settingsSchemas'
+import type { PracticeForm } from '@/lib/messaging/practiceForms'
+import { getActivePracticeForms, parsePracticeForms } from '@/lib/messaging/practiceForms'
 import { AUTOMATION_TRIGGER_LABELS } from '@/lib/messaging/schemas'
 import type { AutomationRuleSummary, MessageTemplateSummary, SharedInboxSummary } from '@/types/messaging'
 
@@ -83,6 +85,12 @@ export function MessagingSettingsTab() {
   const [inboxes, setInboxes] = useState<SharedInboxSummary[]>([])
   const [newTemplate, setNewTemplate] = useState({ name: '', category: 'General', body: '' })
   const [newInboxName, setNewInboxName] = useState('')
+  const [practiceForms, setPracticeForms] = useState<PracticeForm[]>([])
+  const [defaultIntakeFormId, setDefaultIntakeFormId] = useState('')
+  const [editingFormId, setEditingFormId] = useState<string | null>(null)
+  const [editFormDraft, setEditFormDraft] = useState<PracticeForm | null>(null)
+  const [newForm, setNewForm] = useState({ name: '', description: '', url: '' })
+  const [savingForms, setSavingForms] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -101,8 +109,13 @@ export function MessagingSettingsTab() {
         setWelcomeMessage(widget.welcomeMessage ?? '')
         setOfflineMessage(widget.offlineMessage ?? '')
         setPrimaryColor(widget.primaryColor ?? '#2563eb')
-        const portal = (s.portalConfig ?? {}) as { baseUrl?: string }
+        const portal = (s.portalConfig ?? {}) as {
+          baseUrl?: string
+          defaultIntakeFormId?: string
+        }
         setPortalBaseUrl(portal.baseUrl ?? '')
+        setPracticeForms(parsePracticeForms(s.portalConfig))
+        setDefaultIntakeFormId(portal.defaultIntakeFormId ?? '')
         setRoutingRules({ ...DEFAULT_ROUTING, ...(s.defaultRoutingRules ?? {}) })
         setSmsProvider(s.smsProvider ?? null)
         setSmsNumberMasked(s.smsNumberMasked ?? null)
@@ -154,7 +167,11 @@ export function MessagingSettingsTab() {
             primaryColor,
             position: 'bottom-right',
           },
-          portalConfig: portalBaseUrl ? { baseUrl: portalBaseUrl } : null,
+          portalConfig: {
+            ...(portalBaseUrl ? { baseUrl: portalBaseUrl } : {}),
+            practiceForms,
+            ...(defaultIntakeFormId ? { defaultIntakeFormId } : {}),
+          },
           smsProviderConfig: {
             sendNotificationOnStaffReply,
             sendOtpCodes,
@@ -239,6 +256,76 @@ export function MessagingSettingsTab() {
     await fetch(`/api/messaging/automation-rules/${ruleId}`, { method: 'DELETE' })
     await load()
   }
+
+  const savePracticeForms = async () => {
+    if (!isAdmin) return
+    setSavingForms(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/settings/messaging', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          portalConfig: {
+            ...(portalBaseUrl ? { baseUrl: portalBaseUrl } : {}),
+            practiceForms,
+            ...(defaultIntakeFormId ? { defaultIntakeFormId } : {}),
+          },
+        }),
+      })
+      if (!res.ok) throw new Error('Save failed')
+      setMessage({ type: 'success', text: 'Practice forms saved.' })
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save practice forms.' })
+    } finally {
+      setSavingForms(false)
+    }
+  }
+
+  const addPracticeForm = () => {
+    if (!newForm.name.trim() || !newForm.url.trim()) return
+    const form: PracticeForm = {
+      id: crypto.randomUUID(),
+      name: newForm.name.trim(),
+      description: newForm.description.trim(),
+      url: newForm.url.trim(),
+      isActive: true,
+    }
+    setPracticeForms((prev) => [...prev, form])
+    if (!defaultIntakeFormId) setDefaultIntakeFormId(form.id)
+    setNewForm({ name: '', description: '', url: '' })
+  }
+
+  const deletePracticeForm = (id: string) => {
+    setPracticeForms((prev) => prev.filter((f) => f.id !== id))
+    if (defaultIntakeFormId === id) setDefaultIntakeFormId('')
+    if (editingFormId === id) {
+      setEditingFormId(null)
+      setEditFormDraft(null)
+    }
+  }
+
+  const startEditForm = (form: PracticeForm) => {
+    setEditingFormId(form.id)
+    setEditFormDraft({ ...form })
+  }
+
+  const saveEditForm = () => {
+    if (!editFormDraft) return
+    setPracticeForms((prev) =>
+      prev.map((f) => (f.id === editFormDraft.id ? editFormDraft : f)),
+    )
+    setEditingFormId(null)
+    setEditFormDraft(null)
+  }
+
+  const toggleFormActive = (id: string) => {
+    setPracticeForms((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, isActive: !f.isActive } : f)),
+    )
+  }
+
+  const activeForms = getActivePracticeForms(practiceForms)
 
   if (loading) {
     return (
@@ -574,6 +661,176 @@ export function MessagingSettingsTab() {
               Add Template
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="dark:bg-slate-900 dark:border-slate-700">
+        <CardHeader>
+          <CardTitle className="dark:text-slate-50 flex items-center gap-2">
+            <ClipboardList className="h-5 w-5" />
+            Practice Forms
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Register HIPPAtizer forms staff can send to patients from the message composer.
+            The default intake form is used by the automated intake reminder.
+          </p>
+
+          {practiceForms.map((form) => (
+            <div
+              key={form.id}
+              className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2"
+            >
+              {editingFormId === form.id && editFormDraft ? (
+                <div className="space-y-2">
+                  <Input
+                    className={inputCls}
+                    value={editFormDraft.name}
+                    onChange={(e) =>
+                      setEditFormDraft((d) => (d ? { ...d, name: e.target.value } : d))
+                    }
+                    placeholder="Form name"
+                  />
+                  <Input
+                    className={inputCls}
+                    value={editFormDraft.description}
+                    onChange={(e) =>
+                      setEditFormDraft((d) => (d ? { ...d, description: e.target.value } : d))
+                    }
+                    placeholder="Description"
+                  />
+                  <Input
+                    className={inputCls}
+                    value={editFormDraft.url}
+                    onChange={(e) =>
+                      setEditFormDraft((d) => (d ? { ...d, url: e.target.value } : d))
+                    }
+                    placeholder="https://hptz.io/..."
+                  />
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" onClick={saveEditForm}>
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditingFormId(null)
+                        setEditFormDraft(null)
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm text-slate-900 dark:text-slate-50">
+                        {form.name}
+                      </p>
+                      {form.description ? (
+                        <p className="text-xs text-slate-500 mt-0.5">{form.description}</p>
+                      ) : null}
+                      <p className="text-xs text-slate-400 mt-1 font-mono truncate">{form.url}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.isActive}
+                          onChange={() => toggleFormActive(form.id)}
+                          disabled={!isAdmin}
+                          className="h-3.5 w-3.5 rounded"
+                        />
+                        {form.isActive ? 'Active' : 'Inactive'}
+                      </label>
+                      {isAdmin && (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => startEditForm(form)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-500"
+                            onClick={() => deletePracticeForm(form.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {form.isActive && (
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <input
+                        type="radio"
+                        name="defaultIntakeForm"
+                        checked={defaultIntakeFormId === form.id}
+                        onChange={() => setDefaultIntakeFormId(form.id)}
+                        disabled={!isAdmin}
+                      />
+                      Default for intake reminder automation
+                    </label>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+
+          {isAdmin && (
+            <div className="grid gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+              <Input
+                className={inputCls}
+                placeholder="Form name (e.g. New Patient Intake Form)"
+                value={newForm.name}
+                onChange={(e) => setNewForm((p) => ({ ...p, name: e.target.value }))}
+              />
+              <Input
+                className={inputCls}
+                placeholder="Description (e.g. Complete before your first visit)"
+                value={newForm.description}
+                onChange={(e) => setNewForm((p) => ({ ...p, description: e.target.value }))}
+              />
+              <Input
+                className={inputCls}
+                placeholder="Form URL (https://hptz.io/...)"
+                value={newForm.url}
+                onChange={(e) => setNewForm((p) => ({ ...p, url: e.target.value }))}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={addPracticeForm}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Form
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void savePracticeForms()}
+                  disabled={savingForms}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {savingForms ? 'Saving...' : 'Save Practice Forms'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {practiceForms.length > 0 && activeForms.length === 0 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              All forms are inactive — staff will not see any forms in the composer.
+            </p>
+          )}
         </CardContent>
       </Card>
 

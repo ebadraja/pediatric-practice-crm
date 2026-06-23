@@ -20,6 +20,11 @@ import {
 } from '@/lib/messaging/automationCoordination'
 import { queueAutomationSms } from '@/lib/messaging/automationSms'
 import { seedDefaultAutomationRules } from '@/lib/messaging/seedAutomationRules'
+import {
+  appendPracticeFormLinkMessage,
+  getDefaultIntakeForm,
+  loadPracticeFormsFromSettings,
+} from '@/lib/messaging/practiceFormsServer'
 
 const CRON_SCHEDULE = '*/15 * * * *'
 const WINDOW_MINUTES = 15
@@ -235,7 +240,19 @@ async function processIntakeFormDueRule(rule: RuleWithTemplate, now: Date): Prom
       appointmentId: appt.id,
       entityId: appt.id,
     })
-    if (sent) queued++
+    if (sent) {
+      queued++
+      const { forms, defaultIntakeFormId } = await loadPracticeFormsFromSettings()
+      const intakeForm = getDefaultIntakeForm(forms, defaultIntakeFormId)
+      if (intakeForm) {
+        await appendPracticeFormLinkMessage({
+          patientId: appt.patientId,
+          form: intakeForm,
+          automation: true,
+          updatePreview: true,
+        })
+      }
+    }
   }
 
   return queued

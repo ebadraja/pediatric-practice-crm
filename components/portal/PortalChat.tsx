@@ -14,7 +14,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { FormLinkCard } from '@/components/messaging/FormLinkCard'
 import { PORTAL_REASONS, REASON_LABELS } from '@/lib/messaging/portalSchemas'
+import { resolveFormLinkDisplay } from '@/lib/messaging/practiceForms'
 import { useMessagingPoll } from '@/lib/messaging/realtime'
 
 interface PortalMessage {
@@ -22,6 +24,8 @@ interface PortalMessage {
   senderType: string
   channel: string
   content: string
+  contentType?: string
+  metadata?: unknown
   createdAt: string
 }
 
@@ -34,6 +38,7 @@ export function PortalChat() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [primaryColor, setPrimaryColor] = useState('#2563eb')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const loadMessages = useCallback(async () => {
@@ -52,10 +57,17 @@ export function PortalChat() {
   useEffect(() => {
     void (async () => {
       try {
-        const sessionRes = await fetch('/api/portal/session')
+        const [sessionRes, settingsRes] = await Promise.all([
+          fetch('/api/portal/session'),
+          fetch('/api/portal/settings'),
+        ])
         if (!sessionRes.ok) {
           router.replace('/portal')
           return
+        }
+        if (settingsRes.ok) {
+          const settings = await settingsRes.json()
+          if (settings.primaryColor) setPrimaryColor(settings.primaryColor)
         }
         await loadMessages()
       } catch {
@@ -125,6 +137,28 @@ export function PortalChat() {
         )}
         {messages.map((msg) => {
           const isPatient = msg.senderType === 'PATIENT'
+          const formLink = resolveFormLinkDisplay({
+            content: msg.content,
+            contentType: msg.contentType,
+            metadata: msg.metadata,
+          })
+
+          if (formLink) {
+            return (
+              <div key={msg.id} className="flex justify-start">
+                <div className="max-w-[85%] w-full">
+                  <FormLinkCard
+                    formName={formLink.formName}
+                    formDescription={formLink.formDescription}
+                    formUrl={formLink.formUrl}
+                    primaryColor={primaryColor}
+                    timestamp={msg.createdAt}
+                  />
+                </div>
+              </div>
+            )
+          }
+
           return (
             <div key={msg.id} className={`flex ${isPatient ? 'justify-end' : 'justify-start'}`}>
               <div

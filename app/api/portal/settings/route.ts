@@ -11,14 +11,18 @@ export async function GET() {
         practicePhone: true,
         practiceTagline: true,
         portalConfig: true,
+        webChatWidgetConfig: true,
       },
     })
+
+    const widget = (settings?.webChatWidgetConfig ?? {}) as { primaryColor?: string }
 
     return NextResponse.json({
       practiceName: settings?.practiceName ?? 'Kids 0-18 Integrated Pediatrics',
       practicePhone: settings?.practicePhone ?? null,
       practiceTagline: settings?.practiceTagline ?? null,
       portalConfig: settings?.portalConfig ?? null,
+      primaryColor: widget.primaryColor ?? '#2563eb',
     })
   } catch (error) {
     console.error('[GET /api/portal/settings]', error)

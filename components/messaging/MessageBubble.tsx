@@ -3,6 +3,8 @@
 import { format } from 'date-fns'
 import { Globe, MessageCircle, Monitor, Smartphone } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { FormLinkCard } from '@/components/messaging/FormLinkCard'
+import { resolveFormLinkDisplay } from '@/lib/messaging/practiceForms'
 import type { MessageChannel, SerializedMessage } from '@/types/messaging'
 
 const CHANNEL_META: Record<
@@ -24,30 +26,39 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isSystem = message.senderType === 'SYSTEM'
   const channel = CHANNEL_META[message.channel]
 
-  if (isSystem && !message.isInternalNote) {
-    const meta = message.metadata as { url?: string; title?: string } | null
-    const formUrl = meta?.url ?? (message.contentType === 'FORM_LINK' ? parseFormLinkUrl(message.content) : null)
-    const formTitle = meta?.title ?? (message.contentType === 'FORM_LINK' ? parseFormLinkTitle(message.content) : null)
+  const formLink = resolveFormLinkDisplay({
+    content: message.content,
+    contentType: message.contentType,
+    metadata: message.metadata,
+  })
 
+  if (formLink) {
+    return (
+      <div className="flex justify-start my-2">
+        <div className="max-w-[85%] w-full">
+          <FormLinkCard
+            formName={formLink.formName}
+            formDescription={formLink.formDescription}
+            formUrl={formLink.formUrl}
+            sentByName={formLink.sentByName}
+          />
+          <div className="flex items-center gap-2 mt-1.5 px-1">
+            <ChannelBadge channel={message.channel} />
+            <span className="text-[10px] text-slate-400">
+              {format(new Date(message.createdAt), 'MMM d, h:mm a')}
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (isSystem && !message.isInternalNote) {
     return (
       <div className="flex justify-center my-2">
         <div className="max-w-[85%] rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs text-slate-600 dark:text-slate-400 text-center">
           <ChannelBadge channel={message.channel} />
-          {message.contentType === 'FORM_LINK' && formUrl ? (
-            <div className="mt-1">
-              <p className="font-medium text-slate-700 dark:text-slate-300">{formTitle ?? 'Intake form'}</p>
-              <a
-                href={formUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:underline break-all"
-              >
-                {formUrl}
-              </a>
-            </div>
-          ) : (
-            <p className="mt-1">{message.content}</p>
-          )}
+          <p className="mt-1">{message.content}</p>
           <p className="mt-1 text-[10px] opacity-70">{format(new Date(message.createdAt), 'MMM d, h:mm a')}</p>
         </div>
       </div>
@@ -77,18 +88,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       </div>
     </div>
   )
-}
-
-function parseFormLinkUrl(content: string): string | null {
-  const lines = content.trim().split('\n')
-  const last = lines[lines.length - 1]?.trim()
-  return last?.startsWith('http') ? last : null
-}
-
-function parseFormLinkTitle(content: string): string | null {
-  const lines = content.trim().split('\n')
-  if (lines.length < 2) return null
-  return lines.slice(0, -1).join('\n').trim() || null
 }
 
 function ChannelBadge({ channel, compact }: { channel: MessageChannel; compact?: boolean }) {

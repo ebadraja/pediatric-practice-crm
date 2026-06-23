@@ -1,5 +1,13 @@
 import { z } from 'zod'
 
+export const practiceFormSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(200),
+  description: z.string().max(500).default(''),
+  url: z.string().url().max(500),
+  isActive: z.boolean().default(true),
+})
+
 const messageReason = z.enum([
   'SCHEDULING',
   'REFILL',
@@ -27,6 +35,8 @@ export const messagingSettingsBody = z.object({
   portalConfig: z
     .object({
       baseUrl: z.string().max(500).optional(),
+      practiceForms: z.array(practiceFormSchema).optional(),
+      defaultIntakeFormId: z.string().uuid().optional(),
     })
     .nullable()
     .optional(),

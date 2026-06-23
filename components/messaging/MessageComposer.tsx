@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { FileText, Send, StickyNote, MessageSquare } from 'lucide-react'
+import { Send, StickyNote, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
 import { TemplatePicker } from '@/components/messaging/TemplatePicker'
+import { FormPicker } from '@/components/messaging/FormPicker'
 
 interface MessageComposerProps {
   disabled?: boolean
@@ -30,10 +30,6 @@ export function MessageComposer({
 }: MessageComposerProps) {
   const [content, setContent] = useState('')
   const [mode, setMode] = useState<'reply' | 'note'>('reply')
-  const [showFormLink, setShowFormLink] = useState(false)
-  const [formLinkUrl, setFormLinkUrl] = useState('')
-  const [formLinkTitle, setFormLinkTitle] = useState('Patient intake form')
-  const [sendingFormLink, setSendingFormLink] = useState(false)
 
   const handleSubmit = async () => {
     const trimmed = content.trim()
@@ -51,28 +47,6 @@ export function MessageComposer({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSubmit()
-    }
-  }
-
-  const handleSendFormLink = async () => {
-    const url = formLinkUrl.trim()
-    if (!url || !conversationId || sendingFormLink || disabled) return
-
-    setSendingFormLink(true)
-    try {
-      const res = await fetch(`/api/messaging/conversations/${conversationId}/form-link`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, title: formLinkTitle.trim() || 'Patient intake form' }),
-      })
-      if (!res.ok) throw new Error('Failed')
-      setFormLinkUrl('')
-      setShowFormLink(false)
-      onFormLinkSent?.()
-    } catch {
-      // Parent may show toast via refresh failure
-    } finally {
-      setSendingFormLink(false)
     }
   }
 
@@ -114,56 +88,11 @@ export function MessageComposer({
             disabled={disabled || sending}
             onInsert={(text) => setContent((prev) => (prev ? `${prev}\n\n${text}` : text))}
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs"
-            disabled={disabled || sending || !conversationId}
-            onClick={() => setShowFormLink((v) => !v)}
-          >
-            <FileText className="h-3.5 w-3.5 mr-1" />
-            Form link
-          </Button>
-        </div>
-      )}
-
-      {showFormLink && mode === 'reply' && (
-        <div className="mb-2 rounded-md border border-slate-200 dark:border-slate-700 p-2 space-y-2">
-          <Input
-            value={formLinkTitle}
-            onChange={(e) => setFormLinkTitle(e.target.value)}
-            placeholder="Form title"
-            disabled={disabled || sendingFormLink}
-            className="h-8 text-xs"
+          <FormPicker
+            conversationId={conversationId}
+            disabled={disabled || sending}
+            onFormLinkSent={onFormLinkSent}
           />
-          <Input
-            value={formLinkUrl}
-            onChange={(e) => setFormLinkUrl(e.target.value)}
-            placeholder="https://hippatizer.com/..."
-            disabled={disabled || sendingFormLink}
-            className="h-8 text-xs"
-          />
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 text-xs"
-              disabled={disabled || sendingFormLink || !formLinkUrl.trim()}
-              onClick={() => void handleSendFormLink()}
-            >
-              Send link
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setShowFormLink(false)}
-            >
-              Cancel
-            </Button>
-          </div>
         </div>
       )}
 

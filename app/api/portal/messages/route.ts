@@ -48,6 +48,7 @@ export async function GET() {
         channel: m.channel,
         content: decrypt(m.content),
         contentType: m.contentType,
+        metadata: m.metadata,
         createdAt: m.createdAt,
       })),
     })

@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import prisma from '@/lib/prisma'
 import { requireStaffSession } from '@/lib/messaging/session'
-import { appendSystemMessage } from '@/lib/messaging/systemMessages'
+import { appendPracticeFormLinkMessage } from '@/lib/messaging/practiceFormsServer'
 import { serializeMessage } from '@/lib/messaging/serialize'
 
 export const dynamic = 'force-dynamic'
 
-const formLinkBody = z.object({
-  url: z.string().url(),
-  title: z.string().min(1).max(200).default('Patient intake form'),
-})
+const formLinkBody = z
+  .object({
+    formId: z.string().uuid().optional(),
+    formName: z.string().min(1).max(200).optional(),
+    formDescription: z.string().max(500).optional(),
+    formUrl: z.string().url().optional(),
+    url: z.string().url().optional(),
+    title: z.string().min(1).max(200).optional(),
+  })
+  .refine((data) => !!(data.formUrl ?? data.url), {
+    message: 'formUrl or url is required',
+  })
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -39,14 +48,22 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
-    const { url, title } = parsed.data
-    const content = `${title}\n${url}`
+    const formUrl = parsed.data.formUrl ?? parsed.data.url!
+    const formName =
+      parsed.data.formName ?? parsed.data.title ?? 'Patient intake form'
+    const formDescription = parsed.data.formDescription ?? ''
 
-    const message = await appendSystemMessage({
+    const message = await appendPracticeFormLinkMessage({
       patientId: conversation.patientId,
-      content,
-      contentType: 'FORM_LINK',
-      metadata: { url, title, sentById: staff.id, kind: 'hippatizer_form_link' },
+      form: {
+        id: parsed.data.formId ?? randomUUID(),
+        name: formName,
+        description: formDescription,
+        url: formUrl,
+        isActive: true,
+      },
+      sentById: staff.id,
+      sentByName: `${staff.firstName} ${staff.lastName}`.trim(),
     })
 
     const full = await prisma.message.findUnique({
@@ -60,7 +77,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         action: 'MESSAGE_SENT',
         entity: 'message',
         entityId: message.id,
-        changes: { conversationId, contentType: 'FORM_LINK', url },
+        changes: {
+          conversationId,
+          contentType: 'FORM_LINK',
+          formUrl,
+          formName,
+          ...(parsed.data.formId ? { formId: parsed.data.formId } : {}),
+        },
       },
     })
 
