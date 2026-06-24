@@ -9,7 +9,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { useSession } from 'next-auth/react'
 import { REASON_OPTIONS } from '@/lib/messaging/settingsSchemas'
 import type { PracticeForm } from '@/lib/messaging/practiceForms'
-import { getActivePracticeForms, parsePracticeForms } from '@/lib/messaging/practiceForms'
+import { getActivePracticeForms, isValidFormUrl, normalizeFormUrl, parsePracticeForms } from '@/lib/messaging/practiceForms'
+import {
+  DEFAULT_FILE_SHARING_CONFIG,
+  parseFileSharingConfig,
+  type FileSharingConfig,
+} from '@/lib/messaging/fileSharingConfig'
 import { AUTOMATION_TRIGGER_LABELS } from '@/lib/messaging/schemas'
 import type { AutomationRuleSummary, MessageTemplateSummary, SharedInboxSummary } from '@/types/messaging'
 
@@ -91,6 +96,8 @@ export function MessagingSettingsTab() {
   const [editFormDraft, setEditFormDraft] = useState<PracticeForm | null>(null)
   const [newForm, setNewForm] = useState({ name: '', description: '', url: '' })
   const [savingForms, setSavingForms] = useState(false)
+  const [formsMessage, setFormsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [fileSharing, setFileSharing] = useState<FileSharingConfig>(DEFAULT_FILE_SHARING_CONFIG)
 
   const load = async () => {
     setLoading(true)
@@ -115,6 +122,7 @@ export function MessagingSettingsTab() {
         }
         setPortalBaseUrl(portal.baseUrl ?? '')
         setPracticeForms(parsePracticeForms(s.portalConfig))
+        setFileSharing(parseFileSharingConfig(s.portalConfig))
         setDefaultIntakeFormId(portal.defaultIntakeFormId ?? '')
         setRoutingRules({ ...DEFAULT_ROUTING, ...(s.defaultRoutingRules ?? {}) })
         setSmsProvider(s.smsProvider ?? null)
@@ -148,6 +156,13 @@ export function MessagingSettingsTab() {
     void load()
   }, [])
 
+  const buildPortalConfig = () => ({
+    ...(portalBaseUrl ? { baseUrl: portalBaseUrl } : {}),
+    practiceForms,
+    ...(defaultIntakeFormId ? { defaultIntakeFormId } : {}),
+    fileSharing,
+  })
+
   const saveSettings = async () => {
     if (!isAdmin) return
     setSaving(true)
@@ -167,11 +182,7 @@ export function MessagingSettingsTab() {
             primaryColor,
             position: 'bottom-right',
           },
-          portalConfig: {
-            ...(portalBaseUrl ? { baseUrl: portalBaseUrl } : {}),
-            practiceForms,
-            ...(defaultIntakeFormId ? { defaultIntakeFormId } : {}),
-          },
+          portalConfig: buildPortalConfig(),
           smsProviderConfig: {
             sendNotificationOnStaffReply,
             sendOtpCodes,
@@ -258,42 +269,108 @@ export function MessagingSettingsTab() {
   }
 
   const savePracticeForms = async () => {
-    if (!isAdmin) return
+    if (!isAdmin) {
+      setFormsMessage({ type: 'error', text: 'Only administrators can save practice forms.' })
+      return
+    }
+
+    let formsToSave = [...practiceForms]
+    let nextDefaultId = defaultIntakeFormId
+
+    if (newForm.name.trim() || newForm.url.trim()) {
+      if (!newForm.name.trim() || !newForm.url.trim()) {
+        setFormsMessage({
+          type: 'error',
+          text: 'Complete the form name and URL, or clear the new form fields before saving.',
+        })
+        return
+      }
+      if (!isValidFormUrl(newForm.url)) {
+        setFormsMessage({
+          type: 'error',
+          text: 'Enter a valid form URL (e.g. hptz.io/... or https://hptz.io/...).',
+        })
+        return
+      }
+      const pending: PracticeForm = {
+        id: crypto.randomUUID(),
+        name: newForm.name.trim(),
+        description: newForm.description.trim(),
+        url: normalizeFormUrl(newForm.url.trim()),
+        isActive: true,
+      }
+      formsToSave = [...formsToSave, pending]
+      setPracticeForms(formsToSave)
+      if (!nextDefaultId) nextDefaultId = pending.id
+      if (!defaultIntakeFormId) setDefaultIntakeFormId(pending.id)
+      setNewForm({ name: '', description: '', url: '' })
+    }
+
+    if (formsToSave.length === 0) {
+      setFormsMessage({ type: 'error', text: 'Add at least one form before saving.' })
+      return
+    }
+
     setSavingForms(true)
-    setMessage(null)
+    setFormsMessage(null)
     try {
       const res = await fetch('/api/settings/messaging', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           portalConfig: {
-            ...(portalBaseUrl ? { baseUrl: portalBaseUrl } : {}),
-            practiceForms,
-            ...(defaultIntakeFormId ? { defaultIntakeFormId } : {}),
+            ...buildPortalConfig(),
+            practiceForms: formsToSave,
+            ...(nextDefaultId ? { defaultIntakeFormId: nextDefaultId } : {}),
           },
         }),
       })
-      if (!res.ok) throw new Error('Save failed')
-      setMessage({ type: 'success', text: 'Practice forms saved.' })
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to save practice forms.' })
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string
+        details?: { formErrors?: string[]; fieldErrors?: Record<string, string[]> }
+      }
+      if (!res.ok) {
+        const detail =
+          data.details?.fieldErrors?.practiceForms?.[0] ??
+          data.details?.formErrors?.[0] ??
+          data.error
+        throw new Error(detail ?? 'Save failed')
+      }
+      setFormsMessage({ type: 'success', text: 'Practice forms saved.' })
+      await load()
+    } catch (e) {
+      setFormsMessage({
+        type: 'error',
+        text: e instanceof Error ? e.message : 'Failed to save practice forms.',
+      })
     } finally {
       setSavingForms(false)
     }
   }
 
   const addPracticeForm = () => {
-    if (!newForm.name.trim() || !newForm.url.trim()) return
+    if (!newForm.name.trim() || !newForm.url.trim()) {
+      setFormsMessage({ type: 'error', text: 'Enter a form name and URL.' })
+      return
+    }
+    if (!isValidFormUrl(newForm.url)) {
+      setFormsMessage({
+        type: 'error',
+        text: 'Enter a valid form URL (e.g. hptz.io/... or https://hptz.io/...).',
+      })
+      return
+    }
     const form: PracticeForm = {
       id: crypto.randomUUID(),
       name: newForm.name.trim(),
       description: newForm.description.trim(),
-      url: newForm.url.trim(),
+      url: normalizeFormUrl(newForm.url.trim()),
       isActive: true,
     }
     setPracticeForms((prev) => [...prev, form])
     if (!defaultIntakeFormId) setDefaultIntakeFormId(form.id)
     setNewForm({ name: '', description: '', url: '' })
+    setFormsMessage({ type: 'success', text: `"${form.name}" added. Click Save Practice Forms to keep it.` })
   }
 
   const deletePracticeForm = (id: string) => {
@@ -312,11 +389,23 @@ export function MessagingSettingsTab() {
 
   const saveEditForm = () => {
     if (!editFormDraft) return
+    if (!isValidFormUrl(editFormDraft.url)) {
+      setFormsMessage({
+        type: 'error',
+        text: 'Enter a valid form URL (e.g. hptz.io/... or https://hptz.io/...).',
+      })
+      return
+    }
+    const updated = {
+      ...editFormDraft,
+      url: normalizeFormUrl(editFormDraft.url),
+    }
     setPracticeForms((prev) =>
-      prev.map((f) => (f.id === editFormDraft.id ? editFormDraft : f)),
+      prev.map((f) => (f.id === updated.id ? updated : f)),
     )
     setEditingFormId(null)
     setEditFormDraft(null)
+    setFormsMessage({ type: 'success', text: 'Form updated. Click Save Practice Forms to keep changes.' })
   }
 
   const toggleFormActive = (id: string) => {
@@ -666,6 +755,60 @@ export function MessagingSettingsTab() {
 
       <Card className="dark:bg-slate-900 dark:border-slate-700">
         <CardHeader>
+          <CardTitle className="dark:text-slate-50">File Sharing</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Configure file attachment limits for patient and staff messaging. Files are stored
+            securely and accessed through authenticated download links only.
+          </p>
+
+          <div>
+            <label className={labelCls}>Max file size</label>
+            <select
+              className={`${inputCls} h-10 w-full rounded-md border px-3 text-sm`}
+              value={fileSharing.maxFileSizeMb}
+              disabled={!isAdmin}
+              onChange={(e) =>
+                setFileSharing((prev) => ({
+                  ...prev,
+                  maxFileSizeMb: Number(e.target.value) as FileSharingConfig['maxFileSizeMb'],
+                }))
+              }
+            >
+              <option value={5}>5 MB</option>
+              <option value={10}>10 MB</option>
+              <option value={25}>25 MB</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className={labelCls}>Allowed file types</label>
+            {[
+              { key: 'allowImages' as const, label: 'Images (JPEG, PNG, GIF, WebP)' },
+              { key: 'allowPdf' as const, label: 'PDF documents' },
+              { key: 'allowWord' as const, label: 'Word documents' },
+              { key: 'allowPlainText' as const, label: 'Plain text files' },
+            ].map((item) => (
+              <label key={item.key} className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={fileSharing[item.key]}
+                  onChange={(e) =>
+                    setFileSharing((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                  }
+                  disabled={!isAdmin}
+                  className="h-4 w-4 rounded"
+                />
+                <span className="text-sm text-slate-700 dark:text-slate-300">{item.label}</span>
+              </label>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="dark:bg-slate-900 dark:border-slate-700">
+        <CardHeader>
           <CardTitle className="dark:text-slate-50 flex items-center gap-2">
             <ClipboardList className="h-5 w-5" />
             Practice Forms
@@ -676,6 +819,18 @@ export function MessagingSettingsTab() {
             Register HIPPAtizer forms staff can send to patients from the message composer.
             The default intake form is used by the automated intake reminder.
           </p>
+
+          {formsMessage && (
+            <div
+              className={`rounded-lg px-3 py-2 text-sm ${
+                formsMessage.type === 'success'
+                  ? 'bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200'
+                  : 'bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200'
+              }`}
+            >
+              {formsMessage.text}
+            </div>
+          )}
 
           {practiceForms.map((form) => (
             <div

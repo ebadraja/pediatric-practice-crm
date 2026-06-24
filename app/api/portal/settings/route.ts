@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { parseFileSharingConfig } from '@/lib/messaging/fileSharingConfig'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +17,7 @@ export async function GET() {
     })
 
     const widget = (settings?.webChatWidgetConfig ?? {}) as { primaryColor?: string }
+    const fileSharing = parseFileSharingConfig(settings?.portalConfig)
 
     return NextResponse.json({
       practiceName: settings?.practiceName ?? 'Kids 0-18 Integrated Pediatrics',
@@ -23,6 +25,7 @@ export async function GET() {
       practiceTagline: settings?.practiceTagline ?? null,
       portalConfig: settings?.portalConfig ?? null,
       primaryColor: widget.primaryColor ?? '#2563eb',
+      fileSharing,
     })
   } catch (error) {
     console.error('[GET /api/portal/settings]', error)

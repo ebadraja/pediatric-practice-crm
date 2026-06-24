@@ -1,10 +1,18 @@
 import { z } from 'zod'
+import { isValidFormUrl, normalizeFormUrl } from '@/lib/messaging/practiceForms'
+
+const formUrlSchema = z
+  .string()
+  .min(1)
+  .max(500)
+  .transform(normalizeFormUrl)
+  .refine(isValidFormUrl, { message: 'Enter a valid form URL (e.g. https://hptz.io/...)' })
 
 export const practiceFormSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().min(1).max(64),
   name: z.string().min(1).max(200),
-  description: z.string().max(500).default(''),
-  url: z.string().url().max(500),
+  description: z.string().max(500).optional().default(''),
+  url: formUrlSchema,
   isActive: z.boolean().default(true),
 })
 
@@ -36,7 +44,16 @@ export const messagingSettingsBody = z.object({
     .object({
       baseUrl: z.string().max(500).optional(),
       practiceForms: z.array(practiceFormSchema).optional(),
-      defaultIntakeFormId: z.string().uuid().optional(),
+      defaultIntakeFormId: z.string().min(1).max(64).optional(),
+      fileSharing: z
+        .object({
+          maxFileSizeMb: z.union([z.literal(5), z.literal(10), z.literal(25)]).optional(),
+          allowImages: z.boolean().optional(),
+          allowPdf: z.boolean().optional(),
+          allowWord: z.boolean().optional(),
+          allowPlainText: z.boolean().optional(),
+        })
+        .optional(),
     })
     .nullable()
     .optional(),

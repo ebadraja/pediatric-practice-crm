@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ClipboardList, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,7 +10,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { PracticeForm } from '@/lib/messaging/practiceForms'
-import { getActivePracticeForms, parsePracticeForms } from '@/lib/messaging/practiceForms'
 
 interface FormPickerProps {
   conversationId: string | null | undefined
@@ -23,21 +22,22 @@ export function FormPicker({ conversationId, disabled, onFormLinkSent }: FormPic
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
 
-  useEffect(() => {
-    void (async () => {
-      setLoading(true)
-      try {
-        const res = await fetch('/api/settings/messaging')
-        if (res.ok) {
-          const data = await res.json()
-          const all = parsePracticeForms(data.portalConfig)
-          setForms(getActivePracticeForms(all))
-        }
-      } finally {
-        setLoading(false)
+  const loadForms = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/messaging/practice-forms', { cache: 'no-store' })
+      if (res.ok) {
+        const data = await res.json()
+        setForms(data.data ?? [])
       }
-    })()
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    void loadForms()
+  }, [loadForms])
 
   const sendForm = async (form: PracticeForm) => {
     if (!conversationId || sending || disabled) return
@@ -80,6 +80,7 @@ export function FormPicker({ conversationId, disabled, onFormLinkSent }: FormPic
         className="inline-flex"
         disabled={isDisabled}
         title={forms.length === 0 ? emptyTooltip : 'Send a practice form'}
+        onClick={() => void loadForms()}
       >
         <Button
           type="button"
@@ -90,7 +91,7 @@ export function FormPicker({ conversationId, disabled, onFormLinkSent }: FormPic
           tabIndex={-1}
         >
           <ClipboardList className="h-3.5 w-3.5 mr-1" />
-          {sending ? 'Sending…' : 'Send form'}
+          {sending ? 'Sending…' : forms.length === 0 ? 'No forms' : 'Send form'}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">

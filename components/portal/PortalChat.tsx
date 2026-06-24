@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { Send } from 'lucide-react'
+import { Loader2, Paperclip, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -15,8 +15,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { FormLinkCard } from '@/components/messaging/FormLinkCard'
+import { AttachmentCard } from '@/components/messaging/AttachmentCard'
+import { FileAttachmentPreview } from '@/components/messaging/FileAttachmentPreview'
 import { PORTAL_REASONS, REASON_LABELS } from '@/lib/messaging/portalSchemas'
 import { resolveFormLinkDisplay } from '@/lib/messaging/practiceForms'
+import { parseFileAttachmentMetadata, clientMimeTypesForConfig, validateClientFile } from '@/lib/messaging/fileAttachments'
+import {
+  DEFAULT_FILE_SHARING_CONFIG,
+  type FileSharingConfig,
+} from '@/lib/messaging/fileSharingConfig'
 import { useMessagingPoll } from '@/lib/messaging/realtime'
 
 interface PortalMessage {
@@ -31,14 +38,19 @@ interface PortalMessage {
 
 export function PortalChat() {
   const router = useRouter()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [messages, setMessages] = useState<PortalMessage[]>([])
   const [content, setContent] = useState('')
   const [reason, setReason] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [primaryColor, setPrimaryColor] = useState('#2563eb')
+  const [fileConfig, setFileConfig] = useState<FileSharingConfig>(DEFAULT_FILE_SHARING_CONFIG)
+  const [attachment, setAttachment] = useState<File | null>(null)
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const loadMessages = useCallback(async () => {
@@ -68,6 +80,7 @@ export function PortalChat() {
         if (settingsRes.ok) {
           const settings = await settingsRes.json()
           if (settings.primaryColor) setPrimaryColor(settings.primaryColor)
+          if (settings.fileSharing) setFileConfig(settings.fileSharing)
         }
         await loadMessages()
       } catch {
@@ -78,6 +91,16 @@ export function PortalChat() {
     })()
   }, [loadMessages, router])
 
+  useEffect(() => {
+    if (!attachment) {
+      setAttachmentPreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(attachment)
+    setAttachmentPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [attachment])
+
   useMessagingPoll(() => {
     if (!loading) void loadMessages()
   })
@@ -86,9 +109,69 @@ export function PortalChat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const clearAttachment = () => {
+    setAttachment(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const validationError = validateClientFile(file, fileConfig)
+    if (validationError) {
+      setError(validationError)
+      e.target.value = ''
+      return
+    }
+    setAttachment(file)
+    setError('')
+  }
+
+  const uploadAttachment = async () => {
+    if (!attachment || uploading) return false
+    if (!conversationId && !reason) {
+      setError('Please select a reason for your message')
+      return false
+    }
+
+    setUploading(true)
+    setError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', attachment)
+      if (!conversationId && reason) formData.append('reason', reason)
+
+      const res = await fetch('/api/portal/files', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to upload file')
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: data.id,
+          senderType: data.senderType,
+          channel: data.channel,
+          content: data.content,
+          contentType: data.contentType,
+          metadata: data.metadata,
+          createdAt: data.createdAt,
+        },
+      ])
+      setConversationId(data.conversationId)
+      clearAttachment()
+      return true
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to upload file. Please try again.')
+      return false
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const sendMessage = async () => {
     const trimmed = content.trim()
-    if (!trimmed || sending) return
+    const hasAttachment = !!attachment
+    if ((!trimmed && !hasAttachment) || sending || uploading) return
     if (!conversationId && !reason) {
       setError('Please select a reason for your message')
       return
@@ -97,19 +180,24 @@ export function PortalChat() {
     setSending(true)
     setError('')
     try {
-      const res = await fetch('/api/portal/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: trimmed,
-          ...(!conversationId && reason ? { reason } : {}),
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Failed to send')
-      setMessages((prev) => [...prev, data])
-      setConversationId(data.conversationId)
-      setContent('')
+      if (trimmed) {
+        const res = await fetch('/api/portal/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: trimmed,
+            ...(!conversationId && reason ? { reason } : {}),
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Failed to send')
+        setMessages((prev) => [...prev, data])
+        setConversationId(data.conversationId)
+        setContent('')
+      }
+      if (hasAttachment) {
+        await uploadAttachment()
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to send')
     } finally {
@@ -126,6 +214,8 @@ export function PortalChat() {
   }
 
   const needsReason = !conversationId
+  const busy = sending || uploading
+  const canSend = !!content.trim() || !!attachment
 
   return (
     <div className="flex flex-col flex-1 min-h-0 max-w-lg mx-auto w-full">
@@ -155,6 +245,26 @@ export function PortalChat() {
                     timestamp={msg.createdAt}
                   />
                 </div>
+              </div>
+            )
+          }
+
+          const fileAttachment = parseFileAttachmentMetadata(msg.metadata)
+          if (
+            fileAttachment &&
+            (msg.contentType === 'FILE' || msg.contentType === 'IMAGE')
+          ) {
+            return (
+              <div key={msg.id} className={`flex ${isPatient ? 'justify-end' : 'justify-start'}`}>
+                <AttachmentCard
+                  messageId={msg.id}
+                  fileName={fileAttachment.originalName}
+                  mimeType={fileAttachment.mimeType}
+                  sizeBytes={fileAttachment.sizeBytes}
+                  contentType={msg.contentType as 'FILE' | 'IMAGE'}
+                  timestamp={msg.createdAt}
+                  primaryColor={primaryColor}
+                />
               </div>
             )
           }
@@ -208,12 +318,46 @@ export function PortalChat() {
           </div>
         )}
 
+        {attachment && (
+          <FileAttachmentPreview
+            file={attachment}
+            previewUrl={attachmentPreviewUrl}
+            onRemove={clearAttachment}
+            uploading={uploading}
+          />
+        )}
+
+        {uploading && (
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Uploading file…
+          </div>
+        )}
+
         <div className="flex gap-2 items-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-11 w-11 shrink-0"
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Paperclip className="h-4 w-4" />
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept={clientMimeTypesForConfig(fileConfig)}
+            onChange={handleFileSelect}
+          />
           <Textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Type your message..."
             className="min-h-[44px] max-h-32 resize-none flex-1"
+            disabled={busy}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
@@ -225,7 +369,7 @@ export function PortalChat() {
             type="button"
             size="icon"
             className="h-11 w-11 shrink-0"
-            disabled={sending || !content.trim()}
+            disabled={busy || !canSend}
             onClick={() => void sendMessage()}
           >
             <Send className="h-4 w-4" />

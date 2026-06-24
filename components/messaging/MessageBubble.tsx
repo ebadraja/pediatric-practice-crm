@@ -4,7 +4,9 @@ import { format } from 'date-fns'
 import { Globe, MessageCircle, Monitor, Smartphone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FormLinkCard } from '@/components/messaging/FormLinkCard'
+import { AttachmentCard } from '@/components/messaging/AttachmentCard'
 import { resolveFormLinkDisplay } from '@/lib/messaging/practiceForms'
+import { parseFileAttachmentMetadata } from '@/lib/messaging/fileAttachments'
 import type { MessageChannel, SerializedMessage } from '@/types/messaging'
 
 const CHANNEL_META: Record<
@@ -47,6 +49,35 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <span className="text-[10px] text-slate-400">
               {format(new Date(message.createdAt), 'MMM d, h:mm a')}
             </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const attachment = parseFileAttachmentMetadata(message.metadata)
+  if (
+    attachment &&
+    (message.contentType === 'FILE' || message.contentType === 'IMAGE')
+  ) {
+    return (
+      <div className={cn('flex my-2', isStaff ? 'justify-end' : 'justify-start')}>
+        <div className="max-w-[85%]">
+          <AttachmentCard
+            messageId={message.id}
+            fileName={attachment.originalName}
+            mimeType={attachment.mimeType}
+            sizeBytes={attachment.sizeBytes}
+            contentType={message.contentType as 'FILE' | 'IMAGE'}
+            timestamp={message.createdAt}
+          />
+          <div
+            className={cn(
+              'flex items-center gap-2 mt-1.5 px-1',
+              isStaff ? 'justify-end' : 'justify-start',
+            )}
+          >
+            <ChannelBadge channel={message.channel} compact={isStaff} />
           </div>
         </div>
       </div>

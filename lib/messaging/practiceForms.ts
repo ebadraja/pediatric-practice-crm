@@ -24,19 +24,46 @@ export type FormLinkMetadata = {
   automation?: boolean
 }
 
+export function normalizeFormUrl(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed) return trimmed
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
+export function isValidFormUrl(url: string): boolean {
+  try {
+    const normalized = normalizeFormUrl(url)
+    const parsed = new URL(normalized)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export function parsePracticeForms(portalConfig: unknown): PracticeForm[] {
   if (!portalConfig || typeof portalConfig !== 'object') return []
   const forms = (portalConfig as PortalConfigWithForms).practiceForms
   if (!Array.isArray(forms)) return []
-  return forms.filter(
-    (f): f is PracticeForm =>
-      !!f &&
-      typeof f === 'object' &&
-      typeof f.id === 'string' &&
-      typeof f.name === 'string' &&
-      typeof f.url === 'string' &&
-      typeof f.isActive === 'boolean',
-  )
+  return forms
+    .filter(
+      (f) =>
+        !!f &&
+        typeof f === 'object' &&
+        typeof (f as PracticeForm).id === 'string' &&
+        typeof (f as PracticeForm).name === 'string' &&
+        typeof (f as PracticeForm).url === 'string',
+    )
+    .map((f) => {
+      const form = f as Partial<PracticeForm>
+      return {
+        id: form.id!,
+        name: form.name!,
+        description: typeof form.description === 'string' ? form.description : '',
+        url: normalizeFormUrl(form.url!),
+        isActive: form.isActive !== false,
+      }
+    })
 }
 
 export function getActivePracticeForms(forms: PracticeForm[]): PracticeForm[] {

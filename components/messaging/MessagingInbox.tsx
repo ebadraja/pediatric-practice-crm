@@ -361,6 +361,11 @@ export function MessagingInbox({ initialConversationId }: MessagingInboxProps) {
               if (selectedId) void fetchMessages(selectedId, false)
               showToast('Form link sent', 'success')
             }}
+            onAttachmentSent={() => {
+              if (selectedId) void fetchMessages(selectedId, false)
+              void fetchConversations(true)
+              showToast('File sent', 'success')
+            }}
           />
         </div>
 

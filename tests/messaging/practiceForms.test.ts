@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   getActivePracticeForms,
   getDefaultIntakeForm,
+  normalizeFormUrl,
   parsePracticeForms,
   resolveFormLinkDisplay,
 } from '@/lib/messaging/practiceForms'
 
 describe('practiceForms', () => {
+  it('normalizes URLs without protocol', () => {
+    expect(normalizeFormUrl('hptz.io/abc')).toBe('https://hptz.io/abc')
+  })
+
   it('parses practice forms from portal config', () => {
     const forms = parsePracticeForms({
       baseUrl: 'https://example.com/portal',

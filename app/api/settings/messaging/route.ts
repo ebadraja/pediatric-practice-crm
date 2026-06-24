@@ -70,6 +70,12 @@ export async function PUT(request: NextRequest) {
       return value as Prisma.InputJsonValue
     }
 
+    const currentPortal = (current?.portalConfig ?? {}) as Record<string, unknown>
+    const mergedPortalConfig =
+      payload.portalConfig !== undefined
+        ? { ...currentPortal, ...payload.portalConfig }
+        : undefined
+
     const updated = await prisma.settings.upsert({
       where: { id: current?.id ?? SETTINGS_ID },
       create: {
@@ -78,7 +84,7 @@ export async function PUT(request: NextRequest) {
         messagingBusinessHours: json(payload.messagingBusinessHours),
         defaultRoutingRules: json(payload.defaultRoutingRules),
         webChatWidgetConfig: json(payload.webChatWidgetConfig),
-        portalConfig: json(payload.portalConfig),
+        portalConfig: json(mergedPortalConfig ?? payload.portalConfig),
         smsProviderConfig: json(payload.smsProviderConfig),
       },
       update: {
@@ -94,8 +100,8 @@ export async function PUT(request: NextRequest) {
         ...(payload.webChatWidgetConfig !== undefined
           ? { webChatWidgetConfig: json(payload.webChatWidgetConfig) }
           : {}),
-        ...(payload.portalConfig !== undefined
-          ? { portalConfig: json(payload.portalConfig) }
+        ...(mergedPortalConfig !== undefined
+          ? { portalConfig: json(mergedPortalConfig) }
           : {}),
         ...(payload.smsProviderConfig !== undefined
           ? { smsProviderConfig: json(payload.smsProviderConfig) }

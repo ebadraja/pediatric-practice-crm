@@ -26,6 +26,7 @@ interface ConversationThreadProps {
   onAssign: () => void
   onStatusChange: (status: 'OPEN' | 'RESOLVED' | 'ARCHIVED') => Promise<void>
   onFormLinkSent?: () => void
+  onAttachmentSent?: () => void
 }
 
 export function ConversationThread({
@@ -38,6 +39,7 @@ export function ConversationThread({
   onAssign,
   onStatusChange,
   onFormLinkSent,
+  onAttachmentSent,
 }: ConversationThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -150,6 +152,7 @@ export function ConversationThread({
           onSend={onSend}
           onSendNote={onSendNote}
           onFormLinkSent={onFormLinkSent}
+          onAttachmentSent={onAttachmentSent}
         />
       </div>
     </div>

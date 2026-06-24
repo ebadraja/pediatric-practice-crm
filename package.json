@@ -29,6 +29,7 @@
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@sendgrid/mail": "^8.1.6",
+    "@supabase/supabase-js": "^2.108.2",
     "@types/sanitize-html": "^2.16.1",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.78.0",

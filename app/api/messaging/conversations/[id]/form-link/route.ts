@@ -3,18 +3,26 @@ import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import prisma from '@/lib/prisma'
 import { requireStaffSession } from '@/lib/messaging/session'
+import { isValidFormUrl, normalizeFormUrl } from '@/lib/messaging/practiceForms'
 import { appendPracticeFormLinkMessage } from '@/lib/messaging/practiceFormsServer'
 import { serializeMessage } from '@/lib/messaging/serialize'
 
 export const dynamic = 'force-dynamic'
 
+const formUrlField = z
+  .string()
+  .min(1)
+  .max(500)
+  .transform(normalizeFormUrl)
+  .refine(isValidFormUrl, { message: 'Invalid form URL' })
+
 const formLinkBody = z
   .object({
-    formId: z.string().uuid().optional(),
+    formId: z.string().min(1).max(64).optional(),
     formName: z.string().min(1).max(200).optional(),
     formDescription: z.string().max(500).optional(),
-    formUrl: z.string().url().optional(),
-    url: z.string().url().optional(),
+    formUrl: formUrlField.optional(),
+    url: formUrlField.optional(),
     title: z.string().min(1).max(200).optional(),
   })
   .refine((data) => !!(data.formUrl ?? data.url), {
