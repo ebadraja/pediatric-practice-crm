@@ -19,6 +19,10 @@ export function PortalAuth() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [devCode, setDevCode] = useState<string | null>(null)
+  const [smsConsent, setSmsConsent] = useState(false)
+
+  const phoneDigits = phone.replace(/\D/g, '')
+  const canRequestCode = phoneDigits.length >= 10 && smsConsent
 
   const requestCode = async () => {
     setLoading(true)
@@ -104,10 +108,47 @@ export function PortalAuth() {
                 className="h-11"
               />
             </div>
+            <div className="flex items-start gap-3">
+              <input
+                id="sms-consent"
+                type="checkbox"
+                checked={smsConsent}
+                onChange={(e) => setSmsConsent(e.target.checked)}
+                className="mt-0.5 h-5 w-5 min-h-[20px] min-w-[20px] shrink-0 rounded border-slate-300 accent-blue-600 cursor-pointer"
+              />
+              <label
+                htmlFor="sms-consent"
+                className="text-[13px] leading-relaxed text-slate-500 dark:text-slate-400 cursor-pointer"
+              >
+                I agree to receive appointment reminders, verification codes, and patient portal
+                notifications via text message from Kids 0-18 Integrative Pediatrics. Message
+                frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out. Reply HELP
+                for help.{' '}
+                <a
+                  href="https://www.kids0218.com/terms-and-conditions"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Terms and Conditions
+                </a>
+                {' · '}
+                <a
+                  href="https://www.kids0218.com/privacy-policy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Privacy Policy
+                </a>
+              </label>
+            </div>
             <Button
               type="button"
               className="w-full h-11"
-              disabled={loading || phone.replace(/\D/g, '').length < 10}
+              disabled={loading || !canRequestCode}
               onClick={() => void requestCode()}
             >
               {loading ? 'Sending...' : 'Send verification code'}
@@ -145,7 +186,15 @@ export function PortalAuth() {
             >
               {loading ? 'Verifying...' : 'Continue'}
             </Button>
-            <Button type="button" variant="ghost" className="w-full h-11" onClick={() => setStep('phone')}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full h-11"
+              onClick={() => {
+                setStep('phone')
+                setSmsConsent(false)
+              }}
+            >
               Use a different number
             </Button>
           </>
