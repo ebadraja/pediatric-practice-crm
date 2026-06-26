@@ -78,7 +78,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
     if (storedLocally && (inline || download)) {
       const buffer = await readFile(attachment.storageKey)
-      return new NextResponse(buffer, {
+      return new NextResponse(new Uint8Array(buffer), {
         headers: {
           'Content-Type': attachment.mimeType,
           'Content-Length': String(buffer.length),
