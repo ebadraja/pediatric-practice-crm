@@ -200,7 +200,7 @@ describe('processFileUpload', () => {
         },
         conversation: { update: vi.fn() },
         auditLog: { create: vi.fn() },
-      }),
+      } as unknown as typeof m.mockPrisma),
     )
   })
 

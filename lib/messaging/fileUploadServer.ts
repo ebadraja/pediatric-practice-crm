@@ -118,7 +118,7 @@ export async function processFileUpload(
 
       await tx.auditLog.create({
         data: {
-          userId: input.auditUserId ?? input.uploaderId,
+          userId: input.auditUserId ?? null,
           action: 'MESSAGE_SENT',
           entity: 'message',
           entityId: created.id,
@@ -129,6 +129,7 @@ export async function processFileUpload(
             sizeBytes: input.buffer.length,
             contentType: validation.contentType,
             fileUpload: true,
+            ...(input.uploadedBy === 'patient' ? { patientId: input.uploaderId } : {}),
           },
         },
       })
