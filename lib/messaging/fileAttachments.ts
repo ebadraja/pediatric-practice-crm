@@ -26,14 +26,6 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function buildStorageObjectPath(
-  conversationId: string,
-  messageId: string,
-  filename: string,
-): string {
-  return `${conversationId}/${messageId}/${filename}`
-}
-
 export function detectMimeTypeFromBuffer(buffer: Buffer): string | null {
   if (buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
     return 'application/pdf'
@@ -87,6 +79,45 @@ export function detectMimeTypeFromBuffer(buffer: Buffer): string | null {
   return null
 }
 
+const GENERIC_MIME_TYPES = new Set(['', 'application/octet-stream', 'binary/octet-stream'])
+
+export function normalizeMimeType(mimeType: string): string {
+  const normalized = mimeType.toLowerCase().trim()
+  if (normalized === 'image/jpg' || normalized === 'image/pjpeg') {
+    return 'image/jpeg'
+  }
+  return normalized
+}
+
+function isGenericDeclaredMime(mimeType: string): boolean {
+  return GENERIC_MIME_TYPES.has(normalizeMimeType(mimeType))
+}
+
+function mimeFromFilename(filename: string): string | null {
+  const ext = filename.toLowerCase().split('.').pop()
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'png':
+      return 'image/png'
+    case 'gif':
+      return 'image/gif'
+    case 'webp':
+      return 'image/webp'
+    case 'pdf':
+      return 'application/pdf'
+    case 'doc':
+      return 'application/msword'
+    case 'docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case 'txt':
+      return 'text/plain'
+    default:
+      return null
+  }
+}
+
 export type FileValidationResult =
   | { ok: true; mimeType: string; contentType: 'IMAGE' | 'FILE' }
   | { ok: false; status: 400 | 413; error: string }
@@ -111,10 +142,12 @@ export function validateUploadFile(
   }
 
   const allowed = getAllowedMimeTypes(config)
+  const declared = normalizeMimeType(declaredMimeType)
   const detected = detectMimeTypeFromBuffer(buffer)
-  const mimeType = detected ?? declaredMimeType.toLowerCase()
+  const fromName = mimeFromFilename(filename)
+  const mimeType = detected ?? (isGenericDeclaredMime(declared) ? fromName : declared)
 
-  if (!allowed.includes(mimeType)) {
+  if (!mimeType || !allowed.includes(mimeType)) {
     return {
       ok: false,
       status: 400,
@@ -122,7 +155,7 @@ export function validateUploadFile(
     }
   }
 
-  if (detected && declaredMimeType && detected !== declaredMimeType.toLowerCase()) {
+  if (detected && !isGenericDeclaredMime(declared) && detected !== declared) {
     return {
       ok: false,
       status: 400,
@@ -185,7 +218,9 @@ export function validateClientFile(file: File, config: FileSharingConfig): strin
     return `File is too large. Maximum size is ${config.maxFileSizeMb}MB`
   }
   const allowed = getAllowedMimeTypes(config)
-  if (!allowed.includes(file.type)) {
+  const declared = normalizeMimeType(file.type)
+  const mimeType = isGenericDeclaredMime(declared) ? mimeFromFilename(file.name) : declared
+  if (!mimeType || !allowed.includes(mimeType)) {
     return 'This file type is not supported. Please upload PDF, Word, or image files.'
   }
   return null

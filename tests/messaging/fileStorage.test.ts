@@ -23,6 +23,7 @@ vi.mock('@/lib/messaging/fileStorage', () => ({
   uploadFile: m.uploadFile,
   getSignedDownloadUrl: m.getSignedDownloadUrl,
   deleteFile: m.deleteFile,
+  fileExistsOnLocalDisk: vi.fn().mockResolvedValue(false),
 }))
 
 vi.mock('@/lib/messaging/fileSharingServer', () => ({
@@ -92,6 +93,28 @@ describe('file attachments validation', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.status).toBe(400)
+    }
+  })
+
+  it('accepts png when browser declares application/octet-stream', () => {
+    const result = validateUploadFile(
+      PNG_BUFFER,
+      'application/octet-stream',
+      'photo.png',
+      DEFAULT_FILE_SHARING_CONFIG,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.mimeType).toBe('image/png')
+    }
+  })
+
+  it('accepts jpeg when browser declares image/jpg', () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0x00])
+    const result = validateUploadFile(jpeg, 'image/jpg', 'photo.jpg', DEFAULT_FILE_SHARING_CONFIG)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.mimeType).toBe('image/jpeg')
     }
   })
 

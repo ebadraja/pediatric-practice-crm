@@ -3,12 +3,21 @@ import prisma from '@/lib/prisma'
 import { auth } from '@/auth'
 import { getPortalSessionFromCookies } from '@/lib/messaging/portalAuth'
 import { parseFileAttachmentMetadata } from '@/lib/messaging/fileAttachments'
-import { getSignedDownloadUrl } from '@/lib/messaging/fileStorage'
+import {
+  fileExistsOnLocalDisk,
+  getSignedDownloadUrl,
+  readFile,
+} from '@/lib/messaging/fileStorage'
 import { authorizeFileAccess } from '@/lib/messaging/fileAccess'
 
 export const dynamic = 'force-dynamic'
 
 type RouteContext = { params: Promise<{ messageId: string }> }
+
+function contentDisposition(filename: string, download: boolean): string {
+  const safeName = filename.replace(/["\r\n]/g, '_')
+  return download ? `attachment; filename="${safeName}"` : `inline; filename="${safeName}"`
+}
 
 export async function GET(request: NextRequest, { params }: RouteContext) {
   try {
@@ -63,9 +72,30 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       },
     })
 
+    const inline = request.nextUrl.searchParams.get('inline') === '1'
+    const download = request.nextUrl.searchParams.get('download') === '1'
+    const storedLocally = await fileExistsOnLocalDisk(attachment.storageKey)
+
+    if (storedLocally && (inline || download)) {
+      const buffer = await readFile(attachment.storageKey)
+      return new NextResponse(buffer, {
+        headers: {
+          'Content-Type': attachment.mimeType,
+          'Content-Length': String(buffer.length),
+          'Content-Disposition': contentDisposition(attachment.originalName, download),
+          'Cache-Control': 'private, max-age=3600',
+        },
+      })
+    }
+
+    if (storedLocally) {
+      return NextResponse.json({
+        url: `/api/messaging/files/${messageId}?inline=1`,
+      })
+    }
+
     const signedUrl = await getSignedDownloadUrl(attachment.storageKey)
 
-    const download = request.nextUrl.searchParams.get('download') === '1'
     if (download) {
       return NextResponse.redirect(signedUrl)
     }

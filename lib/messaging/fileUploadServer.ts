@@ -7,7 +7,7 @@ import {
   validateUploadFile,
 } from '@/lib/messaging/fileAttachments'
 import { loadFileSharingConfig } from '@/lib/messaging/fileSharingServer'
-import { getSignedDownloadUrl, uploadFile, deleteFile } from '@/lib/messaging/fileStorage'
+import { getSignedDownloadUrl, uploadFile, deleteFile, fileExistsOnLocalDisk } from '@/lib/messaging/fileStorage'
 import { encryptMessageContent, previewText, serializeMessage } from '@/lib/messaging/serialize'
 
 export type ProcessFileUploadInput = {
@@ -136,7 +136,9 @@ export async function processFileUpload(
       return created
     })
 
-    const downloadUrl = await getSignedDownloadUrl(storageKey)
+    const downloadUrl = (await fileExistsOnLocalDisk(storageKey))
+      ? `/api/messaging/files/${messageId}`
+      : await getSignedDownloadUrl(storageKey)
     return {
       ok: true,
       message: serializeMessage(message),
@@ -147,6 +149,7 @@ export async function processFileUpload(
       await deleteFile(storageKey).catch(() => undefined)
     }
     console.error('[processFileUpload]', error)
-    return { ok: false, status: 500, error: 'Failed to upload file' }
+    const message = error instanceof Error ? error.message : 'Failed to upload file'
+    return { ok: false, status: 500, error: message }
   }
 }

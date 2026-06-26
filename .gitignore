@@ -36,6 +36,9 @@ yarn-error.log*
 # user uploads (avatars, etc.)
 /public/uploads
 
+# messaging file attachments (local disk fallback)
+/data/messaging-attachments
+
 # env files (can opt-in for committing if needed)
 .env*
 
