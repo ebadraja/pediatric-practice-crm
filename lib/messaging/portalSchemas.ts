@@ -14,6 +14,9 @@ export const portalAuthBody = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('request_code'),
     phone: z.string().min(10).max(20),
+    // Optional marketing/notification SMS consent. OTP codes are transactional
+    // and sent regardless of this flag.
+    smsConsent: z.boolean().optional(),
   }),
   z.object({
     action: z.literal('verify_code'),

@@ -41,21 +41,65 @@ async function isPatientActiveInPortal(patientId: string): Promise<boolean> {
   return session !== null
 }
 
-async function isSmsOptedOut(patientId: string): Promise<boolean> {
+/**
+ * Positive consent gate for marketing/notification SMS.
+ *
+ * Returns true only when the patient has affirmatively opted in (an SMSOptOut
+ * row with isOptedOut=false) and has not globally opted out. Patients who never
+ * granted consent (e.g. skipped the portal consent checkbox) are treated as not
+ * consented and will not receive notification SMS. OTP codes are transactional
+ * and are NOT gated by this check.
+ */
+export async function hasSmsConsent(patientId: string): Promise<boolean> {
   const patient = await prisma.patient.findUnique({
     where: { id: patientId },
     select: { smsOptOut: true },
   })
-  if (patient?.smsOptOut) return true
+  if (patient?.smsOptOut) return false
 
-  const optOut = await prisma.sMSOptOut.findFirst({
+  const optIn = await prisma.sMSOptOut.findFirst({
     where: {
       patientId,
-      isOptedOut: true,
+      isOptedOut: false,
     },
     select: { id: true },
   })
-  return optOut !== null
+  return optIn !== null
+}
+
+/**
+ * Record affirmative SMS consent for a patient (e.g. portal consent checkbox).
+ * Creates or updates the SMSOptOut record as opted-in and clears any global
+ * opt-out flag. Safe to call repeatedly.
+ */
+export async function recordSmsConsent(patientId: string, phone: string): Promise<void> {
+  let phoneNumber = phone
+  try {
+    phoneNumber = formatPhoneE164(phone)
+  } catch {
+    // Store the raw phone if it can't be normalized; consent is still recorded.
+  }
+
+  const existing = await prisma.sMSOptOut.findFirst({
+    where: { patientId, phoneNumber },
+    select: { id: true },
+  })
+
+  if (existing) {
+    await prisma.sMSOptOut.update({
+      where: { id: existing.id },
+      data: { isOptedOut: false, optedInAt: new Date() },
+    })
+  } else {
+    await prisma.sMSOptOut.create({
+      data: { patientId, phoneNumber, isOptedOut: false, optedInAt: new Date() },
+    })
+  }
+
+  await prisma.patient.update({
+    where: { id: patientId },
+    data: { smsOptOut: false },
+  })
 }
 
 /**
@@ -94,7 +138,9 @@ export async function notifyPatientOfNewMessage({
     return
   }
 
-  if (await isSmsOptedOut(patientId)) {
+  // Only notify patients who affirmatively consented to SMS. STOP/opt-out
+  // clears consent; OTP codes are unaffected (transactional).
+  if (!(await hasSmsConsent(patientId))) {
     return
   }
 

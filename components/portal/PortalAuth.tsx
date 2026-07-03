@@ -22,7 +22,9 @@ export function PortalAuth() {
   const [smsConsent, setSmsConsent] = useState(false)
 
   const phoneDigits = phone.replace(/\D/g, '')
-  const canRequestCode = phoneDigits.length >= 10 && smsConsent
+  // SMS consent is optional — OTP verification codes are transactional and sent
+  // regardless. Consent only gates marketing/notification texts.
+  const canRequestCode = phoneDigits.length >= 10
 
   const requestCode = async () => {
     setLoading(true)
@@ -31,7 +33,7 @@ export function PortalAuth() {
       const res = await fetch('/api/portal/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'request_code', phone }),
+        body: JSON.stringify({ action: 'request_code', phone, smsConsent }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to send code')
@@ -120,10 +122,10 @@ export function PortalAuth() {
                 htmlFor="sms-consent"
                 className="text-[13px] leading-relaxed text-slate-500 dark:text-slate-400 cursor-pointer"
               >
-                I agree to receive appointment reminders, verification codes, and patient portal
-                notifications via text message from Kids 0-18 Integrative Pediatrics. Message
-                frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out. Reply HELP
-                for help.{' '}
+                <span className="font-medium text-slate-600 dark:text-slate-300">(Optional)</span>{' '}
+                I agree to receive appointment reminders and patient portal notifications via text
+                message from Kids 0-18 Integrative Pediatrics. Message frequency varies. Msg &amp;
+                data rates may apply. Reply STOP to opt out. Reply HELP for help.{' '}
                 <a
                   href="https://www.kids0218.com/terms-and-conditions"
                   target="_blank"

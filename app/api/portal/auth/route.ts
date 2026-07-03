@@ -16,6 +16,7 @@ import {
 import { portalAuthBody } from '@/lib/messaging/portalSchemas'
 import { getSmsProviderConfig } from '@/lib/messaging/smsSettings'
 import { formatPhoneE164 } from '@/lib/messaging/smsProvider'
+import { recordSmsConsent } from '@/lib/messaging/notifications-sms'
 import { queueSms } from '@/services/messageQueue'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +41,16 @@ export async function POST(request: NextRequest) {
           { error: 'No patient found for this phone number. Please call the office.' },
           { status: 404 },
         )
+      }
+
+      // Record affirmative marketing/notification SMS consent if given. This is
+      // optional — OTP codes below are transactional and sent regardless.
+      if (payload.smsConsent) {
+        try {
+          await recordSmsConsent(patient.id, payload.phone)
+        } catch (consentErr) {
+          console.error('[portal] failed to record SMS consent:', (consentErr as Error).message)
+        }
       }
 
       const code = generateSmsCode()
