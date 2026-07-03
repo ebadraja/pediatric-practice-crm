@@ -14,7 +14,7 @@ function resolvePortalSiteBase(portalConfig: { baseUrl?: string } | null): strin
   let base =
     portalConfig?.baseUrl?.replace(/\/$/, '') ??
     process.env.NEXTAUTH_URL?.replace(/\/$/, '') ??
-    'https://srv1217658.hstgr.cloud'
+    'https://app.kids0218.com'
 
   // portalConfig.baseUrl may already end with /portal — avoid /portal/portal/chat/…
   base = base.replace(/\/portal$/, '')

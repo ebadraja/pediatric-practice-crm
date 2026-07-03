@@ -163,8 +163,8 @@ Single self-executing IIFE that injects everything. Configurable via data attrib
 
 ```html
 <script
-  src="https://srv1217658.hstgr.cloud/gigi-chatbot.js"
-  data-api-url="https://srv1217658.hstgr.cloud"
+  src="https://app.kids0218.com/gigi-chatbot.js"
+  data-api-url="https://app.kids0218.com"
   defer>
 </script>
 ```
@@ -323,11 +323,11 @@ This is the actual Klara webchat replacement. Build only after backend messaging
 
 ## Webflow Integration
 
-1. Host on the CRM server: `https://srv1217658.hstgr.cloud/gigi-chatbot.js` and `gigi-avatar.png`.
+1. Host on the CRM server: `https://app.kids0218.com/gigi-chatbot.js` and `gigi-avatar.png`.
 2. Webflow → Project Settings → Custom Code → Footer Code:
 ```html
-<script src="https://srv1217658.hstgr.cloud/gigi-chatbot.js"
-        data-api-url="https://srv1217658.hstgr.cloud" defer></script>
+<script src="https://app.kids0218.com/gigi-chatbot.js"
+        data-api-url="https://app.kids0218.com" defer></script>
 ```
 3. Widget self-initializes on load. No keys in the page.
 

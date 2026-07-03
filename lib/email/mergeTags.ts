@@ -196,7 +196,7 @@ export async function resolveMergeTags(
   }
 
   // ── 3. Generate signed tokens ─────────────────────────────────────────────
-  const baseUrl = process.env.NEXTAUTH_URL ?? 'https://srv1217658.hstgr.cloud'
+  const baseUrl = process.env.NEXTAUTH_URL ?? 'https://app.kids0218.com'
 
   const unsubscribeToken = await signToken(
     { patientId, purpose: 'unsubscribe' },

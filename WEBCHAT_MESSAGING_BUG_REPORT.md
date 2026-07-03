@@ -32,10 +32,10 @@ The GIGI widget’s **Messaging** tab (and sometimes the standalone webchat widg
 | Item | Value |
 |------|--------|
 | Live website | `https://kids-0-to-18-integrative-pediatrics.webflow.io` |
-| CRM / API / widget host | `https://srv1217658.hstgr.cloud` |
-| GIGI embed | `<script src="https://srv1217658.hstgr.cloud/gigi-chatbot.js" data-api-url="https://srv1217658.hstgr.cloud">` |
-| Standalone test page | `https://srv1217658.hstgr.cloud/webchat-test.html` |
-| Patient portal (separate product) | `https://srv1217658.hstgr.cloud/portal` |
+| CRM / API / widget host | `https://app.kids0218.com` |
+| GIGI embed | `<script src="https://app.kids0218.com/gigi-chatbot.js" data-api-url="https://app.kids0218.com">` |
+| Standalone test page | `https://app.kids0218.com/webchat-test.html` |
+| Patient portal (separate product) | `https://app.kids0218.com/portal` |
 | Repo | `pediatric-practice-kid` (Next.js CRM) |
 | OS | Windows 10, Chrome |
 
@@ -129,7 +129,7 @@ The GIGI widget’s **Messaging** tab (and sometimes the standalone webchat widg
 
 ### 7.4 Production vs local code (curl / git, June 21 2026)
 
-| Check | Local git HEAD | Production `srv1217658.hstgr.cloud` |
+| Check | Local git HEAD | Production `app.kids0218.com` |
 |-------|----------------|-------------------------------------|
 | `intakeCompleted` gate in `canResumeChat()` | **Yes** | **No** (older build) |
 | `VERSION` in webchat-core | `2026.06.21-session-clarity` | **Missing** |

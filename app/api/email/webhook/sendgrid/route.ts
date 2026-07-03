@@ -4,7 +4,7 @@
  *
  * Setup in SendGrid dashboard:
  *   Settings → Mail Settings → Event Notifications
- *   URL: https://srv1217658.hstgr.cloud/api/email/webhook/sendgrid
+ *   URL: https://app.kids0218.com/api/email/webhook/sendgrid
  *   Events to enable: delivered, open, click, bounce, unsubscribe, spamreport
  *
  * Signature verification uses ECDSA P-256.
