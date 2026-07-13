@@ -161,7 +161,6 @@
       '.gigi-portal-btn{margin-top:8px;width:100%;max-width:280px;min-height:48px;border:none;border-radius:12px;background:#7C3AED;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;padding:12px 16px}' +
       '.gigi-portal-btn:hover{background:#6D28D9}' +
       '.gigi-portal-phone{margin:8px 0 0;font-size:13px;color:#6B7280}' +
-      '.gigi-portal-consent{margin:12px 0 0;font-size:11px;line-height:1.45;color:#9CA3AF;max-width:280px}' +
       '.gigi-msg{display:flex;gap:8px;margin:8px 0;max-width:92%}' +
       '.gigi-msg.user{margin-left:auto;flex-direction:row-reverse}' +
       '.gigi-msg-avatar{width:28px;height:28px;flex-shrink:0}' +
@@ -391,14 +390,6 @@
     gateway.appendChild(openBtn);
 
     gateway.appendChild(el('p', 'gigi-portal-phone', 'Or call us at (253) 400-4479'));
-
-    gateway.appendChild(
-      el(
-        'p',
-        'gigi-portal-consent',
-        'By verifying your mobile number in our secure portal, you agree to receive SMS from Kids 0-18 Pediatrics (verification codes, appointment reminders, and new message alerts). Message and data rates may apply. Reply STOP to opt out or START to re-subscribe.',
-      ),
-    );
 
     container.appendChild(gateway);
   }

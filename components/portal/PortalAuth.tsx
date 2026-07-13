@@ -19,7 +19,8 @@ export function PortalAuth() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [devCode, setDevCode] = useState<string | null>(null)
-  const [smsConsent, setSmsConsent] = useState(false)
+  const [reminderConsent, setReminderConsent] = useState(false)
+  const [portalTextConsent, setPortalTextConsent] = useState(false)
 
   const phoneDigits = phone.replace(/\D/g, '')
   // SMS consent is optional — OTP verification codes are transactional and sent
@@ -33,7 +34,11 @@ export function PortalAuth() {
       const res = await fetch('/api/portal/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'request_code', phone, smsConsent }),
+        body: JSON.stringify({
+          action: 'request_code',
+          phone,
+          smsConsent: reminderConsent || portalTextConsent,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to send code')
@@ -110,28 +115,54 @@ export function PortalAuth() {
                 className="h-11"
               />
             </div>
-            <div className="flex items-start gap-3">
-              <input
-                id="sms-consent"
-                type="checkbox"
-                checked={smsConsent}
-                onChange={(e) => setSmsConsent(e.target.checked)}
-                className="mt-0.5 h-5 w-5 min-h-[20px] min-w-[20px] shrink-0 rounded border-slate-300 accent-blue-600 cursor-pointer"
-              />
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Optional text message preferences
+              </p>
+
               <label
-                htmlFor="sms-consent"
-                className="text-[13px] leading-relaxed text-slate-500 dark:text-slate-400 cursor-pointer"
+                htmlFor="reminder-consent"
+                className="flex items-start gap-3 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400"
               >
-                <span className="font-medium text-slate-600 dark:text-slate-300">(Optional)</span>{' '}
-                I agree to receive appointment reminders and patient portal notifications via text
-                message from Kids 0-18 Integrative Pediatrics. Message frequency varies. Msg &amp;
-                data rates may apply. Reply STOP to opt out. Reply HELP for help.{' '}
+                <input
+                  id="reminder-consent"
+                  type="checkbox"
+                  checked={reminderConsent}
+                  onChange={(e) => setReminderConsent(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 min-h-[20px] min-w-[20px] shrink-0 rounded border-slate-300 accent-blue-600 cursor-pointer"
+                />
+                <span>
+                  I agree to receive appointment reminders by text from Kids 0-18 Integrative
+                  Pediatrics. Message frequency varies. Msg &amp; data rates may apply. Reply STOP
+                  to opt out, HELP for help.
+                </span>
+              </label>
+
+              <label
+                htmlFor="portal-text-consent"
+                className="flex items-start gap-3 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400"
+              >
+                <input
+                  id="portal-text-consent"
+                  type="checkbox"
+                  checked={portalTextConsent}
+                  onChange={(e) => setPortalTextConsent(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 min-h-[20px] min-w-[20px] shrink-0 rounded border-slate-300 accent-blue-600 cursor-pointer"
+                />
+                <span>
+                  I agree to receive patient portal text notifications from Kids 0-18 Integrative
+                  Pediatrics. Message frequency varies. Msg &amp; data rates may apply. Reply STOP
+                  to opt out, HELP for help.
+                </span>
+              </label>
+
+              <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                These boxes are optional and are not required to receive your verification code.{' '}
                 <a
                   href="https://www.kids0218.com/terms-and-conditions"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 dark:text-blue-400 hover:underline"
-                  onClick={(e) => e.stopPropagation()}
                 >
                   Terms and Conditions
                 </a>
@@ -141,11 +172,10 @@ export function PortalAuth() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 dark:text-blue-400 hover:underline"
-                  onClick={(e) => e.stopPropagation()}
                 >
                   Privacy Policy
                 </a>
-              </label>
+              </p>
             </div>
             <Button
               type="button"
@@ -194,7 +224,8 @@ export function PortalAuth() {
               className="w-full h-11"
               onClick={() => {
                 setStep('phone')
-                setSmsConsent(false)
+                setReminderConsent(false)
+                setPortalTextConsent(false)
               }}
             >
               Use a different number
