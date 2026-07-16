@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import AddPatientDialog from "@/components/patients/add-patient-dialog";
+import CSVImportModal from "@/components/csv-import-modal";
 import { format } from "date-fns";
 import {
   Card,
@@ -173,6 +174,7 @@ export default function PatientsPage() {
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   // Draft Patients State
   const [draftPatients, setDraftPatients] = useState<DraftPatient[]>([]);
@@ -382,7 +384,11 @@ export default function PatientsPage() {
           <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">Manage your patient database</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => setIsImportOpen(true)}
+          >
             <Upload className="h-4 w-4" />
             Bulk Import
           </Button>
@@ -807,6 +813,14 @@ export default function PatientsPage() {
         isOpen={isAddDialogOpen}
         onClose={() => setIsAddDialogOpen(false)}
         onSuccess={() => { setCurrentPage(1); fetchPatients(); }}
+      />
+      <CSVImportModal
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        onImportComplete={() => {
+          setCurrentPage(1);
+          void fetchPatients();
+        }}
       />
     </div>
   );
