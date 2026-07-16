@@ -308,9 +308,13 @@ model User {
 model Patient {
   id          String   @id @default(cuid())
   firstName   String   @map("first_name")
+  middleName  String?  @map("middle_name")
   lastName    String   @map("last_name")
   dateOfBirth DateTime @map("date_of_birth")
   gender      Gender?
+
+  // External system ID (Develo import dedupe)
+  externalId String? @unique @map("external_id")
 
   // Contact
   phone   String?
@@ -326,6 +330,12 @@ model Patient {
   parentPhone    String? @map("parent_phone")
   parentEmail    String? @map("parent_email")
 
+  // Second Parent / Guardian
+  parent2Name     String? @map("parent2_name")
+  parent2Relation String? @map("parent2_relation")
+  parentPhone2    String? @map("parent_phone2")
+  parent2Email    String? @map("parent2_email")
+
   // Emergency
   emergencyContact String? @map("emergency_contact")
   emergencyPhone   String? @map("emergency_phone")
@@ -340,9 +350,16 @@ model Patient {
   medications       String?
   medicalNotes      String? @map("medical_notes")
 
+  // Demographics (Develo import — not wired to logic yet)
+  raceEthnicity     String? @map("race_ethnicity")
+
   // Preferences
   preferredLanguage String  @default("English") @map("preferred_language")
+  secondaryLanguage String? @map("secondary_language")
   preferredProvider String? @map("preferred_provider")
+
+  // Membership (Develo import — not wired to logic yet)
+  membershipStatus  String? @map("membership_status")
 
   // Status & tracking
   status       PatientStatus @default(ACTIVE)
@@ -369,6 +386,7 @@ model Patient {
   smsOptOut    Boolean @default(false) @map("sms_opt_out")
 
   @@index([phone])
+  @@index([parentPhone2])
   @@index([lastName, firstName])
   @@map("patients")
 }
