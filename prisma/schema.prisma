@@ -384,6 +384,7 @@ model Patient {
   portalSessions PatientPortalSession[]
   smsOptOuts   SMSOptOut[]
   smsOptOut    Boolean @default(false) @map("sms_opt_out")
+  privateMode  Boolean @default(false) @map("private_mode")
 
   @@index([phone])
   @@index([parentPhone2])
