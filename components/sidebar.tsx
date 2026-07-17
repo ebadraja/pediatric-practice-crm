@@ -56,6 +56,7 @@ const NAV_COUNT_SOURCES: { href: string; url: string }[] = [
   { href: "/call-logs", url: "/api/call-logs/new-count" },
   { href: "/chat-logs", url: "/api/chat-logs/new-count" },
   { href: "/intake-forms", url: "/api/intake-forms/new-count" },
+  { href: "/patients", url: "/api/patient-drafts/new-count" },
 ];
 
 const lastSeenKey = (href: string) => `nav-lastseen:${href}`;

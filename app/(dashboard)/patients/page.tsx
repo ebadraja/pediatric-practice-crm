@@ -54,6 +54,7 @@ import {
   MailX,
   Mail,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -64,7 +65,7 @@ interface Patient {
   dateOfBirth: string;
   phone: string | null;
   parentName: string | null;
-  status: "ACTIVE" | "INACTIVE" | "ARCHIVED";
+  status: "ACTIVE" | "INACTIVE" | "ARCHIVED" | "DRAFT";
   totalVisits: number;
   lastVisitAt: string | null;
   insuranceProvider: string | null;
@@ -96,7 +97,7 @@ interface Pagination {
   totalPages: number;
 }
 
-type StatusFilter = "all" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
+type StatusFilter = "all" | "ACTIVE" | "INACTIVE" | "ARCHIVED" | "DRAFT";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -147,6 +148,7 @@ const STATUS_FILTER_OPTIONS: { label: string; value: StatusFilter }[] = [
   { label: "All Patients", value: "all" },
   { label: "Active", value: "ACTIVE" },
   { label: "Inactive", value: "INACTIVE" },
+  { label: "Draft", value: "DRAFT" },
   { label: "Archived", value: "ARCHIVED" },
 ];
 
@@ -155,6 +157,8 @@ function StatusBadge({ status }: { status: Patient["status"] }) {
     return <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-0">Active</Badge>;
   if (status === "INACTIVE")
     return <Badge className="bg-slate-100 text-slate-600 hover:bg-slate-100 border-0">Inactive</Badge>;
+  if (status === "DRAFT")
+    return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-0">Draft</Badge>;
   return <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 border-0">Archived</Badge>;
 }
 
@@ -175,6 +179,9 @@ export default function PatientsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [selectedPatientIds, setSelectedPatientIds] = useState<string[]>([]);
+  const [selectedDraftIds, setSelectedDraftIds] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // Draft Patients State
   const [draftPatients, setDraftPatients] = useState<DraftPatient[]>([]);
@@ -207,6 +214,10 @@ export default function PatientsPage() {
 
   // Reset page when filter changes
   useEffect(() => { setCurrentPage(1); }, [statusFilter]);
+
+  // Clear selection when list data changes
+  useEffect(() => { setSelectedPatientIds([]); }, [patients]);
+  useEffect(() => { setSelectedDraftIds([]); }, [draftPatients]);
 
   // Fetch patients
   const fetchPatients = useCallback(async () => {
@@ -300,6 +311,120 @@ export default function PatientsPage() {
       console.error('Discard failed', e);
     }
   };
+
+  const runPatientBulkAction = async (action: "activate" | "draft" | "archive", ids: string[]) => {
+    if (ids.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/patients/bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, action }),
+      });
+      if (!res.ok) throw new Error("Bulk update failed");
+      setSelectedPatientIds([]);
+      await fetchPatients();
+    } catch (e) {
+      console.error("Patient bulk action failed", e);
+      alert("Failed to update selected patients. Please try again.");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleArchivePatient = async (patientId: string) => {
+    if (!confirm("Archive this patient? They will be marked ARCHIVED (not permanently deleted).")) return;
+    try {
+      const res = await fetch(`/api/patients/${patientId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Archive failed");
+      await fetchPatients();
+    } catch (e) {
+      console.error("Archive failed", e);
+      alert("Failed to archive patient.");
+    }
+  };
+
+  const handleSetPatientDraft = async (patientId: string) => {
+    if (!confirm("Move this patient to Draft status?")) return;
+    await runPatientBulkAction("draft", [patientId]);
+  };
+
+  const handleBulkConvertDrafts = async () => {
+    const selected = draftPatients.filter((d) => selectedDraftIds.includes(d.id));
+    if (selected.length === 0 || bulkBusy) return;
+    if (!confirm(`Convert ${selected.length} draft${selected.length === 1 ? "" : "s"} to patient records?`)) return;
+
+    setBulkBusy(true);
+    let success = 0;
+    let failed = 0;
+    try {
+      for (const draft of selected) {
+        try {
+          const res = await fetch(`/api/patient-drafts/${draft.id}/publish`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ notes: "bulk convert" }),
+          });
+          if (res.ok) success += 1;
+          else failed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      setSelectedDraftIds([]);
+      await fetchDraftPatients();
+      alert(`Converted ${success} draft${success === 1 ? "" : "s"}${failed ? `; ${failed} failed` : ""}.`);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleBulkDiscardDrafts = async () => {
+    const selected = draftPatients.filter((d) => selectedDraftIds.includes(d.id));
+    if (selected.length === 0 || bulkBusy) return;
+    if (!confirm(`Discard ${selected.length} draft${selected.length === 1 ? "" : "s"}? Linked intake forms will be archived.`)) return;
+
+    setBulkBusy(true);
+    let success = 0;
+    let failed = 0;
+    try {
+      for (const draft of selected) {
+        try {
+          const res = await fetch(`/api/intake-forms/${draft.formId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "ARCHIVED" }),
+          });
+          if (res.ok) success += 1;
+          else failed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      setSelectedDraftIds([]);
+      await fetchDraftPatients();
+      alert(`Discarded ${success} draft${success === 1 ? "" : "s"}${failed ? `; ${failed} failed` : ""}.`);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const togglePatientSelected = (id: string) => {
+    setSelectedPatientIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const toggleDraftSelected = (id: string) => {
+    setSelectedDraftIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const allPatientsOnPageSelected =
+    patients.length > 0 && patients.every((p) => selectedPatientIds.includes(p.id));
+  const allDraftsOnPageSelected =
+    draftPatients.length > 0 && draftPatients.every((d) => selectedDraftIds.includes(d.id));
 
   const total = pagination?.total ?? 0;
   const totalPages = pagination?.totalPages ?? 1;
@@ -465,10 +590,63 @@ export default function PatientsPage() {
           ) : (
             /* Table */
             <Card>
+              {selectedPatientIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-blue-50/70 dark:bg-blue-950/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200 mr-2">
+                    {selectedPatientIds.length} selected
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={bulkBusy}
+                    onClick={() => void runPatientBulkAction("activate", selectedPatientIds)}
+                  >
+                    Set to Active
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={bulkBusy}
+                    onClick={() => void runPatientBulkAction("draft", selectedPatientIds)}
+                  >
+                    Set to Draft
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-orange-700 border-orange-200"
+                    disabled={bulkBusy}
+                    onClick={() => void runPatientBulkAction("archive", selectedPatientIds)}
+                  >
+                    Archive selected
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={bulkBusy}
+                    onClick={() => setSelectedPatientIds([])}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              )}
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={allPatientsOnPageSelected}
+                          onCheckedChange={(checked) => {
+                            if (checked === true) {
+                              setSelectedPatientIds(patients.map((p) => p.id));
+                            } else {
+                              setSelectedPatientIds([]);
+                            }
+                          }}
+                          aria-label="Select all patients on this page"
+                        />
+                      </TableHead>
                       <TableHead>Patient</TableHead>
                       <TableHead>DOB</TableHead>
                       <TableHead>Phone</TableHead>
@@ -489,6 +667,13 @@ export default function PatientsPage() {
                           className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"
                           onClick={() => router.push(`/patients/${patient.id}`)}
                         >
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedPatientIds.includes(patient.id)}
+                              onCheckedChange={() => togglePatientSelected(patient.id)}
+                              aria-label={`Select ${fullName}`}
+                            />
+                          </TableCell>
                           {/* Patient name + parent */}
                           <TableCell>
                             <div className="flex items-center gap-3">
@@ -563,7 +748,7 @@ export default function PatientsPage() {
                               <DropdownMenuTrigger className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
                                 <MoreVertical className="h-4 w-4" />
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-40">
+                              <DropdownMenuContent align="end" className="w-44">
                                 <DropdownMenuItem
                                   className="gap-2"
                                   onClick={() => router.push(`/patients/${patient.id}`)}
@@ -573,12 +758,18 @@ export default function PatientsPage() {
                                 <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => router.push(`/patients/${patient.id}?edit=1`)}>
                                   <Edit className="h-4 w-4" /> Edit
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem className="gap-2 text-orange-600 focus:text-orange-600">
-                                  <Archive className="h-4 w-4" /> Archive
+                                <DropdownMenuItem
+                                  className="gap-2 cursor-pointer"
+                                  onClick={() => void handleSetPatientDraft(patient.id)}
+                                >
+                                  <FileText className="h-4 w-4" /> Set to Draft
                                 </DropdownMenuItem>
-                                <DropdownMenuItem className="gap-2 text-red-600 focus:text-red-600">
-                                  <Trash2 className="h-4 w-4" /> Delete
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="gap-2 text-orange-600 focus:text-orange-600 cursor-pointer"
+                                  onClick={() => void handleArchivePatient(patient.id)}
+                                >
+                                  <Archive className="h-4 w-4" /> Archive
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -687,10 +878,55 @@ export default function PatientsPage() {
                 </Card>
               ) : (
                 <Card>
+                  {selectedDraftIds.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-amber-50/70 dark:bg-amber-950/30">
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200 mr-2">
+                        {selectedDraftIds.length} selected
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={bulkBusy}
+                        onClick={() => void handleBulkConvertDrafts()}
+                      >
+                        Convert to Patient
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-700 border-red-200"
+                        disabled={bulkBusy}
+                        onClick={() => void handleBulkDiscardDrafts()}
+                      >
+                        Discard selected
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={bulkBusy}
+                        onClick={() => setSelectedDraftIds([])}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  )}
                   <CardContent className="p-0">
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead className="w-10">
+                            <Checkbox
+                              checked={allDraftsOnPageSelected}
+                              onCheckedChange={(checked) => {
+                                if (checked === true) {
+                                  setSelectedDraftIds(draftPatients.map((d) => d.id));
+                                } else {
+                                  setSelectedDraftIds([]);
+                                }
+                              }}
+                              aria-label="Select all drafts on this page"
+                            />
+                          </TableHead>
                           <TableHead>Patient Name</TableHead>
                           <TableHead>DOB</TableHead>
                           <TableHead>Phone</TableHead>
@@ -712,6 +948,13 @@ export default function PatientsPage() {
                           
                           return (
                             <TableRow key={draft.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedDraftIds.includes(draft.id)}
+                                  onCheckedChange={() => toggleDraftSelected(draft.id)}
+                                  aria-label={`Select ${fullName}`}
+                                />
+                              </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-3">
                                   <div className={`h-10 w-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 ${avatarColor}`}>

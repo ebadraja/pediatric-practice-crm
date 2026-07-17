@@ -28,6 +28,7 @@ enum PatientStatus {
   ACTIVE
   INACTIVE
   ARCHIVED
+  DRAFT
 }
 
 enum AppointmentType {
