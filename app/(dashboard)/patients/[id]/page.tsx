@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,6 +26,7 @@ import { format } from "date-fns";
 interface Patient {
   id: string;
   firstName: string;
+  middleName: string | null;
   lastName: string;
   dateOfBirth: string;
   gender: string | null;
@@ -38,6 +40,10 @@ interface Patient {
   parentRelation: string | null;
   parentPhone: string | null;
   parentEmail: string | null;
+  parent2Name: string | null;
+  parent2Relation: string | null;
+  parentPhone2: string | null;
+  parent2Email: string | null;
   emergencyContact: string | null;
   emergencyPhone: string | null;
   insuranceProvider: string | null;
@@ -47,6 +53,10 @@ interface Patient {
   medicalNotes: string | null;
   preferredLanguage: string | null;
   preferredProvider: string | null;
+  secondaryLanguage: string | null;
+  raceEthnicity: string | null;
+  membershipStatus: string | null;
+  privateMode: boolean;
   status: "ACTIVE" | "INACTIVE" | "ARCHIVED";
   createdAt: string;
   appointments: Array<{
@@ -386,6 +396,11 @@ export default function PatientDetailPage() {
                     : patient.status === "INACTIVE" ? "bg-slate-100 text-slate-600 border-0"
                     : "bg-orange-100 text-orange-700 border-0"
                   }>{patient.status}</Badge>
+                  {patient.privateMode && (
+                    <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 border-0">
+                      Private
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   DOB: {format(new Date(patient.dateOfBirth), "MMMM d, yyyy")}
@@ -398,8 +413,25 @@ export default function PatientDetailPage() {
               </div>
             </div>
             {isEditing && (
-              <div className="mt-3 flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-3 py-2 rounded-lg border border-blue-100 dark:border-blue-900/60">
-                <Edit className="h-3.5 w-3.5" />Editing mode — changes not saved until you click "Save Changes"
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-3 py-2 rounded-lg border border-blue-100 dark:border-blue-900/60">
+                  <Edit className="h-3.5 w-3.5" />Editing mode — changes not saved until you click &quot;Save Changes&quot;
+                </div>
+                <label className="flex items-start gap-2.5 text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer">
+                  <Checkbox
+                    checked={!!editForm.privateMode}
+                    onCheckedChange={(checked) =>
+                      setEditForm({ ...editForm, privateMode: checked === true })
+                    }
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium">Private</span>
+                    <span className="text-slate-500 dark:text-slate-400">
+                      {" "}(restrict parent access — teen privacy)
+                    </span>
+                  </span>
+                </label>
               </div>
             )}
           </div>
@@ -418,6 +450,7 @@ export default function PatientDetailPage() {
                 <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Core Patient Data</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {F({ label: "First Name", k: "firstName" })}
+                  {F({ label: "Middle Name", k: "middleName" })}
                   {F({ label: "Last Name", k: "lastName" })}
                   {F({ label: "Date of Birth", k: "dateOfBirth", type: "date" })}
                   {F({ label: "Gender", k: "gender" })}
@@ -449,6 +482,27 @@ export default function PatientDetailPage() {
                   {F({ label: "Email", k: "parentEmail", type: "email" })}
                   {F({ label: "Emergency Contact", k: "emergencyContact" })}
                   {F({ label: "Emergency Phone", k: "emergencyPhone", type: "tel" })}
+                </div>
+              </div>
+
+              {/* Second Parent / Guardian */}
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Second Parent / Guardian</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {F({ label: "Name", k: "parent2Name" })}
+                  {F({ label: "Relationship", k: "parent2Relation" })}
+                  {F({ label: "Phone", k: "parentPhone2", type: "tel" })}
+                  {F({ label: "Email", k: "parent2Email", type: "email" })}
+                </div>
+              </div>
+
+              {/* Additional demographics */}
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Additional</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {F({ label: "Race / Ethnicity", k: "raceEthnicity" })}
+                  {F({ label: "Secondary Language", k: "secondaryLanguage" })}
+                  {F({ label: "Membership Status", k: "membershipStatus" })}
                 </div>
               </div>
 

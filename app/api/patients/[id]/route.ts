@@ -56,12 +56,14 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 // ── PUT /api/patients/[id] ────────────────────────────────────────────────────
 
 const UPDATABLE_FIELDS = [
-  "firstName", "lastName", "dateOfBirth", "gender", "phone", "email",
+  "firstName", "lastName", "middleName", "dateOfBirth", "gender", "phone", "email",
   "address", "city", "state", "zipCode", "parentName", "parentRelation",
-  "parentPhone", "parentEmail", "emergencyContact", "emergencyPhone",
+  "parentPhone", "parentEmail", "parent2Name", "parent2Relation", "parentPhone2",
+  "parent2Email", "emergencyContact", "emergencyPhone",
   "insuranceProvider", "insuranceId", "insurancePlanType", "insurancePlan",
   "insuranceMemberId", "allergies", "medications",
-  "medicalNotes", "preferredLanguage", "preferredProvider", "status",
+  "medicalNotes", "preferredLanguage", "preferredProvider", "secondaryLanguage",
+  "raceEthnicity", "membershipStatus", "status", "privateMode",
 ] as const
 
 type UpdatableField = (typeof UPDATABLE_FIELDS)[number]
@@ -83,6 +85,8 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
           return NextResponse.json({ error: "Invalid dateOfBirth value" }, { status: 400 })
         }
         data.dateOfBirth = parsed
+      } else if (field === "privateMode") {
+        data.privateMode = body.privateMode === true || body.privateMode === "true"
       } else {
         // Safe cast — all other fields are string / enum values
         (data as Record<UpdatableField, unknown>)[field] = body[field]

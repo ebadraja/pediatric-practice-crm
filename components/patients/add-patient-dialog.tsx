@@ -63,6 +63,10 @@ const patientSchema = z.object({
   parentRelation:  z.enum(["Mother", "Father", "Guardian", "Grandparent", "Other"]).optional(),
   parentPhone:     z.string().regex(US_PHONE, "Use format (555) 555-5555").or(z.literal("")).optional(),
   parentEmail:     z.string().email("Invalid email").or(z.literal("")).optional(),
+  parent2Name:     z.string().optional(),
+  parent2Relation: z.enum(["Mother", "Father", "Guardian", "Grandparent", "Other"]).optional(),
+  parentPhone2:    z.string().regex(US_PHONE, "Use format (555) 555-5555").or(z.literal("")).optional(),
+  parent2Email:    z.string().email("Invalid email").or(z.literal("")).optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone:  z.string().regex(US_PHONE, "Use format (555) 555-5555").or(z.literal("")).optional(),
   insuranceProvider:  z.string().optional(),
@@ -109,6 +113,7 @@ export default function AddPatientDialog({ isOpen, onClose, onSuccess }: AddPati
       firstName: "", lastName: "", dateOfBirth: "", phone: "", email: "",
       address: "", city: "", state: "", zipCode: "",
       parentName: "", parentPhone: "", parentEmail: "",
+      parent2Name: "", parentPhone2: "", parent2Email: "",
       emergencyContact: "", emergencyPhone: "",
       insuranceProvider: "", insuranceId: "",
       insurancePlanType: "", insurancePlan: "", insuranceMemberId: "",
@@ -422,6 +427,64 @@ export default function AddPatientDialog({ isOpen, onClose, onSuccess }: AddPati
                           onChange={(e) => field.onChange(formatPhone(e.target.value))}
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section 3b: Second Parent / Guardian (optional) ───────── */}
+            <div>
+              <SectionHeading>Second Parent / Guardian <span className="font-normal text-slate-400">(optional)</span></SectionHeading>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="parent2Name" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl><Input placeholder="Full name" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="parent2Relation" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Relationship</FormLabel>
+                      <Select onValueChange={(value) => {
+                        if (value) field.onChange(value);
+                      }} value={field.value ?? ""}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select relation" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Mother">Mother</SelectItem>
+                          <SelectItem value="Father">Father</SelectItem>
+                          <SelectItem value="Guardian">Guardian</SelectItem>
+                          <SelectItem value="Grandparent">Grandparent</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="parentPhone2" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="(555) 555-5555"
+                          value={field.value ?? ""}
+                          onChange={(e) => field.onChange(formatPhone(e.target.value))}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="parent2Email" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl><Input placeholder="parent2@email.com" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
