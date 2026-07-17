@@ -26,6 +26,10 @@ export async function GET(request: NextRequest) {
 
     if (status && status !== "all") {
       where.status = status as Prisma.EnumPatientStatusFilter["equals"]
+    } else {
+      // Default "all" view excludes DRAFT-status patients (they clutter Active).
+      // INACTIVE and ARCHIVED remain visible; pick DRAFT via the status filter.
+      where.status = { not: "DRAFT" }
     }
 
     const [patients, total] = await Promise.all([

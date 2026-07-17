@@ -538,7 +538,9 @@ function toolVerifyInsurance(args: Record<string, unknown>): string {
   // Fuzzy match accepted plans (order matters — Premera before generic "blue cross")
   for (const entry of PLAN_KEYWORDS) {
     if (entry.keywords.some(k => input.includes(k))) {
-      return `Yes, we accept ${entry.plan}. Plan type: ${entry.planType}.`
+      // Intentionally omit planType from the tool result — the voice agent
+      // would otherwise echo internal labels like "Plan type: Commercial".
+      return `Yes, ${entry.plan} is accepted.`
     }
   }
 
