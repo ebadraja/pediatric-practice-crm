@@ -29,11 +29,11 @@
   ];
 
   var GREETING =
-    "Hi there! 🦒 I'm GIGI, the virtual assistant for Kids 0 to 18 Integrative Pediatrics. I can help with:\n\n" +
-    '• Scheduling appointments\n' +
-    '• Insurance & billing questions\n' +
+    "Hi there! 🦒 I'm GiGi, the virtual assistant for KiDS 0 to 18 Integrative Pediatrics. I am new and still learning, but I am programmed to help with most questions regarding:\n\n" +
+    '• Services we offer\n' +
+    '• Insurance companies accepted\n' +
     '• Office hours & location\n' +
-    '• Services we offer\n\n' +
+    '• Relay messages to our staff that are not time sensitive\n\n' +
     'How can I help you today?';
 
   var state = loadState();
