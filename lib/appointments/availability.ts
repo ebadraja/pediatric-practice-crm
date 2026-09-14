@@ -24,7 +24,7 @@ function minutesToHHMM(total: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
-/** Shared slot algorithm used by staff API and GIGI chatbot availability. */
+/** Shared slot algorithm used by the staff appointments API and voice agent tools. */
 export async function getDayAvailability(params: {
   date: string
   provider?: string
