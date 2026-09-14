@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { MISSING_MIGRATION_MESSAGE, isMissingRetellColumns } from '@/lib/retell/credentials';
 
 const updateRetellSettingsBody = z.object({
   apiKey: z.string().optional(),
@@ -102,7 +103,7 @@ export async function PUT(req: NextRequest) {
   } catch (error) {
     console.error('[SETTINGS_RETELL]', error);
     return NextResponse.json(
-      { error: 'Failed to save Retell settings' },
+      { error: isMissingRetellColumns(error) ? MISSING_MIGRATION_MESSAGE : 'Failed to save Retell settings' },
       { status: 500 }
     );
   }
@@ -136,7 +137,7 @@ export async function GET() {
   } catch (error) {
     console.error('[SETTINGS_RETELL_GET]', error);
     return NextResponse.json(
-      { error: 'Failed to fetch Retell settings' },
+      { error: isMissingRetellColumns(error) ? MISSING_MIGRATION_MESSAGE : 'Failed to fetch Retell settings' },
       { status: 500 }
     );
   }
