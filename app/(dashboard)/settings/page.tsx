@@ -36,6 +36,8 @@ import {
 } from 'lucide-react';
 import { WebhookTestingComponent } from '@/components/webhook-testing';
 import { MessagingSettingsTab } from '@/components/messaging/MessagingSettingsTab';
+import { RetellAgentTab } from '@/components/voice/RetellAgentTab';
+import { RetellUsageTab } from '@/components/voice/RetellUsageTab';
 
 interface SettingsState {
   practiceInfo: {
@@ -759,88 +761,10 @@ function SettingsPage() {
 
           {/* ── AI Voice Agent ── */}
           {activeTab === 'ai' && (
-            <div className="space-y-6">
-              <Card className="dark:bg-slate-900 dark:border-slate-700">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="dark:text-slate-50">Voice Agent Status</CardTitle>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${settings.aiAgent.active ? 'bg-green-500' : 'bg-slate-400'}`} />
-                      <span className={`text-sm font-medium ${settings.aiAgent.active ? 'text-green-600 dark:text-green-400' : 'text-slate-600 dark:text-slate-400'}`}>
-                        {settings.aiAgent.active ? 'Active' : 'Paused'}
-                      </span>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className={labelCls}>Agent Name</label>
-                    <Input className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" value={settings.aiAgent.agentName} onChange={(e) => handleSettingChange('aiAgent', 'agentName', e.target.value)} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Voice</label>
-                    <select value={settings.aiAgent.voice} onChange={(e) => handleSettingChange('aiAgent', 'voice', e.target.value)} className={selectCls}>
-                      <option value="rachel">Rachel - Warm Female</option>
-                      <option value="sarah">Sarah - Professional</option>
-                      <option value="bella">Bella - Friendly</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Greeting Message</label>
-                    <textarea value={settings.aiAgent.greeting} onChange={(e) => handleSettingChange('aiAgent', 'greeting', e.target.value)} className={textareaCls} rows={4} />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="dark:bg-slate-900 dark:border-slate-700">
-                <CardHeader><CardTitle className="dark:text-slate-50">Personality Settings</CardTitle></CardHeader>
-                <CardContent className="space-y-6">
-                  {[
-                    { key: 'toneSlider', label: 'Tone', left: 'Formal', right: 'Casual', display: (v: number) => v < 40 ? 'Formal' : v > 60 ? 'Casual' : 'Balanced' },
-                    { key: 'speedSlider', label: 'Speed', left: 'Slow', right: 'Fast', display: (v: number) => v < 40 ? 'Slow' : v > 60 ? 'Fast' : 'Normal' },
-                    { key: 'empathySlider', label: 'Empathy', left: 'Direct', right: 'Empathetic', display: (v: number) => v < 40 ? 'Direct' : v > 60 ? 'Empathetic' : 'Balanced' },
-                  ].map((slider) => (
-                    <div key={slider.key}>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium text-slate-900 dark:text-slate-100">{slider.label}</label>
-                        <span className="text-sm text-slate-600 dark:text-slate-400">
-                          {slider.display(settings.aiAgent[slider.key as keyof typeof settings.aiAgent] as number)}
-                        </span>
-                      </div>
-                      <input type="range" min="0" max="100" value={settings.aiAgent[slider.key as keyof typeof settings.aiAgent] as number} onChange={(e) => handleSettingChange('aiAgent', slider.key, parseInt(e.target.value))} className="w-full accent-blue-600" />
-                      <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        <span>{slider.left}</span><span>{slider.right}</span>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card className="dark:bg-slate-900 dark:border-slate-700">
-                <CardHeader><CardTitle className="dark:text-slate-50">Call Routing & Escalation</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className={labelCls}>Emergency Phone Number</label>
-                    <Input className="dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" value={settings.aiAgent.emergencyPhone} onChange={(e) => handleSettingChange('aiAgent', 'emergencyPhone', e.target.value)} />
-                  </div>
-                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                    <p className="font-medium text-sm text-slate-900 dark:text-slate-100 mb-3">Escalation Triggers</p>
-                    <div className="space-y-3">
-                      {['Customer mentions emergency keywords','Customer requests human/manager','Customer sounds upset (sentiment analysis)','3 failed clarification attempts','Insurance/billing disputes'].map((trigger, idx) => (
-                        <div key={idx} className="flex items-center gap-3">
-                          <input type="checkbox" defaultChecked className="rounded accent-blue-600" />
-                          <label className="text-sm text-slate-700 dark:text-slate-300">{trigger}</label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Button className="w-full bg-purple-600 hover:bg-purple-700 gap-2">
-                <Mic className="w-4 h-4" />Test Call
-              </Button>
-            </div>
+            <RetellAgentTab
+              aiAgent={settings.aiAgent}
+              onChange={(field, value) => handleSettingChange('aiAgent', field, value)}
+            />
           )}
 
           {/* ── Website Chatbot ── */}
@@ -1823,29 +1747,7 @@ function SettingsPage() {
                   <div className="text-2xl font-bold text-slate-900 dark:text-slate-50">Professional – $299/month</div>
                 </CardContent>
               </Card>
-              <Card className="dark:bg-slate-900 dark:border-slate-700">
-                <CardHeader><CardTitle className="dark:text-slate-50">Usage This Month</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  {[
-                    { label: 'Voice calls', used: 687, total: 1000 },
-                    { label: 'AI tokens used', used: 2400000, total: 5000000 },
-                    { label: 'Storage', used: 12, total: 50, unit: 'GB' },
-                  ].map((usage, idx) => {
-                    const pct = (usage.used / usage.total) * 100;
-                    return (
-                      <div key={idx}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{usage.label}</span>
-                          <span className="text-sm text-slate-600 dark:text-slate-400">{usage.used.toLocaleString()} / {usage.total.toLocaleString()} {usage.unit}</span>
-                        </div>
-                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-                          <div className={`h-2 rounded-full ${pct > 80 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </CardContent>
-              </Card>
+              <RetellUsageTab />
               <Card className="dark:bg-slate-900 dark:border-slate-700">
                 <CardHeader><CardTitle className="dark:text-slate-50">Billing History</CardTitle></CardHeader>
                 <CardContent>

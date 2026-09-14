@@ -578,6 +578,14 @@ model Settings {
   empathySlider     Int     @default(50) @map("empathy_slider")
   emergencyPhone    String? @map("emergency_phone")
 
+  // Retell AI voice agent connection (API key encrypted with lib/crypto)
+  retellEnabled  Boolean   @default(false) @map("retell_enabled")
+  retellApiKey   String?   @map("retell_api_key")
+  retellAgentId  String?   @map("retell_agent_id")
+  // Retell chat agent that powers the GIGI website chatbot
+  retellChatAgentId String? @map("retell_chat_agent_id")
+  retellLastSync DateTime? @map("retell_last_sync")
+
   // Website chatbot
   chatbotEnabled     Boolean @default(false) @map("chatbot_enabled")
   chatbotWelcomeMsg  String? @map("chatbot_welcome_msg") @db.Text

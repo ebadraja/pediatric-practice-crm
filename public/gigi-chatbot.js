@@ -22,25 +22,23 @@
   }
 
   var QUICK_ACTIONS = [
-    { label: 'Book an Appointment', message: 'I would like to book an appointment.' },
     { label: 'Insurance Questions', message: 'I have a question about insurance coverage.' },
     { label: 'Office Hours', message: 'What are your office hours?' },
     { label: 'Contact Us', message: 'How can I contact the office?' },
   ];
 
   var GREETING =
-    "Hi there! 🦒 I'm GIGI, the virtual assistant for Kids 0 to 18 Integrative Pediatrics. I can help with:\n\n" +
-    '• Scheduling appointments\n' +
-    '• Insurance & billing questions\n' +
+    "Hi there! 🦒 I'm GiGi, the virtual assistant for KiDS 0 to 18 Integrative Pediatrics. I am new and still learning, but I am programmed to help with most questions regarding:\n\n" +
+    '• Services we offer\n' +
+    '• Insurance companies accepted\n' +
     '• Office hours & location\n' +
-    '• Services we offer\n\n' +
+    '• Relay messages to our staff that are not time sensitive\n\n' +
     'How can I help you today?';
 
   var state = loadState();
   var open = false;
   var mounted = false;
   var launcher, bubble, panel, messagesEl, inputEl, sendBtn, typingEl;
-  var bookingActive = false;
 
   function portalUrl() {
     return apiBase.replace(/\/$/, '') + '/portal';
@@ -71,7 +69,9 @@
         });
         raw.messages = deduped;
       }
-      if (raw.bookingActive) bookingActive = true;
+      // Drop fields from the Vapi/booking era.
+      delete raw.bookingActive;
+      delete raw.vapiChatId;
       return raw;
     } catch (_err) {
       return {};
@@ -81,7 +81,6 @@
   function saveState() {
     state.lastActive = Date.now();
     if (!state.sessionId) state.sessionId = uuid();
-    state.bookingActive = bookingActive;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_err) {}
@@ -181,11 +180,6 @@
       '.gigi-input{flex:1;border:1px solid #D1D5DB;border-radius:12px;padding:10px 12px;font-size:14px;resize:none;min-height:44px;font-family:inherit}' +
       '.gigi-send{width:44px;height:44px;border:none;border-radius:12px;background:#7C3AED;color:#fff;cursor:pointer;font-size:18px}' +
       '.gigi-locked-panel{padding:24px 16px;text-align:center}' +
-      '.gigi-slots-card{background:#fff;border:1px solid #EDE9FE;border-radius:12px;padding:12px;margin:8px 0}' +
-      '.gigi-slots-title{font-size:13px;font-weight:600;color:#374151;margin-bottom:8px}' +
-      '.gigi-slots-pills{display:flex;flex-wrap:wrap;gap:6px}' +
-      '.gigi-slot-pill{border:1px solid #C4B5FD;border-radius:999px;padding:8px 14px;font-size:13px;cursor:pointer;background:#fff;min-height:40px}' +
-      '.gigi-slot-pill:hover{background:#7C3AED;color:#fff;border-color:#7C3AED}' +
       '@media (max-width:768px){#gigi-launcher{bottom:14px;right:14px;gap:8px}.gigi-callout{padding:11px 16px;border-radius:16px}.gigi-callout-text{font-size:13px}.gigi-callout::after{right:-6px;border-top-width:7px;border-bottom-width:7px;border-left-width:8px}#gigi-bubble .gigi-avatar-img{width:72px;max-height:80px}#gigi-panel{bottom:0;right:0;left:0;width:100%;height:100vh;max-height:100vh;border-radius:0}}';
 
     document.head.appendChild(style);
@@ -252,7 +246,6 @@
       var chip = el('button', 'gigi-chip', qa.label);
       chip.type = 'button';
       chip.onclick = function () {
-        if (/book an appointment/i.test(qa.label)) bookingActive = true;
         sendUserMessage(qa.message);
       };
       wrap.appendChild(chip);
@@ -284,43 +277,14 @@
     renderQuickActions();
   }
 
-  function renderSlotPicker(slots) {
-    if (!messagesEl || !slots || !slots.length) return;
-    var existing = document.getElementById('gigi-slot-picker');
-    if (existing) existing.remove();
-
-    var day = slots[0];
-    if (!day.times || !day.times.length) return;
-
-    var card = el('div', 'gigi-slots-card');
-    card.id = 'gigi-slot-picker';
-    card.appendChild(el('div', 'gigi-slots-title', 'Available times on ' + day.dateLabel + ':'));
-    var pills = el('div', 'gigi-slots-pills');
-    day.times.forEach(function (t) {
-      var pill = el('button', 'gigi-slot-pill', t.label);
-      pill.type = 'button';
-      pill.onclick = function () {
-        sendUserMessage(
-          'Please book my appointment on ' + day.dateLabel + ' at ' + t.label + '.',
-          true
-        );
-      };
-      pills.appendChild(pill);
-    });
-    card.appendChild(pills);
-    messagesEl.appendChild(card);
-    scrollMessages();
-  }
-
-  function sendUserMessage(text, skipUserBubble) {
+  function sendUserMessage(text) {
     var trimmed = (text || '').trim();
     if (!trimmed) return;
     if (!apiBase) {
       appendMessage('bot', 'Chat is not configured (missing data-api-url on the script tag).');
       return;
     }
-    if (/book|appointment|schedule/i.test(trimmed)) bookingActive = true;
-    if (!skipUserBubble) appendMessage('user', trimmed);
+    appendMessage('user', trimmed);
     if (inputEl) inputEl.value = '';
     if (sendBtn) sendBtn.disabled = true;
     showTyping(true);
@@ -332,8 +296,7 @@
       body: JSON.stringify({
         sessionId: state.sessionId,
         message: trimmed,
-        previousChatId: state.vapiChatId || undefined,
-        bookingActive: bookingActive,
+        chatId: state.chatId || undefined,
         sourcePage: typeof window !== 'undefined' ? window.location.href : undefined,
       }),
     })
@@ -345,10 +308,8 @@
       })
       .then(function (data) {
         showTyping(false);
-        if (data.chatId) { state.vapiChatId = data.chatId; saveState(); }
-        if (data.bookingActive) bookingActive = true;
+        if (data.chatId) { state.chatId = data.chatId; saveState(); }
         appendMessage('bot', data.reply || '');
-        if (data.slots && data.slots.length) renderSlotPicker(data.slots);
       })
       .catch(function (err) {
         showTyping(false);
